@@ -20,6 +20,7 @@ app.use(cors({
     'http://localhost:5174', // Your new Vite port!
     'https://sharp-study.vercel.app',
   ],
+  credentials: true, // <-- ADD THIS EXACT LINE
 }));
 app.use(express.json());
 
