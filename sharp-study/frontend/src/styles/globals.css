@@ -1,0 +1,203 @@
+@import "tailwindcss";
+@import './tokens.css';
+
+/* =============================
+   CSS CUSTOM PROPERTIES
+   ============================= */
+:root {
+  --base-font-size: 16px;
+
+  /* Light theme defaults */
+  --bg-color: #f5f7ff;
+  --text-color: #1a1a2e;
+  --card-bg: #ffffff;
+  --card-border: #e2e8f0;
+  --accent: #4361ee;
+  --accent-hover: #3451d1;
+  --muted: #64748b;
+}
+
+/* Dark mode — toggled by AccessibilityContext */
+[data-theme="dark"] {
+  --bg-color: #0f1117;
+  --text-color: #e8e8e8;
+  --card-bg: #1a1d27;
+  --card-border: #2d3348;
+  --accent: #5b8dee;
+  --accent-hover: #4a7cdc;
+  --muted: #94a3b8;
+}
+
+/* =============================
+   FLUID TYPOGRAPHY
+   Scales with user's font size setting
+   ============================= */
+html {
+  font-size: var(--base-font-size); /* Controlled by AccessibilityContext */
+}
+
+body {
+  font-size: 1rem;      /* Relative to html — scales automatically */
+  line-height: 1.75;    /* Important for dyslexia readability */
+  color: var(--text-color);
+  background-color: var(--bg-color);
+  transition: background-color 0.2s, color 0.2s;
+  margin: 0;
+  padding: 0;
+}
+
+h1 { font-size: clamp(1.5rem, 4vw, 2.25rem); }
+h2 { font-size: clamp(1.25rem, 3vw, 1.75rem); }
+h3 { font-size: clamp(1.1rem, 2.5vw, 1.375rem); }
+p  { font-size: 1rem; max-width: 70ch; }
+
+/* =============================
+   FLEXIBLE IMAGES
+   ============================= */
+img, video, canvas, svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* =============================
+   BOX MODEL FIX
+   ============================= */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* =============================
+   RESPONSIVE CONTAINER
+   Fluid grid with CSS Grid
+   ============================= */
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+/* =============================
+   DYSLEXIA-FRIENDLY FONT
+   Download from https://opendyslexic.org
+   Place in frontend/public/fonts/
+   ============================= */
+@font-face {
+  font-family: 'OpenDyslexic';
+  src: url('/fonts/OpenDyslexic-Regular.otf') format('opentype');
+}
+
+.font-dyslexia * {
+  font-family: 'OpenDyslexic', sans-serif !important;
+  letter-spacing: 0.05em;
+  word-spacing: 0.15em;
+  line-height: 1.9;
+}
+
+/* =============================
+   ACCESSIBILITY — Focus visible
+   ============================= */
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* =============================
+   CSS MEDIA QUERIES
+   ============================= */
+
+/* Mobile first — base styles apply to all screens */
+
+/* Tablet and up */
+@media (min-width: 640px) {
+  .container {
+    padding: 0 1.5rem;
+  }
+}
+
+/* Desktop and up */
+@media (min-width: 1024px) {
+  .container {
+    padding: 0 2rem;
+  }
+}
+
+/* High contrast / prefers-contrast */
+@media (prefers-contrast: high) {
+  :root {
+    --accent: #0000ff;
+    --text-color: #000000;
+    --bg-color: #ffffff;
+  }
+}
+
+/* Respect user motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+body {
+  font-family: var(--body-font, inherit);
+  line-height: var(--line-height, 1.75);
+  letter-spacing: var(--letter-spacing, 0);
+}
+
+/* High contrast theme */
+[data-theme="high-contrast"] {
+  --bg-color: #000000;
+  --text-color: #ffffff;
+  --card-bg: #111111;
+  --card-border: #ffffff;
+  --accent: #ffff00;
+  --accent-hover: #e0e000;
+  --muted: #cccccc;
+}
+
+/* Warm sepia theme */
+[data-theme="warm"] {
+  --bg-color: #fdf6e3;
+  --text-color: #4a3728;
+  --card-bg: #f8f0d8;
+  --card-border: #e8d5b5;
+  --accent: #c87941;
+  --accent-hover: #a86030;
+  --muted: #8b6e55;
+}
+
+/* Study guide content styles */
+.study-guide-content h2,
+.study-guide-content h3 {
+  color: var(--text-color);
+  font-weight: 700;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.study-guide-content ul,
+.study-guide-content ol {
+  padding-left: 1.5em;
+  margin-bottom: 1em;
+}
+
+.study-guide-content li {
+  margin-bottom: 0.4em;
+}
+
+.study-guide-content strong {
+  color: var(--accent);
+}
+
+.study-guide-content p {
+  margin-bottom: 1em;
+  color: var(--text-color);
+}
+
+/* Global spinner keyframe — used by PillButton */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

@@ -1,0 +1,159 @@
+/* ─────────────────────────────────────
+   AuthLayout — two-column card wrapper
+   Matches wireframe: card on neutral bg,
+   left = image panel, right = form panel
+   ───────────────────────────────────── */
+
+.page {
+  min-height: 100vh;
+  background-color: var(--auth-page-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-lg);
+}
+
+/* The outer card container */
+.card {
+  display: flex;
+  width: 100%;
+  max-width: var(--auth-card-max-width);
+  min-height: 34rem;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  background-color: var(--auth-right-bg);
+}
+
+/* ── Left panel: image + caption ── */
+.imagePanel {
+  display: none;            /* hidden on mobile and tablet */
+  position: relative;
+  flex: 0 0 var(--auth-left-width);
+  background-color: #C0C0C0; /* placeholder color matching wireframe */
+  overflow: hidden;
+  border-radius: var(--radius-inner);
+  margin: 0;
+}
+
+.placeholderImage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* The X cross lines on the placeholder — drawn with an SVG overlay */
+.imageCross {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.imageCaption {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: var(--space-xl);
+  background: linear-gradient(to top, rgba(0,0,0,0.45) 0%, transparent 100%);
+}
+
+.imageCaptionTitle {
+  font-size: var(--font-size-xl);
+  font-weight: 800;
+  color: #FFFFFF;
+  margin: 0 0 var(--space-xs);
+  line-height: 1.3;
+}
+
+.imageCaptionSub {
+  font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.85);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── Right panel: form content ── */
+.formPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-xl) var(--space-xl);
+  overflow-y: auto;
+  background-color: var(--auth-right-bg);
+}
+
+/* Logo row at the top-left of the form panel */
+.logoRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+  text-decoration: none;
+  outline: none;
+  border-radius: var(--radius-sm);
+  align-self: flex-start;
+}
+
+.logoRow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.logoIcon {
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+}
+
+.logoText {
+  font-size: var(--font-size-lg);
+  font-weight: 800;
+  color: var(--text-color);
+  letter-spacing: -0.02em;
+}
+
+.logoAccent {
+  color: var(--accent);
+}
+
+/* Inner content area (centers the form within the right panel) */
+.formContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* ── Responsive ── */
+@media (min-width: 1024px) {
+  .imagePanel {
+    display: block;
+  }
+
+  .formPanel {
+    flex: 0 0 var(--auth-right-width);
+    padding: var(--space-2xl);
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 0;
+  }
+
+  .card {
+    border-radius: 0;
+    min-height: 100vh;
+    box-shadow: none;
+  }
+
+  .formPanel {
+    padding: var(--space-lg);
+  }
+}

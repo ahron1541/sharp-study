@@ -1,0 +1,168 @@
+/* ─────────────────────────────────────
+   PillInput — pill-shaped text input
+   Used for all auth form fields
+   ───────────────────────────────────── */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-color);
+  padding-left: var(--space-xs);
+}
+
+.required {
+  color: #EF4444;
+  margin-left: 0.15rem;
+}
+
+.inputRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input {
+  width: 100%;
+  height: var(--input-height);
+  padding: 0 var(--input-padding-x);
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--input-border-color);
+  background-color: var(--input-bg);
+  color: var(--text-color);
+  font-size: var(--font-size-base);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  appearance: none;
+}
+
+/* When an icon appears on the left */
+.input.hasLeftIcon {
+  padding-left: 2.75rem;
+}
+
+/* When an icon or button appears on the right */
+.input.hasRightAddon {
+  padding-right: 5rem;
+}
+
+.input.hasRightIcon {
+  padding-right: 2.75rem;
+}
+
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: var(--input-focus-shadow);
+}
+
+.input.error {
+  border-color: #EF4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+}
+
+.input.disabled {
+  background-color: #E5E7EB;
+  color: #9CA3AF;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Left icon slot */
+.leftIcon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9CA3AF;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+/* Right icon slot */
+.rightIcon {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9CA3AF;
+  display: flex;
+  align-items: center;
+}
+
+/* Right inline text button (e.g., "Send" next to OTP email input) */
+.rightAddon {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--text-color);
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  outline: none;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.rightAddon:hover {
+  color: var(--accent);
+}
+
+.rightAddon:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.rightAddon:disabled {
+  color: #9CA3AF;
+  cursor: not-allowed;
+}
+
+/* Toggle button (show/hide password) */
+.toggleButton {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9CA3AF;
+  padding: 0.25rem;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: none;
+  transition: color 0.15s;
+}
+
+.toggleButton:hover {
+  color: var(--text-color);
+}
+
+.toggleButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Error message below input */
+.errorMsg {
+  font-size: var(--font-size-xs);
+  color: #EF4444;
+  padding-left: var(--space-xs);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}

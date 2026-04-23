@@ -1,0 +1,48 @@
+.group {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.box {
+  width: 3rem;
+  height: 3.5rem;
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  border-radius: 0.625rem;
+  border: 2px solid var(--card-border);
+  background: var(--bg-color);
+  color: var(--text-color);
+  outline: none;
+  caret-color: var(--accent);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+
+.box:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.box.filled {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-color));
+}
+
+.box.error {
+  border-color: #ef4444;
+}
+
+.box.error:focus {
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+.box:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Small pop animation when a digit is entered (via JS class toggle) */
+.box.popping {
+  transform: scale(1.08);
+}

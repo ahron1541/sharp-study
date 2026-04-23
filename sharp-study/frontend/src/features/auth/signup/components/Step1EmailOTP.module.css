@@ -1,0 +1,96 @@
+.wrapper { display: flex; flex-direction: column; gap: var(--space-md); }
+
+.titleRow { text-align: center; }
+
+.title {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--text-color);
+  margin: 0 0 var(--space-xs);
+}
+
+.subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.fields { display: flex; flex-direction: column; gap: var(--space-md); }
+
+/* Locked email row after OTP sent */
+.lockedRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0.625rem var(--input-padding-x);
+  border-radius: var(--radius-pill);
+  background-color: #E5E7EB;
+  border: 1.5px solid var(--input-border-color);
+}
+
+.lockedIcon { color: #6B7280; flex-shrink: 0; }
+
+.lockedText {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  color: #6B7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lockedBadge {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: #16A34A;
+  white-space: nowrap;
+}
+
+/* OTP section */
+.otpLabel {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-color);
+  text-align: center;
+  margin: 0 0 var(--space-sm);
+}
+
+.otpError {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  font-size: var(--font-size-xs);
+  color: #EF4444;
+  margin-top: var(--space-xs);
+  min-height: 1.2rem;
+}
+
+.otpMeta {
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  text-align: center;
+  margin-top: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+/* Resend button */
+.resendBtn {
+  width: 100%;
+  background: none;
+  border: none;
+  font-size: var(--font-size-sm);
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  outline: none;
+  color: var(--muted);
+  transition: color 0.15s;
+  text-align: center;
+}
+
+.resendBtn:not(:disabled) { color: var(--accent); }
+.resendBtn:not(:disabled):hover { text-decoration: underline; }
+.resendBtn:disabled { cursor: not-allowed; }
+.resendBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

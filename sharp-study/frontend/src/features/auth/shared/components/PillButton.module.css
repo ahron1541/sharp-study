@@ -1,0 +1,75 @@
+/* ─────────────────────────────────────
+   PillButton — pill-shaped button
+   ───────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: var(--btn-height);
+  padding: 0 var(--btn-padding-x);
+  border-radius: var(--radius-pill);
+  border: none;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  transition: background-color 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Variants */
+.primary {
+  background-color: #3D3D3D;
+  color: #FFFFFF;
+}
+
+.primary:hover:not(:disabled) {
+  background-color: #1A1A1A;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.secondary {
+  background-color: #E5E7EB;
+  color: var(--text-color);
+}
+
+.secondary:hover:not(:disabled) {
+  background-color: #D1D5DB;
+}
+
+.accent {
+  background-color: var(--accent);
+  color: #FFFFFF;
+}
+
+.accent:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+  box-shadow: 0 2px 8px rgba(67, 97, 238, 0.30);
+}
+
+/* Spinner for loading state */
+.spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
