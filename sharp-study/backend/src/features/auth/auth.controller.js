@@ -165,15 +165,14 @@ exports.completeSignup = async (req, res) => {
   }
 };
 
-// --- 5. LOGIN (EMAIL OR USERNAME SUPPORT) ---
+// --- 5. LOGIN (FINAL SECURE VERSION) ---
 exports.login = async (req, res) => {
   try {
-    // 1. Log the incoming request so you can see it in Render Logs
-    console.log("Login Request Body:", req.body);
-
-    // 2. Flexible Check: Accept either 'email' or 'username' from the frontend
-    const identifier = req.body.email || req.body.username;
+    // 1. Accept 'identifier' (from your frontend), or fallback to email/username
+    const identifier = req.body.identifier || req.body.email || req.body.username;
     const { password } = req.body;
+
+    // Remove the console.log(req.body) line here to keep passwords out of logs!
 
     if (!identifier || !password) {
       return res.status(400).json({ error: 'Email/Username and Password are required' });
@@ -181,47 +180,45 @@ exports.login = async (req, res) => {
 
     const cleanIdentifier = identifier.toLowerCase().trim();
 
-    // 3. Search Supabase for BOTH Email OR Username
+    // 2. Search Supabase for BOTH Email OR Username
     const { data: user, error: userError } = await supabase
       .from('profiles')
       .select('id, email, password_hash, is_blocked, username')
-      .or(`email.eq.${cleanIdentifier},username.eq.${cleanIdentifier}`) // <--- This checks both!
+      .or(`email.eq.${cleanIdentifier},username.eq.${cleanIdentifier}`)
       .maybeSingle();
 
-    if (userError) {
-      console.error("Database Query Error:", userError);
-      throw userError;
-    }
+    if (userError) throw userError;
     
     if (!user) {
-      console.log(`Login Failed: No profile found for ${cleanIdentifier}`);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     if (user.is_blocked) return res.status(403).json({ error: 'Account is blocked' });
 
-    // 4. Verify Password Hash
+    // 3. Verify Password Hash
     if (!user.password_hash) {
-      console.log(`Login Failed: User exists but has no password_hash (Incomplete Signup)`);
       return res.status(401).json({ error: 'Profile incomplete. Please sign up again.' });
     }
 
-    // 5. Compare Password
+    // 4. Compare Password
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
-      console.log(`Login Failed: Password mismatch for ${cleanIdentifier}`);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // 6. Success
-    await supabase.from('login_attempts').insert([{ email: user.email, ip_address: req.ip, succeeded: true }]);
+    // 5. Success (Log success without sensitive data)
+    await supabase.from('login_attempts').insert([{ 
+      email: user.email, 
+      ip_address: req.ip, 
+      succeeded: true 
+    }]);
 
     res.status(200).json({
       message: 'Login successful',
       user: { id: user.id, email: user.email, username: user.username }
     });
   } catch (error) {
-    console.error('Login Error:', error);
+    console.error('Login Error:', error); // We keep this for debugging crashes
     res.status(500).json({ error: 'Internal server error' });
   }
 };
