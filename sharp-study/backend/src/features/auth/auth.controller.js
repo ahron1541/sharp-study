@@ -111,31 +111,47 @@ exports.completeSignup = async (req, res) => {
   try {
     const { email, password, first_name, middle_name, last_name, username } = req.body;
 
+    // 1. Create the Auth Identity
     const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
-      email, password, email_confirm: true
+      email, 
+      password, 
+      email_confirm: true
     });
-    if (authError) throw authError;
+
+    // If email already exists in Auth, we handle that specifically
+    if (authError) {
+      if (authError.message.includes('already been registered')) {
+        return res.status(400).json({ error: 'This email is already registered.' });
+      }
+      throw authError;
+    }
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    const { error: profileError } = await supabase.from('profiles').insert([{
-      id: authUser.user.id,
-      email,
-      username,
-      first_name,
-      middle_name,
-      last_name,
-      full_name: `${first_name} ${last_name}`,
-      password_hash: hashedPassword,
-      role: 'student'
-    }]);
+    // 2. Use .upsert() instead of .insert() to handle potential trigger conflicts
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .upsert({
+        id: authUser.user.id,
+        email,
+        username,
+        first_name,
+        middle_name,
+        last_name,
+        full_name: `${first_name} ${last_name}`.trim(),
+        password_hash: hashedPassword,
+        role: 'student'
+      }, { onConflict: 'id' }); // This tells Supabase: "If the ID exists, just update it"
+
     if (profileError) throw profileError;
 
+    // 3. Clean up OTP
     await supabase.from('otp_codes').delete().eq('email', email).eq('purpose', 'signup');
+    
     res.status(201).json({ message: 'Account created successfully!' });
   } catch (error) {
     console.error('Complete Signup Error:', error);
-    res.status(500).json({ error: 'Failed to complete signup' });
+    res.status(500).json({ error: 'Internal server error during final setup.' });
   }
 };
 
