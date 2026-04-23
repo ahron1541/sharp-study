@@ -165,54 +165,56 @@ exports.completeSignup = async (req, res) => {
   }
 };
 
-// --- 5. LOGIN (HARDENED) ---
+// --- 5. LOGIN (EMAIL OR USERNAME SUPPORT) ---
 exports.login = async (req, res) => {
   try {
-    // 1. SAFETY CHECK: Ensure the email exists before calling .toLowerCase()
-    if (!req.body || !req.body.email) {
-      console.log("Login Attempt Blocked: Missing email in request body.");
-      return res.status(400).json({ error: 'Email is required' });
-    }
+    // 1. Log the incoming request so you can see it in Render Logs
+    console.log("Login Request Body:", req.body);
 
-    // Now it is safe to lowercase
-    const email = req.body.email.toLowerCase();
+    // 2. Flexible Check: Accept either 'email' or 'username' from the frontend
+    const identifier = req.body.email || req.body.username;
     const { password } = req.body;
 
-    if (!password) {
-      return res.status(400).json({ error: 'Password is required' });
+    if (!identifier || !password) {
+      return res.status(400).json({ error: 'Email/Username and Password are required' });
     }
 
-    // 2. Fetch profile
+    const cleanIdentifier = identifier.toLowerCase().trim();
+
+    // 3. Search Supabase for BOTH Email OR Username
     const { data: user, error: userError } = await supabase
       .from('profiles')
       .select('id, email, password_hash, is_blocked, username')
-      .eq('email', email)
+      .or(`email.eq.${cleanIdentifier},username.eq.${cleanIdentifier}`) // <--- This checks both!
       .maybeSingle();
 
-    if (userError) throw userError;
+    if (userError) {
+      console.error("Database Query Error:", userError);
+      throw userError;
+    }
     
     if (!user) {
-      console.log(`Login Failed: No profile found for ${email}`);
+      console.log(`Login Failed: No profile found for ${cleanIdentifier}`);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     if (user.is_blocked) return res.status(403).json({ error: 'Account is blocked' });
 
-    // 3. Check for the Hash
+    // 4. Verify Password Hash
     if (!user.password_hash) {
-      console.log(`Login Failed: User exists but has no password_hash (Incomplete Signup) for ${email}`);
+      console.log(`Login Failed: User exists but has no password_hash (Incomplete Signup)`);
       return res.status(401).json({ error: 'Profile incomplete. Please sign up again.' });
     }
 
-    // 4. Compare Password
+    // 5. Compare Password
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
-      console.log(`Login Failed: Password mismatch for ${email}`);
+      console.log(`Login Failed: Password mismatch for ${cleanIdentifier}`);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // 5. Success
-    await supabase.from('login_attempts').insert([{ email, ip_address: req.ip, succeeded: true }]);
+    // 6. Success
+    await supabase.from('login_attempts').insert([{ email: user.email, ip_address: req.ip, succeeded: true }]);
 
     res.status(200).json({
       message: 'Login successful',
