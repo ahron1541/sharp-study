@@ -15,7 +15,7 @@ const generateOTP = () => crypto.randomInt(100000, 999999).toString();
 // --- 1. REQUEST OTP ---
 exports.requestSignupOtp = async (req, res) => {
   try {
-    const { email } = req.body;
+    const email = req.body.email.toLowerCase(); // Standardize email
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
     const { data: existingUser, error: userError } = await supabase
@@ -62,7 +62,8 @@ exports.requestSignupOtp = async (req, res) => {
 // --- 2. VERIFY OTP ONLY ---
 exports.verifySignupOtp = async (req, res) => {
   try {
-    const { email, otp } = req.body;
+    const email = req.body.email.toLowerCase();
+    const { otp } = req.body;
     const { data: otpRecord, error: otpError } = await supabase
       .from('otp_codes')
       .select('*')
@@ -109,30 +110,39 @@ exports.checkUsername = async (req, res) => {
 // --- 4. COMPLETE SIGNUP ---
 exports.completeSignup = async (req, res) => {
   try {
-    const { email, password, first_name, middle_name, last_name, username } = req.body;
+    const { password, first_name, middle_name, last_name, username } = req.body;
+    const email = req.body.email.toLowerCase();
 
-    // 1. Create the Auth Identity
+    // 1. Create the Auth Identity in Supabase
     const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
       email, 
       password, 
       email_confirm: true
     });
 
-    // If email already exists in Auth, we handle that specifically
+    // Handle case where user might already be in Auth table but failed at profile step
     if (authError) {
-      if (authError.message.includes('already been registered')) {
-        return res.status(400).json({ error: 'This email is already registered.' });
+      if (authError.message.toLowerCase().includes('already registered')) {
+        console.log(`Auth user already exists for ${email}. Proceeding to fix profile.`);
+      } else {
+        throw authError;
       }
-      throw authError;
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
+    
+    // Get the ID (either from the new user or existing auth user)
+    let userId = authUser?.user?.id;
+    if (!userId) {
+       const { data: existingAuth } = await supabase.auth.admin.listUsers();
+       userId = existingAuth.users.find(u => u.email === email)?.id;
+    }
 
-    // 2. Use .upsert() instead of .insert() to handle potential trigger conflicts
+    // 2. Use .upsert() to overwrite any "ghost" profiles
     const { error: profileError } = await supabase
       .from('profiles')
       .upsert({
-        id: authUser.user.id,
+        id: userId,
         email,
         username,
         first_name,
@@ -141,7 +151,7 @@ exports.completeSignup = async (req, res) => {
         full_name: `${first_name} ${last_name}`.trim(),
         password_hash: hashedPassword,
         role: 'student'
-      }, { onConflict: 'id' }); // This tells Supabase: "If the ID exists, just update it"
+      }, { onConflict: 'id' });
 
     if (profileError) throw profileError;
 
@@ -151,33 +161,50 @@ exports.completeSignup = async (req, res) => {
     res.status(201).json({ message: 'Account created successfully!' });
   } catch (error) {
     console.error('Complete Signup Error:', error);
-    res.status(500).json({ error: 'Internal server error during final setup.' });
+    res.status(500).json({ error: 'Final registration step failed. Please try again.' });
   }
 };
 
 // --- 5. LOGIN ---
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const email = req.body.email.toLowerCase();
+    const { password } = req.body;
+
     const { data: user, error: userError } = await supabase
       .from('profiles')
-      .select('id, email, password_hash, is_blocked, locked_until')
+      .select('id, email, password_hash, is_blocked, username')
       .eq('email', email)
       .maybeSingle();
 
-    if (userError || !user) return res.status(401).json({ error: 'Invalid credentials' });
+    if (userError) throw userError;
+    
+    // Check if user exists in the profiles table
+    if (!user) {
+      console.log(`Login attempt failed: No profile found for ${email}`);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
     if (user.is_blocked) return res.status(403).json({ error: 'Account is blocked' });
 
-    const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) return res.status(401).json({ error: 'Invalid credentials' });
+    // Important: Check if password_hash exists (it might be missing if signup failed halfway)
+    if (!user.password_hash) {
+      console.log(`Login attempt failed: No password hash for ${email}. Profile is incomplete.`);
+      return res.status(401).json({ error: 'Incomplete registration. Please sign up again.' });
+    }
 
-    await supabase.from('login_attempts').insert([
-      { email, ip_address: req.ip, succeeded: true }
-    ]);
+    const isMatch = await bcrypt.compare(password, user.password_hash);
+    if (!isMatch) {
+      console.log(`Login attempt failed: Password mismatch for ${email}`);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Success! Log the attempt and send response
+    await supabase.from('login_attempts').insert([{ email, ip_address: req.ip, succeeded: true }]);
 
     res.status(200).json({
       message: 'Login successful',
-      user: { id: user.id, email: user.email }
+      user: { id: user.id, email: user.email, username: user.username }
     });
   } catch (error) {
     console.error('Login Error:', error);
