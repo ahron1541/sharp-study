@@ -3,6 +3,7 @@ import { Suspense, lazy } from 'react';
 import ProtectedRoute from '../shared/components/ProtectedRoute';
 import Spinner from '../shared/components/Spinner';
 import SessionTimeout from '../shared/components/SessionTimeout';
+import AppShell from '../features/dashboard/components/AppShell';
 
 // Lazy-loaded pages (performance — loads only when needed)
 const LandingPage = lazy(() => import('../features/landing/pages/LandingPage'));
@@ -15,6 +16,7 @@ const FlashcardsPage = lazy(() => import('../features/flashcards/pages/Flashcard
 const QuizPage = lazy(() => import('../features/quiz/pages/QuizPage'));
 const AdminPage = lazy(() => import('../features/admin/pages/AdminPage'));
 const NotFoundPage = lazy(() => import('../features/errors/pages/NotFoundPage'));
+const SettingsPage = lazy(() => import('../features/settings/pages/SettingsPage'));
 
 const FullPageSpinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-[var(--bg-color)]">
@@ -34,24 +36,31 @@ export default function AppRouter() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
-          {/* Protected routes */}
-          <Route path="/dashboard" element={
-            <ProtectedRoute><DashboardPage /></ProtectedRoute>
-          } />
-          <Route path="/study-guide/:id" element={
-            <ProtectedRoute><StudyGuidePage /></ProtectedRoute>
-          } />
-          <Route path="/flashcards/:id" element={
-            <ProtectedRoute><FlashcardsPage /></ProtectedRoute>
-          } />
-          <Route path="/quiz/:id" element={
-            <ProtectedRoute><QuizPage /></ProtectedRoute>
-          } />
-
-          {/* Admin only */}
-          <Route path="/admin" element={
-            <ProtectedRoute adminOnly><AdminPage /></ProtectedRoute>
-          } />
+          {/* Protected Routes wrapped in AppShell Layout */}
+          <Route
+            element={
+              <ProtectedRoute>
+                <AppShell />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/library" element={<DashboardPage />} /> {/* replace later */}
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/study-guide/:id" element={<StudyGuidePage />} />
+            <Route path="/flashcards/:id" element={<FlashcardsPage />} />
+            <Route path="/quiz/:id" element={<QuizPage />} />
+            
+            {/* Admin only (Requires standard protection + admin flag) */}
+            <Route 
+              path="/admin" 
+              element={
+                <ProtectedRoute adminOnly>
+                  <AdminPage />
+                </ProtectedRoute>
+              } 
+            />
+          </Route>
 
           {/* 404 */}
           <Route path="*" element={<NotFoundPage />} />

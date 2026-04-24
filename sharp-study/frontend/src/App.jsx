@@ -4,14 +4,17 @@ import { AuthProvider } from './features/auth/context/AuthContext';
 import AppRouter from './router/AppRouter';
 import CookieConsent from './shared/components/CookieConsent';
 import OfflineScreen from './shared/components/OfflineScreen';
-
-
+import { useTheme } from './features/theme/hooks/useTheme';
 
 export default function App() {
+  // Theme is applied before first render via localStorage
+  useTheme(); 
+
   return (
     <AccessibilityProvider>
       <AuthProvider>
         <AppRouter />
+        
         {/* Global toast notifications */}
         <Toaster
           position="top-right"
@@ -24,12 +27,13 @@ export default function App() {
             },
           }}
         />
+        
         {/* GDPR cookie consent banner */}
         <CookieConsent />
+        
+        {/* PWA Offline Indicator */}
         <OfflineScreen />
       </AuthProvider>
     </AccessibilityProvider>
-
-    
   );
 }
