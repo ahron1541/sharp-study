@@ -326,12 +326,17 @@ exports.verifyResetOtp = async (req, res) => {
 // --- 8. FINALIZE PASSWORD RESET ---
 exports.resetPassword = async (req, res) => {
   try {
-    const { newPassword } = req.body;
-    const identifier = req.body.email;
+    // 1. Accept either 'password' or 'newPassword' from the frontend
+    const rawPassword = req.body.password || req.body.newPassword;
+    const identifier = req.body.email || req.body.identifier;
+
+    // Safety Checks to prevent 500 crashes
     if (!identifier) return res.status(400).json({ error: 'Email or username missing' });
+    if (!rawPassword) return res.status(400).json({ error: 'Password is required' });
+
     const cleanIdentifier = identifier.toLowerCase().trim();
 
-    // 1. Get the user ID and real email from profiles
+    // 2. Get the user ID and real email from profiles
     const { data: profile, error: userError } = await supabase
       .from('profiles')
       .select('id, email')
@@ -341,17 +346,17 @@ exports.resetPassword = async (req, res) => {
     if (userError) throw userError;
     if (!profile) return res.status(404).json({ error: 'User not found' });
 
-    // 2. Hash the new password
-    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    // 3. Hash the new password
+    const hashedPassword = await bcrypt.hash(rawPassword, 12);
 
-    // 3. Update Supabase Auth Vault
+    // 4. Update Supabase Auth Vault
     const { error: authError } = await supabase.auth.admin.updateUserById(
       profile.id,
-      { password: newPassword }
+      { password: rawPassword }
     );
     if (authError) throw authError;
 
-    // 4. Update your profiles table
+    // 5. Update your profiles table
     const { error: profileError } = await supabase
       .from('profiles')
       .update({ password_hash: hashedPassword })
@@ -359,7 +364,7 @@ exports.resetPassword = async (req, res) => {
 
     if (profileError) throw profileError;
 
-    // 5. Clean up old OTPs using the real email
+    // 6. Clean up old OTPs using the real email
     await supabase.from('otp_codes').delete().eq('email', profile.email).eq('purpose', 'password_reset');
 
     res.status(200).json({ message: 'Password reset successfully!' });
