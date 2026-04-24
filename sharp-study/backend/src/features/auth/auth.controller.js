@@ -277,3 +277,75 @@ exports.requestPasswordReset = async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+// --- 7. VERIFY RESET OTP ---
+exports.verifyResetOtp = async (req, res) => {
+  try {
+    const { otp } = req.body;
+    const cleanEmail = req.body.email.toLowerCase().trim();
+
+    const { data: otpRecord, error: otpError } = await supabase
+      .from('otp_codes')
+      .select('*')
+      .eq('email', cleanEmail)
+      .eq('purpose', 'password_reset')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (otpError) throw otpError;
+    if (!otpRecord) return res.status(400).json({ error: 'No valid code found' });
+    if (new Date() > new Date(otpRecord.expires_at)) return res.status(400).json({ error: 'Code expired' });
+
+    const isOtpValid = await bcrypt.compare(otp, otpRecord.code);
+    if (!isOtpValid) return res.status(400).json({ error: 'Invalid code' });
+
+    res.status(200).json({ message: 'OTP verified' });
+  } catch (error) {
+    console.error('Verify Reset OTP Error:', error);
+    res.status(500).json({ error: 'Failed to verify OTP' });
+  }
+};
+
+// --- 8. FINALIZE PASSWORD RESET ---
+exports.resetPassword = async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    const cleanEmail = req.body.email.toLowerCase().trim();
+
+    // 1. Get the user ID from profiles
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', cleanEmail)
+      .single();
+
+    if (!profile) return res.status(404).json({ error: 'User not found' });
+
+    // 2. Hash the new password
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    // 3. Update Supabase Auth Vault
+    const { error: authError } = await supabase.auth.admin.updateUserById(
+      profile.id,
+      { password: newPassword }
+    );
+    if (authError) throw authError;
+
+    // 4. Update your profiles table
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({ password_hash: hashedPassword })
+      .eq('id', profile.id);
+
+    if (profileError) throw profileError;
+
+    // 5. Clean up old OTPs
+    await supabase.from('otp_codes').delete().eq('email', cleanEmail).eq('purpose', 'password_reset');
+
+    res.status(200).json({ message: 'Password reset successfully!' });
+  } catch (error) {
+    console.error('Reset Password Error:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+};
