@@ -5,7 +5,7 @@ import { ATMOSPHERE_PRESETS } from '../../theme/constants/themes';
  * tweaks settings. Shows how the accent color and display mode look.
  *
  * Props:
- *   draft — the current draft preferences object
+ * draft — the current draft preferences object
  */
 export default function LivePreviewCard({ draft }) {
   const preset = ATMOSPHERE_PRESETS.find((p) => p.id === draft.atmosphere)
@@ -25,9 +25,9 @@ export default function LivePreviewCard({ draft }) {
       <p className="text-sm font-semibold text-text mb-3">Live Preview</p>
 
       <div
-        className="rounded-2xl border border-border shadow-card overflow-hidden"
-        style={{ backgroundColor: bgColor }}
-        aria-hidden="true"          // decorative — screen readers skip this
+        className="rounded-2xl border shadow-card overflow-hidden"
+        style={{ backgroundColor: bgColor, borderColor: isDark ? '#2D3348' : '#E5E7EB' }}
+        aria-hidden="true"
       >
         {/* Mini topbar */}
         <div
@@ -49,7 +49,7 @@ export default function LivePreviewCard({ draft }) {
             {/* Active nav item — shows accent color */}
             <div
               className="h-5 rounded-md"
-              style={{ background: preset.bg, backgroundImage: preset.bg.startsWith('linear') ? preset.bg : undefined, backgroundColor: preset.bg.startsWith('linear') ? undefined : preset.bg }}
+              style={{ background: preset.bg }} /* Simplified styling */
             />
             {[0, 1].map((i) => (
               <div
@@ -77,10 +77,7 @@ export default function LivePreviewCard({ draft }) {
             <button
               tabIndex={-1}
               className="px-4 py-2 rounded-pill text-xs font-semibold text-white"
-              style={{
-                background: preset.bg.startsWith('linear') ? preset.bg : preset.bg,
-                backgroundColor: preset.bg.startsWith('linear') ? undefined : preset.bg,
-              }}
+              style={{ background: preset.bg }} /* Simplified styling */
             >
               Start Studying
             </button>
