@@ -222,3 +222,58 @@ exports.login = async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+// --- 6. REQUEST PASSWORD RESET OTP ---
+exports.requestPasswordReset = async (req, res) => {
+  try {
+    // 1. Grab 'identifier' from the frontend (it could be an email or username)
+    const identifier = req.body.identifier || req.body.email;
+    
+    if (!identifier) return res.status(400).json({ error: 'Email or username is required' });
+    const cleanIdentifier = identifier.toLowerCase().trim();
+
+    // 2. Search for either email OR username
+    const { data: user, error: userError } = await supabase
+      .from('profiles')
+      .select('id, email')
+      .or(`email.eq.${cleanIdentifier},username.eq.${cleanIdentifier}`)
+      .maybeSingle();
+
+    if (userError) throw userError;
+    if (!user) return res.status(404).json({ error: 'No account found with those details.' });
+
+    // 3. Generate and save OTP using the user's ACTUAL email from the database
+    const plainOtp = generateOTP();
+    const hashedOtp = await bcrypt.hash(plainOtp, 10);
+    const expiresAt = new Date(Date.now() + 10 * 60000); // 10 mins
+
+    await supabase.from('otp_codes').insert([{
+      email: user.email, // Always save OTP against their actual email
+      code: hashedOtp, 
+      purpose: 'password_reset', 
+      expires_at: expiresAt, 
+      ip_address: req.ip
+    }]);
+
+    // 4. Send Email
+    const mailOptions = {
+      from: `"Sharp Study Support" <${process.env.EMAIL_USER}>`,
+      to: user.email, // Send to their actual email
+      subject: 'Password Reset Code',
+      html: `
+        <div style="font-family: sans-serif; text-align: center; padding: 20px;">
+          <h2>Reset Your Password</h2>
+          <p>Your 6-digit password reset code is:</p>
+          <h1 style="letter-spacing: 5px; color: #E53E3E;">${plainOtp}</h1>
+          <p>This code will expire in 10 minutes.</p>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    res.status(200).json({ message: 'Reset OTP sent successfully' });
+  } catch (error) {
+    console.error('Password Reset OTP Error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};

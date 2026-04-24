@@ -8,6 +8,7 @@ import SessionTimeout from '../shared/components/SessionTimeout';
 const LandingPage    = lazy(() => import('../features/landing/pages/LandingPage'));
 const LoginPage      = lazy(() => import('../features/auth/pages/LoginPage'));
 const RegisterPage   = lazy(() => import('../features/auth/pages/RegisterPage'));
+const ForgotPassword = lazy(() => import('./features/auth/components/ForgotPassword'));
 const DashboardPage  = lazy(() => import('../features/dashboard/pages/DashboardPage'));
 const StudyGuidePage = lazy(() => import('../features/study-guide/pages/StudyGuidePage'));
 const FlashcardsPage = lazy(() => import('../features/flashcards/pages/FlashcardsPage'));
@@ -31,6 +32,7 @@ export default function AppRouter() {
           <Route path="/"          element={<LandingPage />} />
           <Route path="/login"     element={<LoginPage />} />
           <Route path="/register"  element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
 
           {/* Protected routes */}
           <Route path="/dashboard" element={
