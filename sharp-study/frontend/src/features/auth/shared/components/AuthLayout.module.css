@@ -88,38 +88,37 @@
   background-color: var(--auth-right-bg);
 }
 
-/* Logo row at the top-left of the form panel */
-.logoRow {
+/* Back button at the top-left of the form panel */
+.backBtn {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  justify-content: center;
+  width: 40px;
+  height: 40px;
   margin-bottom: var(--space-lg);
-  text-decoration: none;
+  background: none;
+  border: none;
+  cursor: pointer;
   outline: none;
   border-radius: var(--radius-sm);
   align-self: flex-start;
+  padding: 0;
+  transition: opacity 0.2s ease;
 }
 
-.logoRow:focus-visible {
+.backBtn:hover {
+  opacity: 0.8;
+}
+
+.backBtn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 
-.logoIcon {
-  color: var(--accent);
-  display: flex;
-  align-items: center;
-}
-
-.logoText {
-  font-size: var(--font-size-lg);
-  font-weight: 800;
-  color: var(--text-color);
-  letter-spacing: -0.02em;
-}
-
-.logoAccent {
-  color: var(--accent);
+.backIcon {
+  width: 24px;
+  height: 24px;
+  display: block;
 }
 
 /* Inner content area (centers the form within the right panel) */

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, BookOpen, LogOut, Settings, LayoutDashboard, Shield } from 'lucide-react';
+import { Menu, X, LogOut, Settings, LayoutDashboard, Shield } from 'lucide-react';
 import { useAuth } from '../../features/auth/context/AuthContext';
 import { useAccessibility } from '../../features/accessibility/context/AccessibilityContext';
 import AccessibilityPanel from '../../features/accessibility/components/AccessibilityPanel';
@@ -40,10 +40,10 @@ export default function Navbar() {
           to="/dashboard"
           className="flex items-center gap-2 font-bold text-xl text-[var(--text-color)]
                      focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] rounded"
-          aria-label="Sharp Study — Go to dashboard"
+          aria-label="Verso — Go to dashboard"
         >
-          <BookOpen className="text-[var(--accent)]" size={24} aria-hidden="true" />
-          <span>Sharp<span className="text-[var(--accent)]">Study</span></span>
+          <img src="/src/assets/logo/verso_logo.svg" alt="Verso" className="h-6 w-6" aria-hidden="true" />
+          <span>Verso</span>
         </Link>
 
         {/* Desktop Nav */}

@@ -41,6 +41,12 @@
   outline-offset: 3px;
 }
 
+.logoImg { 
+  max-height: 2.5rem;
+  width: auto;
+  display: block;
+}
+
 .logoIcon { color: var(--accent); display: flex; align-items: center; }
 .logoAccent { color: var(--accent); }
 
@@ -115,8 +121,43 @@
 .signupBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Mobile: hide text labels, show only icons on very small screens */
+@media (max-width: 640px) {
+  .inner {
+    padding: 0 var(--space-lg);
+  }
+  
+  .logoImg { 
+    max-height: 2rem;
+  }
+}
+
 @media (max-width: 480px) {
+  .inner {
+    height: 3rem;
+    padding: 0 var(--space-md);
+  }
+  
+  .logoImg { 
+    max-height: 1.75rem;
+  }
+  
   .loginBtnText, .signupBtnText {
     display: none;
+  }
+  
+  .themeBtn {
+    width: 2rem;
+    height: 2rem;
+  }
+  
+  .loginBtn, .signupBtn {
+    height: 2rem;
+    padding: 0 0.75rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .logoImg { 
+    max-height: 2.75rem;
   }
 }

@@ -1,12 +1,14 @@
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { MdMenuBook } from 'react-icons/md';
+import { useAccessibility } from '../../../accessibility/context/AccessibilityContext';
 import styles from './AuthLayout.module.css';
+import backButtonDark from '../../../../assets/icons/buttons/back_button_dark_mode.svg';
+import backButtonLight from '../../../../assets/icons/buttons/back_button_light_mode.svg';
 
 /**
  * Two-column auth card layout.
  * Left: image placeholder panel (visible on desktop only).
- * Right: logo + form content.
+ * Right: back button + form content.
  *
  * Usage:
  *   <AuthLayout>
@@ -14,6 +16,10 @@ import styles from './AuthLayout.module.css';
  *   </AuthLayout>
  */
 export default function AuthLayout({ children }) {
+  const navigate = useNavigate();
+  const { theme } = useAccessibility();
+  const backIcon = theme === 'dark' ? backButtonDark : backButtonLight;
+
   return (
     <div className={styles.page}>
       <div className={styles.card}>
@@ -49,19 +55,14 @@ export default function AuthLayout({ children }) {
 
         {/* ── Right: form panel ── */}
         <main className={styles.formPanel}>
-          {/* Logo — top left of the right panel */}
-          <Link
-            to="/"
-            className={styles.logoRow}
-            aria-label="Sharp Study — Go to homepage"
+          {/* Back button — top left of the right panel */}
+          <button
+            onClick={() => navigate(-1)}
+            className={styles.backBtn}
+            aria-label="Go back"
           >
-            <span className={styles.logoIcon} aria-hidden="true">
-              <MdMenuBook size={26} />
-            </span>
-            <span className={styles.logoText}>
-              Sharp<span className={styles.logoAccent}>Study</span>
-            </span>
-          </Link>
+            <img src={backIcon} alt="" className={styles.backIcon} />
+          </button>
 
           {/* Animated form content */}
           <motion.div

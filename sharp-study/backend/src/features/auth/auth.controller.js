@@ -38,9 +38,9 @@ exports.requestSignupOtp = async (req, res) => {
     if (dbError) throw dbError;
 
     const mailOptions = {
-      from: `"Sharp Study" <${process.env.EMAIL_USER}>`,
+      from: `"Verso" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: 'Your Sharp Study Verification Code',
+      subject: 'Your Verso Verification Code',
       html: `
         <div style="font-family: sans-serif; text-align: center; padding: 20px;">
           <h2>Verify your email</h2>
@@ -257,7 +257,7 @@ exports.requestPasswordReset = async (req, res) => {
 
     // 4. Send Email
     const mailOptions = {
-      from: `"Sharp Study Support" <${process.env.EMAIL_USER}>`,
+      from: `"Verso Support" <${process.env.EMAIL_USER}>`,
       to: user.email, // Send to their actual email
       subject: 'Password Reset Code',
       html: `

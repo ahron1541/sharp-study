@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { MdMenuBook, MdLightMode, MdDarkMode } from 'react-icons/md';
+import { MdLightMode, MdDarkMode } from 'react-icons/md';
 import { useAccessibility } from '../../../features/accessibility/context/AccessibilityContext';
 import styles from './LandingNav.module.css';
 
@@ -11,13 +11,12 @@ export default function LandingNav() {
       <nav className={styles.nav} aria-label="Main navigation">
         <div className={styles.inner}>
           {/* Logo */}
-          <Link to="/" className={styles.logo} aria-label="Sharp Study — Home">
-            <span className={styles.logoIcon} aria-hidden="true">
-              <MdMenuBook size={24} />
-            </span>
-            <span>
-              SHARP<span className={styles.logoAccent}>STUDY</span>
-            </span>
+          <Link to="/" className={styles.logo} aria-label="Verso — Home">
+            <img 
+              src="/src/assets/logo/verso_w_name.svg" 
+              alt="Verso" 
+              className={styles.logoImg}
+            />
           </Link>
 
           {/* Right actions */}
