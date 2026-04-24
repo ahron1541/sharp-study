@@ -282,12 +282,28 @@ exports.requestPasswordReset = async (req, res) => {
 exports.verifyResetOtp = async (req, res) => {
   try {
     const { otp } = req.body;
-    const cleanEmail = req.body.email.toLowerCase().trim();
+    // The frontend might send a username or an email under the 'email' key
+    const identifier = req.body.email;
+    if (!identifier) return res.status(400).json({ error: 'Email or username missing' });
+    const cleanIdentifier = identifier.toLowerCase().trim();
 
+    // 1. Resolve to the real email first
+    const { data: user, error: userError } = await supabase
+      .from('profiles')
+      .select('email')
+      .or(`email.eq.${cleanIdentifier},username.eq.${cleanIdentifier}`)
+      .maybeSingle();
+
+    if (userError) throw userError;
+    if (!user) return res.status(400).json({ error: 'User not found' });
+
+    const realEmail = user.email;
+
+    // 2. Look for the OTP using the REAL email
     const { data: otpRecord, error: otpError } = await supabase
       .from('otp_codes')
       .select('*')
-      .eq('email', cleanEmail)
+      .eq('email', realEmail)
       .eq('purpose', 'password_reset')
       .order('created_at', { ascending: false })
       .limit(1)
@@ -311,15 +327,18 @@ exports.verifyResetOtp = async (req, res) => {
 exports.resetPassword = async (req, res) => {
   try {
     const { newPassword } = req.body;
-    const cleanEmail = req.body.email.toLowerCase().trim();
+    const identifier = req.body.email;
+    if (!identifier) return res.status(400).json({ error: 'Email or username missing' });
+    const cleanIdentifier = identifier.toLowerCase().trim();
 
-    // 1. Get the user ID from profiles
-    const { data: profile } = await supabase
+    // 1. Get the user ID and real email from profiles
+    const { data: profile, error: userError } = await supabase
       .from('profiles')
-      .select('id')
-      .eq('email', cleanEmail)
-      .single();
+      .select('id, email')
+      .or(`email.eq.${cleanIdentifier},username.eq.${cleanIdentifier}`)
+      .maybeSingle();
 
+    if (userError) throw userError;
     if (!profile) return res.status(404).json({ error: 'User not found' });
 
     // 2. Hash the new password
@@ -340,8 +359,8 @@ exports.resetPassword = async (req, res) => {
 
     if (profileError) throw profileError;
 
-    // 5. Clean up old OTPs
-    await supabase.from('otp_codes').delete().eq('email', cleanEmail).eq('purpose', 'password_reset');
+    // 5. Clean up old OTPs using the real email
+    await supabase.from('otp_codes').delete().eq('email', profile.email).eq('purpose', 'password_reset');
 
     res.status(200).json({ message: 'Password reset successfully!' });
   } catch (error) {
