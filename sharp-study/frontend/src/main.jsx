@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom/client';
 import './i18n/index.js';
 import App from './App';
 import './styles/globals.css';
+import './styles/index.css';
+import './styles/tokens.css';
 
 // Register PWA service worker
 /*if ('serviceWorker' in navigator) {
