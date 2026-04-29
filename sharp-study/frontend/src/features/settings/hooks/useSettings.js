@@ -53,7 +53,9 @@ export function useSettings() {
       setSaved({ ...draft });
       toast.success('Preferences saved.');
     } catch (err) {
-      toast.error('Could not save preferences. Please try again.');
+      // Print the full error to the console and show the actual message on the screen
+      console.error("FULL ERROR DETAILS:", err);
+      toast.error(`Error: ${err.message}`, { duration: 6000 });
     } finally {
       setSaving(false);
     }

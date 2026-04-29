@@ -1,29 +1,25 @@
+import { API_URL } from '../../../config/api';
 import { supabase } from '../../auth/context/AuthContext';
-import { API_URL }  from '../../../config/api';
 
 /**
- * Gets a fresh access token from Supabase.
- * Clears old local tokens if the session is dead.
+ * Safely retrieves the active session token directly from Supabase's core engine,
+ * guaranteeing we never send "null" or "undefined" to the backend.
  */
-async function getFreshToken() {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      localStorage.setItem('sharp-study-token', session.access_token);
-      return session.access_token;
-    } else {
-      // If Supabase knows we aren't logged in, clear the dead token!
-      localStorage.removeItem('sharp-study-token');
-      return null;
-    }
-  } catch {
-    return null;
+async function getValidToken() {
+  const { data, error } = await supabase.auth.getSession();
+  
+  const token = data?.session?.access_token;
+
+  // Guard against missing, expired, or garbage string tokens
+  if (error || !token || token === 'null' || token === 'undefined') {
+    throw new Error('Not authenticated. Please log in again.');
   }
+  
+  return token;
 }
 
 export async function fetchPreferences() {
-  const token = await getFreshToken();
-  if (!token) throw new Error('Not authenticated.');
+  const token = await getValidToken();
 
   const res = await fetch(`${API_URL}/api/auth/preferences`, {
     headers: {
@@ -31,13 +27,15 @@ export async function fetchPreferences() {
       'Content-Type': 'application/json',
     },
   });
-  if (!res.ok) throw new Error('Failed to load preferences.');
+  
+  if (!res.ok) {
+    throw new Error('Failed to load preferences.');
+  }
   return res.json();
 }
 
 export async function savePreferences(preferences) {
-  const token = await getFreshToken();
-  if (!token) throw new Error('Not authenticated.');
+  const token = await getValidToken();
 
   const res = await fetch(`${API_URL}/api/auth/preferences`, {
     method: 'PATCH',
@@ -47,9 +45,11 @@ export async function savePreferences(preferences) {
     },
     body: JSON.stringify({ preferences }),
   });
+  
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || 'Failed to save preferences.');
   }
+  
   return res.json();
 }

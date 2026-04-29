@@ -5,7 +5,7 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error("⚠️ WARNING: Missing SUPABASE_URL or SUPABASE_ANON_KEY in backend environment variables!");
+  console.error("[WARNING] Missing SUPABASE_URL or SUPABASE_ANON_KEY in backend environment variables!");
 }
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -14,8 +14,12 @@ const requireAuth = async (req, res, next) => {
   try {
     // 1. Check if the frontend sent the Bearer token
     const authHeader = req.headers.authorization;
+    
+    // DEBUG TRAP: Print exactly what arrived from the frontend
+    console.log("DEBUG - Received Auth Header:", authHeader);
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log("❌ Auth Error: Missing or improperly formatted Authorization header.");
+      console.log("[ERROR] Auth Error: Missing or improperly formatted Authorization header.");
       return res.status(401).json({ error: 'Unauthorized: Missing token' });
     }
 
@@ -26,7 +30,7 @@ const requireAuth = async (req, res, next) => {
     const { data: { user }, error } = await supabase.auth.getUser(token);
 
     if (error || !user) {
-      console.log("❌ Auth Error: Token rejected by Supabase.", error?.message);
+      console.log("[ERROR] Auth Error: Token rejected by Supabase.", error?.message);
       return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
     }
 
@@ -34,7 +38,7 @@ const requireAuth = async (req, res, next) => {
     req.user = user;
     next();
   } catch (err) {
-    console.error("❌ Auth Middleware Exception:", err.message);
+    console.error("[ERROR] Auth Middleware Exception:", err.message);
     res.status(401).json({ error: 'Unauthorized: Server error during auth' });
   }
 };
@@ -52,13 +56,13 @@ const requireAdmin = async (req, res, next) => {
         .single();
 
       if (!profile || profile.role !== 'admin') {
-        console.log(`❌ Admin Auth Error: User ${req.user.id} attempted to access an admin route.`);
+        console.log(`[ERROR] Admin Auth Error: User ${req.user.id} attempted to access an admin route.`);
         return res.status(403).json({ error: 'Forbidden: Admin access required' });
       }
       
       next();
     } catch (err) {
-      console.error("❌ Admin Middleware Exception:", err.message);
+      console.error("[ERROR] Admin Middleware Exception:", err.message);
       res.status(500).json({ error: 'Server error verifying permissions' });
     }
   });
