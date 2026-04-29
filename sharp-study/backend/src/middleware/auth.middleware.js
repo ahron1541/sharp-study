@@ -1,40 +1,66 @@
 const { createClient } = require('@supabase/supabase-js');
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
-);
+// Initialize a standard Supabase client for auth checking
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error("⚠️ WARNING: Missing SUPABASE_URL or SUPABASE_ANON_KEY in backend environment variables!");
+}
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const requireAuth = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'No authentication token provided.' });
+  try {
+    // 1. Check if the frontend sent the Bearer token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log("❌ Auth Error: Missing or improperly formatted Authorization header.");
+      return res.status(401).json({ error: 'Unauthorized: Missing token' });
+    }
+
+    // 2. Extract the actual token string
+    const token = authHeader.split(' ')[1];
+
+    // 3. Ask Supabase if this token is valid and who it belongs to
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
+      console.log("❌ Auth Error: Token rejected by Supabase.", error?.message);
+      return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
+    }
+
+    // 4. Success! Attach the user to the request and let them through
+    req.user = user;
+    next();
+  } catch (err) {
+    console.error("❌ Auth Middleware Exception:", err.message);
+    res.status(401).json({ error: 'Unauthorized: Server error during auth' });
   }
-
-  const token = authHeader.split(' ')[1];
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-
-  if (error || !user) {
-    return res.status(401).json({ error: 'Invalid or expired session.' });
-  }
-
-  req.user = user;
-  next();
 };
 
 const requireAdmin = async (req, res, next) => {
+  // Use requireAuth to verify identity first
   await requireAuth(req, res, async () => {
-    const { supabaseAdmin } = require('../config/supabase');
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('role, is_blocked')
-      .eq('id', req.user.id)
-      .single();
+    try {
+      const { supabaseAdmin } = require('../config/supabase');
+      // Check the database to see if they have the admin role
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('role')
+        .eq('id', req.user.id)
+        .single();
 
-    if (!profile || profile.role !== 'admin' || profile.is_blocked) {
-      return res.status(403).json({ error: 'Admin access required.' });
+      if (!profile || profile.role !== 'admin') {
+        console.log(`❌ Admin Auth Error: User ${req.user.id} attempted to access an admin route.`);
+        return res.status(403).json({ error: 'Forbidden: Admin access required' });
+      }
+      
+      next();
+    } catch (err) {
+      console.error("❌ Admin Middleware Exception:", err.message);
+      res.status(500).json({ error: 'Server error verifying permissions' });
     }
-    next();
   });
 };
 
