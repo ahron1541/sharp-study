@@ -4,15 +4,18 @@ import { AuthProvider } from './features/auth/context/AuthContext';
 import AppRouter from './router/AppRouter';
 import CookieConsent from './shared/components/CookieConsent';
 import OfflineScreen from './shared/components/OfflineScreen';
+import SkeletonLoader from './shared/components/SkeletonLoader';
 import { useTheme } from './features/theme/hooks/useTheme';
 
 export default function App() {
   // Theme is applied before first render via localStorage
-  useTheme(); 
+  const { loadingPreferences } = useTheme();
 
   return (
     <AccessibilityProvider>
       <AuthProvider>
+        {loadingPreferences && <SkeletonLoader />}
+
         <AppRouter />
         
         {/* Global toast notifications */}

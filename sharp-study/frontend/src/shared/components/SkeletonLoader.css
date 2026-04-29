@@ -1,0 +1,360 @@
+/* Skeleton Loader Styles with Shimmer Animation */
+
+/* Base skeleton page layout */
+.skeleton-page {
+  min-height: 100vh;
+  background: var(--color-bg, #f8fafc);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Shimmer animation */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes slideUp {
+  0% {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Skeleton base styles */
+.skeleton-text,
+.skeleton-icon,
+.skeleton-avatar,
+.skeleton-button,
+.skeleton-dot,
+.skeleton-checkbox,
+.skeleton-progress-bar {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-2, #e2e8f0) 25%,
+    var(--color-surface-3, #f1f5f9) 50%,
+    var(--color-surface-2, #e2e8f0) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+  border-radius: 4px;
+}
+
+/* Dark mode shimmer */
+[data-display="dark"] .skeleton-text,
+[data-display="dark"] .skeleton-icon,
+[data-display="dark"] .skeleton-avatar,
+[data-display="dark"] .skeleton-button,
+[data-display="dark"] .skeleton-dot,
+[data-display="dark"] .skeleton-checkbox,
+[data-display="dark"] .skeleton-progress-bar {
+  background: linear-gradient(
+    90deg,
+    #1e293b 25%,
+    #334155 50%,
+    #1e293b 75%
+  );
+  background-size: 200% 100%;
+}
+
+/* Text sizes */
+.skeleton-text-xs {
+  height: 12px;
+  width: 60px;
+}
+
+.skeleton-text-sm {
+  height: 14px;
+  width: 80px;
+}
+
+.skeleton-text-md {
+  height: 16px;
+  width: 120px;
+}
+
+.skeleton-text-lg {
+  height: 24px;
+  width: 200px;
+}
+
+.skeleton-text-xl {
+  height: 32px;
+  width: 48px;
+}
+
+.skeleton-text-2xl {
+  height: 40px;
+  width: 56px;
+}
+
+/* Top Bar Skeleton */
+.skeleton-topbar {
+  height: 60px;
+  padding: 0 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--color-surface, #ffffff);
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+}
+
+.skeleton-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
+/* Main Content */
+.skeleton-content {
+  flex: 1;
+  padding: 1.5rem;
+  max-width: 1440px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Banner */
+.skeleton-banner {
+  height: 120px;
+  border-radius: 1rem;
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-2, #e2e8f0) 25%,
+    var(--color-surface-3, #f1f5f9) 50%,
+    var(--color-surface-2, #e2e8f0) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+[data-display="dark"] .skeleton-banner {
+  background: linear-gradient(
+    90deg,
+    #1e293b 25%,
+    #334155 50%,
+    #1e293b 75%
+  );
+  background-size: 200% 100%;
+}
+
+/* Stats */
+.skeleton-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.skeleton-stat-card {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 1rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.skeleton-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+}
+
+.skeleton-icon-small {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+/* Main Grid */
+.skeleton-main-grid {
+  display: flex;
+  gap: 1.25rem;
+}
+
+/* Section */
+.skeleton-section {
+  flex: 1;
+}
+
+.skeleton-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+/* Cards Grid */
+.skeleton-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+.skeleton-card {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.skeleton-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.skeleton-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
+.skeleton-button {
+  height: 32px;
+  width: 64px;
+  border-radius: 8px;
+}
+
+.skeleton-button-small {
+  height: 32px;
+  width: 32px;
+  border-radius: 8px;
+}
+
+/* Sidebar */
+.skeleton-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Widgets */
+.skeleton-widget {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.skeleton-streak-number {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.skeleton-weekly-dots {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.skeleton-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+
+.skeleton-progress-bar {
+  height: 8px;
+  width: 100%;
+  border-radius: 4px;
+}
+
+/* Goals */
+.skeleton-goals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.skeleton-goal-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.skeleton-checkbox {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .skeleton-main-grid {
+    flex-direction: column;
+  }
+
+  .skeleton-sidebar {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .skeleton-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .skeleton-cards-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .skeleton-content {
+    padding: 1rem;
+  }
+}
+
+/* Staggered animation for cards */
+.skeleton-card:nth-child(1) {
+  animation: slideUp 0.4s ease-out;
+}
+
+.skeleton-card:nth-child(2) {
+  animation: slideUp 0.5s ease-out;
+}
+
+.skeleton-card:nth-child(3) {
+  animation: slideUp 0.6s ease-out;
+}
+
+.skeleton-widget:nth-child(1) {
+  animation: slideUp 0.5s ease-out;
+}
+
+.skeleton-widget:nth-child(2) {
+  animation: slideUp 0.6s ease-out;
+}
