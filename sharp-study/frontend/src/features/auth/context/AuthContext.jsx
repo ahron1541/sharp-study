@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { applyPreferences } from '../../theme/hooks/useTheme';
+import { DEFAULT_PREFERENCES } from '../../theme/constants/themes';
 
 // Singleton pattern to prevent Vite HMR from creating multiple instances
 if (!globalThis.supabase) {
@@ -57,8 +59,16 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const resetThemeOnLogout = () => {
+    applyPreferences(DEFAULT_PREFERENCES);
+    localStorage.removeItem('sharp-study-token');
+    localStorage.removeItem('sharp-study-refresh');
+    localStorage.removeItem('sharp-study-role');
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
+    resetThemeOnLogout();
   };
 
   return (

@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { applyPreferences } from '../../theme/hooks/useTheme';
-import { savePreferences }  from '../../theme/services/preferences.service';
+import { fetchPreferences, savePreferences } from '../../theme/services/preferences.service';
 import { DEFAULT_PREFERENCES } from '../../theme/constants/themes';
 import toast from 'react-hot-toast';
 
@@ -27,6 +27,29 @@ export function useSettings() {
   const [saved,   setSaved]   = useState(() => loadCurrent());
   const [draft,   setDraft]   = useState(() => loadCurrent());
   const [saving,  setSaving]  = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('sharp-study-token');
+    if (!token) return;
+
+    let isMounted = true;
+    fetchPreferences()
+      .then(({ preferences }) => {
+        if (!isMounted || !preferences) return;
+
+        const nextPrefs = { ...DEFAULT_PREFERENCES, ...preferences };
+        setSaved(nextPrefs);
+        setDraft(nextPrefs);
+        applyPreferences(nextPrefs);
+      })
+      .catch(() => {
+        // Keep local cache or default state if server fetch fails.
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   /** Update a single field in the draft and apply instantly for live preview */
   const updateDraft = useCallback((key, value) => {
