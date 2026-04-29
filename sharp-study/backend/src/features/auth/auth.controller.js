@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+const supabaseAuth = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -206,7 +207,17 @@ exports.login = async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // 5. Success (Log success without sensitive data)
+    // 5. Sign in the user through Supabase so the frontend can store a valid auth session.
+    const { data: authData, error: authError } = await supabaseAuth.auth.signInWithPassword({
+      email: user.email,
+      password,
+    });
+
+    if (authError || !authData?.session) {
+      console.error('Supabase sign-in failed during login:', authError?.message || authError);
+      return res.status(500).json({ error: 'Failed to create auth session. Please try again.' });
+    }
+
     await supabase.from('login_attempts').insert([{ 
       email: user.email, 
       ip_address: req.ip, 
@@ -215,6 +226,8 @@ exports.login = async (req, res) => {
 
     res.status(200).json({
       message: 'Login successful',
+      access_token: authData.session.access_token,
+      refresh_token: authData.session.refresh_token,
       user: { id: user.id, email: user.email, username: user.username }
     });
   } catch (error) {

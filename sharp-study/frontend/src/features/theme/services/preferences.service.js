@@ -7,8 +7,7 @@ import { supabase } from '../../auth/context/AuthContext';
  */
 async function getValidToken() {
   const { data, error } = await supabase.auth.getSession();
-  
-  const token = data?.session?.access_token;
+  const token = data?.session?.access_token || localStorage.getItem('sharp-study-token');
 
   // Guard against missing, expired, or garbage string tokens
   if (error || !token || token === 'null' || token === 'undefined') {
