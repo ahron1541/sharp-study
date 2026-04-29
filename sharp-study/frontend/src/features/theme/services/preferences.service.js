@@ -1,11 +1,30 @@
-import { API_URL } from '../../../config/api';
+import { supabase } from '../../auth/context/AuthContext';
+import { API_URL }  from '../../../config/api';
 
 /**
- * Fetch the current user's preferences from the backend.
- * The backend reads the profiles.preferences JSONB column.
+ * Gets a fresh access token from Supabase.
+ * Clears old local tokens if the session is dead.
  */
+async function getFreshToken() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      localStorage.setItem('sharp-study-token', session.access_token);
+      return session.access_token;
+    } else {
+      // If Supabase knows we aren't logged in, clear the dead token!
+      localStorage.removeItem('sharp-study-token');
+      return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchPreferences() {
-  const token = localStorage.getItem('sharp-study-token');
+  const token = await getFreshToken();
+  if (!token) throw new Error('Not authenticated.');
+
   const res = await fetch(`${API_URL}/api/auth/preferences`, {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -13,14 +32,13 @@ export async function fetchPreferences() {
     },
   });
   if (!res.ok) throw new Error('Failed to load preferences.');
-  return res.json(); // returns { preferences: { ... } }
+  return res.json();
 }
 
-/**
- * Persist updated preferences to the backend.
- */
 export async function savePreferences(preferences) {
-  const token = localStorage.getItem('sharp-study-token');
+  const token = await getFreshToken();
+  if (!token) throw new Error('Not authenticated.');
+
   const res = await fetch(`${API_URL}/api/auth/preferences`, {
     method: 'PATCH',
     headers: {
@@ -29,6 +47,9 @@ export async function savePreferences(preferences) {
     },
     body: JSON.stringify({ preferences }),
   });
-  if (!res.ok) throw new Error('Failed to save preferences.');
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Failed to save preferences.');
+  }
   return res.json();
 }

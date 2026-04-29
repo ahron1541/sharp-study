@@ -2,113 +2,167 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ═══════════════════════════════════════════════════
-   DISPLAY MODE VARIABLES (Light is default / :root)
-═══════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════
+   GOOGLE FONTS — loaded here so no separate link tag is needed
+═══════════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
 
+/* ═══════════════════════════════════════════════════════════════
+   DISPLAY MODE — LIGHT (default)
+═══════════════════════════════════════════════════════════════ */
 :root,
 [data-display="light"] {
-  --color-bg:           #F0F2F5;
+  --color-bg:           #F0F2F7;
   --color-surface:      #FFFFFF;
-  --color-surface-2:    #F9FAFB;
-  --color-border:       #E5E7EB;
-  --color-text:         #111827;
+  --color-surface-2:    #F7F8FC;
+  --color-border:       #E4E7EF;
+  --color-text:         #0D1117;
   --color-text-muted:   #6B7280;
-  --color-sidebar:      #FFFFFF;
-  --color-sidebar-text: #374151;
+  --color-sidebar:           #FFFFFF;
+  --color-sidebar-text:      #374151;
   --color-sidebar-active-text: #FFFFFF;
-  --scrollbar-track:    #F0F2F5;
-  --scrollbar-thumb:    #D1D5DB;
+  --scrollbar-track:       #F0F2F7;
+  --scrollbar-thumb:       #D1D5DB;
   --scrollbar-thumb-hover: #9CA3AF;
+  --color-streak:        #F97316;
+  --color-streak-bg:     #FFF7ED;
+  --color-xp:            #8B5CF6;
+  --color-xp-bg:         #F5F3FF;
+  --color-goal-done:     #22C55E;
+  --color-goal-track:    #E5E7EB;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   DISPLAY MODE — DARK
+═══════════════════════════════════════════════════════════════ */
 [data-display="dark"] {
-  --color-bg:           #0F1117;
-  --color-surface:      #1A1D27;
-  --color-surface-2:    #222536;
-  --color-border:       #2D3348;
-  --color-text:         #E8E8E8;
-  --color-text-muted:   #94A3B8;
-  --color-sidebar:      #1A1D27;
-  --color-sidebar-text: #CBD5E1;
+  --color-bg:           #0B0D14;
+  --color-surface:      #141720;
+  --color-surface-2:    #1C1F2E;
+  --color-border:       #252A3D;
+  --color-text:         #EDF0F7;
+  --color-text-muted:   #8892A4;
+  --color-sidebar:           #141720;
+  --color-sidebar-text:      #A8B5CC;
   --color-sidebar-active-text: #FFFFFF;
-  --scrollbar-track:    #0F1117;
-  --scrollbar-thumb:    #2D3348;
-  --scrollbar-thumb-hover: #3D4460;
+  --scrollbar-track:       #0B0D14;
+  --scrollbar-thumb:       #252A3D;
+  --scrollbar-thumb-hover: #343B58;
+  --color-streak:        #FB923C;
+  --color-streak-bg:     rgba(251, 146, 60, 0.12);
+  --color-xp:            #A78BFA;
+  --color-xp-bg:         rgba(167, 139, 250, 0.12);
+  --color-goal-done:     #4ADE80;
+  --color-goal-track:    #252A3D;
 }
 
-/* ═══════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════
    ATMOSPHERE PRESETS
-   Each preset sets --color-accent and gradient variables.
-   Accent text is the foreground color shown on the accent bg.
-═══════════════════════════════════════════════════ */
-
+═══════════════════════════════════════════════════════════════ */
 :root,
 [data-atmosphere="classic-solid"] {
-  --color-accent:       #2563EB;
-  --color-accent-hover: #1D4ED8;
-  --color-accent-text:  #FFFFFF;
+  --color-accent:            #2563EB;
+  --color-accent-hover:      #1D4ED8;
+  --color-accent-text:       #FFFFFF;
   --color-sidebar-active-bg: #2563EB;
-  --gradient-accent: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+  --gradient-accent: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
 }
 
 [data-atmosphere="ocean-breeze"] {
-  --color-accent:       #0891B2;
-  --color-accent-hover: #0E7490;
-  --color-accent-text:  #FFFFFF;
+  --color-accent:            #0891B2;
+  --color-accent-hover:      #0E7490;
+  --color-accent-text:       #FFFFFF;
   --color-sidebar-active-bg: #0891B2;
-  --gradient-accent: linear-gradient(135deg, #06B6D4 0%, #0E7490 100%);
+  --gradient-accent: linear-gradient(135deg, #22D3EE 0%, #0E7490 100%);
 }
 
 [data-atmosphere="discord-dark"] {
-  --color-accent:       #7C3AED;
-  --color-accent-hover: #6D28D9;
-  --color-accent-text:  #FFFFFF;
+  --color-accent:            #7C3AED;
+  --color-accent-hover:      #6D28D9;
+  --color-accent-text:       #FFFFFF;
   --color-sidebar-active-bg: #7C3AED;
-  --gradient-accent: linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%);
+  --gradient-accent: linear-gradient(135deg, #A78BFA 0%, #6D28D9 100%);
 }
 
 [data-atmosphere="cyberpunk"] {
-  --color-accent:       #DB2777;
-  --color-accent-hover: #BE185D;
-  --color-accent-text:  #FFFFFF;
+  --color-accent:            #DB2777;
+  --color-accent-hover:      #BE185D;
+  --color-accent-text:       #FFFFFF;
   --color-sidebar-active-bg: #DB2777;
-  --gradient-accent: linear-gradient(135deg, #EC4899 0%, #BE185D 100%);
+  --gradient-accent: linear-gradient(135deg, #F472B6 0%, #BE185D 100%);
 }
 
 [data-atmosphere="sunset-gradient"] {
-  --color-accent:       #EA580C;
-  --color-accent-hover: #C2410C;
-  --color-accent-text:  #FFFFFF;
+  --color-accent:            #EA580C;
+  --color-accent-hover:      #C2410C;
+  --color-accent-text:       #FFFFFF;
   --color-sidebar-active-bg: #EA580C;
-  --gradient-accent: linear-gradient(135deg, #F97316 0%, #C2410C 100%);
+  --gradient-accent: linear-gradient(135deg, #FB923C 0%, #C2410C 100%);
 }
 
 [data-atmosphere="matcha-minimal"] {
-  --color-accent:       #16A34A;
-  --color-accent-hover: #15803D;
-  --color-accent-text:  #FFFFFF;
+  --color-accent:            #16A34A;
+  --color-accent-hover:      #15803D;
+  --color-accent-text:       #FFFFFF;
   --color-sidebar-active-bg: #16A34A;
-  --gradient-accent: linear-gradient(135deg, #22C55E 0%, #15803D 100%);
+  --gradient-accent: linear-gradient(135deg, #4ADE80 0%, #15803D 100%);
 }
 
 [data-atmosphere="vercel-mono"] {
-  --color-accent:       #18181B;
-  --color-accent-hover: #27272A;
-  --color-accent-text:  #FAFAFA;
+  --color-accent:            #18181B;
+  --color-accent-hover:      #27272A;
+  --color-accent-text:       #FAFAFA;
   --color-sidebar-active-bg: #18181B;
-  --gradient-accent: linear-gradient(135deg, #3F3F46 0%, #18181B 100%);
+  --gradient-accent: linear-gradient(135deg, #52525B 0%, #18181B 100%);
 }
 
-/* ═══════════════════════════════════════════════════
-   TYPOGRAPHY SCALE
-   --font-scale is set by the font size slider (14–22px).
-   Setting it on <html> makes all rem values cascade.
-═══════════════════════════════════════════════════ */
+[data-atmosphere="aurora"] {
+  --color-accent:            #0EA5E9;
+  --color-accent-hover:      #0284C7;
+  --color-accent-text:       #FFFFFF;
+  --color-sidebar-active-bg: #0EA5E9;
+  --gradient-accent: linear-gradient(135deg, #38BDF8 0%, #6366F1 100%);
+}
 
+[data-atmosphere="rose-gold"] {
+  --color-accent:            #E11D48;
+  --color-accent-hover:      #BE123C;
+  --color-accent-text:       #FFFFFF;
+  --color-sidebar-active-bg: #E11D48;
+  --gradient-accent: linear-gradient(135deg, #FB7185 0%, #9F1239 100%);
+}
+
+[data-atmosphere="forest"] {
+  --color-accent:            #065F46;
+  --color-accent-hover:      #064E3B;
+  --color-accent-text:       #FFFFFF;
+  --color-sidebar-active-bg: #065F46;
+  --gradient-accent: linear-gradient(135deg, #34D399 0%, #064E3B 100%);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BACKWARD-COMPAT ALIASES
+═══════════════════════════════════════════════════════════════ */
+:root {
+  --bg-color:    var(--color-bg);
+  --card-bg:     var(--color-surface);
+  --card-border: var(--color-border);
+  --text-color:  var(--color-text);
+  --muted:       var(--color-text-muted);
+  --accent:      var(--color-accent);
+  --accent-hover: var(--color-accent-hover);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TYPOGRAPHY
+═══════════════════════════════════════════════════════════════ */
 :root {
   --font-scale: 16px;
-  --font-body: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-body: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+[data-font="syne"] body {
+  font-family: 'Syne', ui-sans-serif, system-ui, sans-serif;
 }
 
 html {
@@ -121,15 +175,17 @@ body {
   color: var(--color-text);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition: background-color 0.25s ease, color 0.25s ease;
+  margin: 0;
+  padding: 0;
 }
 
-/* Font family options */
 [data-font="opendyslexic"] body,
 [data-font="opendyslexic"] * {
-  font-family: 'OpenDyslexic', sans-serif !important;
-  letter-spacing: 0.05em;
-  word-spacing: 0.15em;
+  font-family: 'Arial', 'Verdana', 'Trebuchet MS', sans-serif !important;
+  letter-spacing: 0.08em;
+  word-spacing: 0.18em;
+  line-height: 1.9;
 }
 
 [data-font="serif"] body {
@@ -140,60 +196,41 @@ body {
   font-family: 'Courier New', 'Lucida Console', monospace;
 }
 
-/* ═══════════════════════════════════════════════════
-   CUSTOM SCROLLBAR
-   Webkit-only — Firefox uses scrollbar-color (below).
-═══════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════
+   ROOT ELEMENT
+═══════════════════════════════════════════════════════════════ */
+#root {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
 
+/* ═══════════════════════════════════════════════════════════════
+   CUSTOM SCROLLBAR
+═══════════════════════════════════════════════════════════════ */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); border-radius: 999px; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
-::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
-  border-radius: 999px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover);
-}
-
-/* ═══════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════
    GLOBAL RESETS
-═══════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; }
+img, video { max-width: 100%; height: auto; display: block; }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-img,
-video {
-  max-width: 100%;
-  height: auto;
-  display: block;
-}
-
-/* Focus ring — WCAG compliant */
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
-/* Skip link for keyboard users */
 .skip-link {
   position: absolute;
   top: -100%;
@@ -206,7 +243,34 @@ video {
   z-index: 9999;
   transition: top 0.15s;
 }
+.skip-link:focus { top: 0; }
 
-.skip-link:focus {
-  top: 0;
+/* ═══════════════════════════════════════════════════════════════
+   GAMIFICATION — streak fire animation
+═══════════════════════════════════════════════════════════════ */
+@keyframes pulse-streak {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.12); }
+}
+
+.streak-pulse {
+  animation: pulse-streak 2s ease-in-out infinite;
+}
+
+@keyframes progress-fill {
+  from { width: 0%; }
+  to   { width: var(--progress-target); }
+}
+
+.progress-animate {
+  animation: progress-fill 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.count-animate {
+  animation: count-up 0.4s ease-out forwards;
 }

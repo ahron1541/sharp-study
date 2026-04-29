@@ -63,7 +63,7 @@ export default function TopBar({ onMenuToggle }) {
       role="banner"
     >
       {/* Left: hamburger + logo (shown only on mobile when sidebar is closed) */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1">
         <button
           onClick={onMenuToggle}
           aria-label="Toggle navigation menu"
@@ -71,14 +71,18 @@ export default function TopBar({ onMenuToggle }) {
             p-2 rounded-lg text-muted hover:bg-surface-2
             transition-colors focus-visible:outline-none
             focus-visible:ring-2 focus-visible:ring-accent
+            flex-shrink-0
           "
         >
           <Menu size={20} aria-hidden="true" />
         </button>
 
-        <span className="font-black text-text tracking-tight text-base select-none">
-          LOGO
-        </span>
+        <img 
+          src="/src/assets/logo/verso_logo.svg" 
+          alt="Verso"
+          className="h-3 sm:h-4 w-auto max-w-none flex-shrink-0"
+          style={{ maxHeight: '1rem' }}
+        />
       </div>
 
       {/* Right: theme toggle + welcome + user menu */}

@@ -7,7 +7,6 @@ import {
   Settings,
   Menu,
   X,
-  BookOpen,
 } from 'lucide-react';
 import { useAuth } from '../../auth/context/AuthContext';
 
@@ -47,17 +46,12 @@ export default function Sidebar({
       className={baseClasses}
     >
       {/* Logo row */}
-      <div className="flex items-center gap-3 px-4 h-14 border-b border-border flex-shrink-0">
-        <BookOpen
-          size={22}
-          className="text-accent flex-shrink-0"
-          aria-hidden="true"
+      <div className="flex items-center justify-center px-4 h-14 border-b border-border flex-shrink-0">
+        <img 
+          src="/src/assets/logo/verso_w_name.svg" 
+          alt="Verso"
+          className={`${collapsed ? 'h-8' : 'h-10'} w-auto transition-all duration-200`}
         />
-        {!collapsed && (
-          <span className="font-extrabold text-text tracking-tight text-base whitespace-nowrap">
-            SHARP<span className="text-accent">STUDY</span>
-          </span>
-        )}
       </div>
 
       {/* Nav items */}
