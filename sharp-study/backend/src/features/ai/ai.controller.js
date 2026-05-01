@@ -178,6 +178,15 @@ const generateMaterials = [
       res.json({ success: true, generated: generateOptions });
     } catch (err) {
       console.error('AI generation error:', err);
+      
+      // Check if it's an overloaded API error
+      if (err.status === 503 || (err.message && err.message.includes('503'))) {
+        return res.status(503).json({ 
+          error: 'The AI is currently experiencing high demand. Please wait a few seconds and try again.' 
+        });
+      }
+
+      // Default fallback error
       res.status(500).json({ error: 'AI generation failed. Please try again.' });
     }
   },
