@@ -1,8 +1,14 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-// Free tier model - gemini-1.5-flash is specifically free tier eligible
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+// Use v1 API and gemini-2.0-flash (the current free tier model)
+const model = genAI.getGenerativeModel({ 
+  model: 'gemini-2.0-flash',
+  generationConfig: {
+    temperature: 0.7,
+    maxOutputTokens: 2048,
+  }
+});
 
 async function generateStudyGuide(extractedText) {
   const prompt = `
