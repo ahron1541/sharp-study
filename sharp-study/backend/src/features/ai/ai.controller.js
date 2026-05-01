@@ -1,5 +1,5 @@
 const multer = require('multer');
-const pdfParse = require('pdf-parse');
+const pdfParse = require('pdf-parse').default || require('pdf-parse');
 const mammoth = require('mammoth');  // npm install mammoth (for .docx)
 const { supabaseAdmin } = require('../../config/supabase');
 const { generateStudyGuide, generateFlashcards, generateQuiz } = require('./ai.service');
