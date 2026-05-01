@@ -1,5 +1,18 @@
 const multer = require('multer');
-const pdfParse = require('pdf-parse').default || require('pdf-parse');
+
+// Handle pdf-parse for both CommonJS and ES Module exports
+let pdfParse;
+try {
+  pdfParse = require('pdf-parse');
+  // If it has a default property (ESM export), use it, otherwise use the module directly
+  if (pdfParse && pdfParse.default) {
+    pdfParse = pdfParse.default;
+  }
+} catch (e) {
+  console.error('Failed to load pdf-parse:', e.message);
+  pdfParse = null;
+}
+
 const mammoth = require('mammoth');  // npm install mammoth (for .docx)
 const { supabaseAdmin } = require('../../config/supabase');
 const { generateStudyGuide, generateFlashcards, generateQuiz } = require('./ai.service');
