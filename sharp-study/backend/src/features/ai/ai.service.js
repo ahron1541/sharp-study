@@ -1,7 +1,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-// Use v1 API and gemini-2.0-flash (the current free tier model)
+// Use v1 API and gemini-2.5-flash (the current free tier model)
 const model = genAI.getGenerativeModel({ 
   model: 'gemini-2.5-flash',
   generationConfig: {
@@ -9,6 +9,28 @@ const model = genAI.getGenerativeModel({
     maxOutputTokens: 2048,
   }
 });
+
+/**
+ * Wraps an API call with automatic retries for 503 errors.
+ */
+async function withRetry(apiCall, maxRetries = 3, initialDelayMs = 2000) {
+  let delay = initialDelayMs;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await apiCall();
+    } catch (error) {
+      // If it's a 503 error AND we haven't run out of retries
+      if (error.status === 503 && attempt < maxRetries) {
+        console.warn(`[Attempt ${attempt}/${maxRetries}] Gemini API busy (503). Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2; // Double the delay for the next attempt
+      } else {
+        throw error;
+      }
+    }
+  }
+}
 
 async function generateStudyGuide(extractedText) {
   const prompt = `
@@ -27,7 +49,8 @@ Lesson text:
 ${extractedText.substring(0, 8000)}
 """
   `;
-  const result = await model.generateContent(prompt);
+  // Wrapped in withRetry
+  const result = await withRetry(() => model.generateContent(prompt));
   return result.response.text();
 }
 
@@ -42,7 +65,8 @@ Text:
 ${extractedText.substring(0, 6000)}
 """
   `;
-  const result = await model.generateContent(prompt);
+  // Wrapped in withRetry
+  const result = await withRetry(() => model.generateContent(prompt));
   const raw = result.response.text().trim().replace(/```json|```/g, '').trim();
   return JSON.parse(raw);
 }
@@ -63,7 +87,8 @@ Text:
 ${extractedText.substring(0, 6000)}
 """
   `;
-  const result = await model.generateContent(prompt);
+  // Wrapped in withRetry
+  const result = await withRetry(() => model.generateContent(prompt));
   const raw = result.response.text().trim().replace(/```json|```/g, '').trim();
   return JSON.parse(raw);
 }
