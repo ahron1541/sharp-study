@@ -1,34 +1,11 @@
 const multer = require('multer');
-const pdfParseRaw = require('pdf-parse'); 
+const { PDFParse } = require('pdf-parse'); // Correctly import the v2 class
 const mammoth = require('mammoth');
 const { supabaseAdmin } = require('../../config/supabase');
 const { generateStudyGuide, generateFlashcards, generateQuiz } = require('./ai.service');
 const { invalidateDashboardCache } = require('../dashboard/dashboard.cache');
 
-// ==========================================
-// 🛑 DEBUGGING BLOCK: WHAT IS PDF-PARSE? 🛑
-// ==========================================
-console.log('\n\n====================================');
-console.log('🔍 DEBUG: INSPECTING PDF-PARSE IMPORT');
-console.log('Type of import:', typeof pdfParseRaw);
-console.log('Is it null?', pdfParseRaw === null);
-if (pdfParseRaw && typeof pdfParseRaw === 'object') {
-    console.log('Available keys inside the object:', Object.keys(pdfParseRaw));
-    console.log('Does it have a .default?', !!pdfParseRaw.default);
-    console.log('Type of .default:', typeof pdfParseRaw.default);
-}
-console.log('Raw output of import:', pdfParseRaw);
-console.log('====================================\n\n');
-
-// Attempt to intelligently grab the function based on the debug output
-let pdfParseFunc = null;
-if (typeof pdfParseRaw === 'function') {
-    pdfParseFunc = pdfParseRaw;
-} else if (pdfParseRaw && typeof pdfParseRaw.default === 'function') {
-    pdfParseFunc = pdfParseRaw.default;
-}
-
-// Multer — store file in memory (not disk), max 150MB, whitelist types
+// Multer - store file in memory (not disk), max 150MB, whitelist types
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 150 * 1024 * 1024 },
@@ -50,15 +27,21 @@ const upload = multer({
 
 async function extractText(file) {
   if (file.mimetype === 'application/pdf') {
-    if (!pdfParseFunc) {
-      console.error('CRITICAL: We still cannot find the PDF parsing function. Look at the debug logs above!');
-      throw new Error('PDF parsing library is completely broken or missing.');
+    try {
+      // Use the new v2 API structure
+      const parser = new PDFParse({ data: file.buffer });
+      const result = await parser.getText();
+      
+      // Clean up memory if the method is available
+      if (typeof parser.destroy === 'function') {
+        await parser.destroy();
+      }
+      
+      return result.text;
+    } catch (err) {
+      console.error('PDF parsing failed:', err);
+      throw new Error('Failed to parse PDF document.');
     }
-    
-    console.log('Attempting to parse PDF. Buffer size:', file.buffer.length);
-    const data = await pdfParseFunc(file.buffer);
-    console.log('PDF parsed successfully! Extracted characters:', data.text.length);
-    return data.text;
   }
   
   if (file.mimetype.includes('wordprocessingml')) {
@@ -70,6 +53,7 @@ async function extractText(file) {
     return file.buffer.toString('utf8');
   }
   
+  // For PPTX: basic text extraction
   return file.buffer.toString('utf8').replace(/[^\x20-\x7E\n]/g, ' ').trim();
 }
 
@@ -92,7 +76,6 @@ const generateMaterials = [
       }
 
       console.log('--- STARTING GENERATION PROCESS ---');
-      console.log('File type:', file.mimetype);
 
       const extractedText = await extractText(file);
       if (!extractedText || extractedText.trim().length < 100) {
@@ -101,7 +84,13 @@ const generateMaterials = [
 
       const userId = req.user.id;
       const docTitle = file.originalname.replace(/\.[^.]+$/, '');
-      const fileType = file.mimetype.includes('pdf') ? 'pdf' : file.mimetype.includes('word') ? 'docx' : file.mimetype.includes('presentationml') ? 'pptx' : null;
+      const fileType = file.mimetype.includes('pdf') 
+        ? 'pdf' 
+        : file.mimetype.includes('word') 
+          ? 'docx' 
+          : file.mimetype.includes('presentationml') 
+            ? 'pptx' 
+            : null;
 
       const { data: doc, error: docError } = await supabaseAdmin
         .from('documents')
