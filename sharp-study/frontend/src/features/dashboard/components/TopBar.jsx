@@ -1,24 +1,17 @@
-import { Menu, Moon, Sun, User } from 'lucide-react';
+import { Menu, User } from 'lucide-react';
 import { useAuth } from '../../auth/context/AuthContext';
 import { useRef, useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { applyPreferences } from '../../theme/hooks/useTheme';
-import { DEFAULT_PREFERENCES } from '../../theme/constants/themes';
+import versoLogo from '../../../assets/logo/verso_logo.svg';
 
-/**
- * Top application bar.
- *
- * Props:
- *   onMenuToggle — () => void   called when hamburger is clicked
- */
 export default function TopBar({ onMenuToggle }) {
   const { profile, signOut } = useAuth();
   const navigate = useNavigate();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [isDark, setIsDark] = useState(
-    document.documentElement.getAttribute('data-display') === 'dark'
-  );
   const menuRef = useRef(null);
+
+  // UX FIX: Check if we are waiting for the profile to sync
+  const isTransitioning = !profile;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -30,20 +23,6 @@ export default function TopBar({ onMenuToggle }) {
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
   }, []);
-
-  const toggleDisplayMode = () => {
-    const next = isDark ? 'light' : 'dark';
-    setIsDark(!isDark);
-
-    // Read current prefs from localStorage and flip display_mode
-    let currentPrefs = DEFAULT_PREFERENCES;
-    try {
-      const raw = localStorage.getItem('sharp-study-prefs');
-      if (raw) currentPrefs = { ...DEFAULT_PREFERENCES, ...JSON.parse(raw) };
-    } catch { /* ignore */ }
-
-    applyPreferences({ ...currentPrefs, display_mode: next });
-  };
 
   const handleLogout = async () => {
     setUserMenuOpen(false);
@@ -62,13 +41,13 @@ export default function TopBar({ onMenuToggle }) {
       "
       role="banner"
     >
-      {/* Left: hamburger + logo (shown only on mobile when sidebar is closed) */}
+      {/* Left: hamburger + logo */}
       <div className="flex items-center gap-1">
         <button
           onClick={onMenuToggle}
           aria-label="Toggle navigation menu"
           className="
-            p-2 rounded-lg text-muted hover:bg-surface-2
+            p-2 rounded-lg text-text-muted hover:bg-surface-2
             transition-colors focus-visible:outline-none
             focus-visible:ring-2 focus-visible:ring-accent
             flex-shrink-0
@@ -77,91 +56,89 @@ export default function TopBar({ onMenuToggle }) {
           <Menu size={20} aria-hidden="true" />
         </button>
 
-        <img 
-          src="/src/assets/logo/verso_logo.svg" 
-          alt="Verso"
-          className="h-3 sm:h-4 w-auto max-w-none flex-shrink-0"
-          style={{ maxHeight: '1rem' }}
-        />
+        {isTransitioning ? (
+          <div className="h-4 w-20 ml-2 rounded animate-pulse" style={{ background: 'var(--color-surface-2, #e2e8f0)' }} />
+        ) : (
+          <img 
+            src={versoLogo}
+            alt="Verso"
+            className="h-3 sm:h-4 w-auto max-w-none flex-shrink-0"
+            style={{ maxHeight: '1rem' }}
+          />
+        )}
       </div>
 
       {/* Right: theme toggle + welcome + user menu */}
       <div className="flex items-center gap-3">
-        {/* Dark/light toggle */}
-        <button
-          onClick={toggleDisplayMode}
-          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-          aria-pressed={isDark}
-          className="
-            p-2 rounded-lg text-muted hover:bg-surface-2
-            transition-colors focus-visible:outline-none
-            focus-visible:ring-2 focus-visible:ring-accent
-          "
-        >
-          {isDark
-            ? <Sun  size={18} aria-hidden="true" />
-            : <Moon size={18} aria-hidden="true" />}
-        </button>
-
-        {/* Welcome text */}
-        <span
-          className="text-sm font-medium text-text hidden sm:block"
-          aria-label={`Logged in as ${firstName}`}
-        >
-          Welcome, {firstName}
-        </span>
-
-        {/* User dropdown */}
-        <div className="relative" ref={menuRef}>
-          <button
-            onClick={() => setUserMenuOpen((o) => !o)}
-            aria-label="Open user menu"
-            aria-expanded={userMenuOpen}
-            aria-haspopup="true"
-            className="
-              p-2 rounded-lg text-muted hover:bg-surface-2
-              transition-colors focus-visible:outline-none
-              focus-visible:ring-2 focus-visible:ring-accent
-            "
-          >
-            <User size={18} aria-hidden="true" />
-          </button>
-
-          {userMenuOpen && (
-            <div
-              role="menu"
-              aria-label="User options"
-              className="
-                absolute right-0 top-full mt-1 w-44
-                bg-surface border border-border rounded-xl
-                shadow-card py-1 z-50 animate-fade-in
-              "
+        {isTransitioning ? (
+          <>
+            {/* Welcome Text Skeleton */}
+            <div className="h-4 w-20 rounded animate-pulse hidden sm:block" style={{ background: 'var(--color-surface-2, #e2e8f0)' }} />
+            {/* User Icon Skeleton */}
+            <div className="w-9 h-9 rounded-lg animate-pulse" style={{ background: 'var(--color-surface-2, #e2e8f0)' }} />
+          </>
+        ) : (
+          <>
+            <span
+              className="text-sm font-medium text-text hidden sm:block"
+              aria-label={`Logged in as ${firstName}`}
             >
-              <Link
-                to="/settings"
-                role="menuitem"
-                onClick={() => setUserMenuOpen(false)}
-                className="
-                  block px-4 py-2 text-sm text-text
-                  hover:bg-surface-2 transition-colors
-                "
-              >
-                Settings
-              </Link>
-              <hr className="my-1 border-border" />
+              {firstName}
+            </span>
+
+            {/* User dropdown */}
+            <div className="relative" ref={menuRef}>
               <button
-                role="menuitem"
-                onClick={handleLogout}
+                onClick={() => setUserMenuOpen((o) => !o)}
+                aria-label="Open user menu"
+                aria-expanded={userMenuOpen}
+                aria-haspopup="true"
                 className="
-                  w-full text-left px-4 py-2 text-sm text-red-500
-                  hover:bg-surface-2 transition-colors
+                  p-2 rounded-lg text-text-muted hover:bg-surface-2
+                  transition-colors focus-visible:outline-none
+                  focus-visible:ring-2 focus-visible:ring-accent
                 "
               >
-                Log out
+                <User size={18} aria-hidden="true" />
               </button>
+
+              {userMenuOpen && (
+                <div
+                  role="menu"
+                  aria-label="User options"
+                  className="
+                    absolute right-0 top-full mt-1 w-44
+                    bg-surface border border-border rounded-xl
+                    shadow-card py-1 z-50 animate-fade-in
+                  "
+                >
+                  <Link
+                    to="/settings"
+                    role="menuitem"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="
+                      block px-4 py-2 text-sm text-text
+                      hover:bg-surface-2 transition-colors
+                    "
+                  >
+                    Settings
+                  </Link>
+                  <hr className="my-1 border-border" />
+                  <button
+                    role="menuitem"
+                    onClick={handleLogout}
+                    className="
+                      w-full text-left px-4 py-2 text-sm text-red-500
+                      hover:bg-surface-2 transition-colors
+                    "
+                  >
+                    Log out
+                  </button>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
     </header>
   );

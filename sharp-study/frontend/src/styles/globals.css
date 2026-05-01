@@ -33,7 +33,7 @@
    Scales with user's font size setting
    ============================= */
 html {
-  font-size: var(--base-font-size); /* Controlled by AccessibilityContext */
+  font-size: var(--font-scale, var(--base-font-size)); /* Controlled by personalization settings */
 }
 
 body {
@@ -49,7 +49,7 @@ body {
 h1 { font-size: clamp(1.5rem, 4vw, 2.25rem); }
 h2 { font-size: clamp(1.25rem, 3vw, 1.75rem); }
 h3 { font-size: clamp(1.1rem, 2.5vw, 1.375rem); }
-p  { font-size: 1rem; max-width: 70ch; }
+p  { font-size: 1rem; }
 
 /* =============================
    FLEXIBLE IMAGES
@@ -78,18 +78,8 @@ img, video, canvas, svg {
   padding: 0 1rem;
 }
 
-/* =============================
-   DYSLEXIA-FRIENDLY FONT
-   Download from https://opendyslexic.org
-   Place in frontend/public/fonts/
-   ============================= */
-@font-face {
-  font-family: 'OpenDyslexic';
-  src: url('/fonts/OpenDyslexic-Regular.otf') format('opentype');
-}
-
 .font-dyslexia * {
-  font-family: 'OpenDyslexic', sans-serif !important;
+  font-family: 'Arial', 'Verdana', 'Trebuchet MS', sans-serif !important;
   letter-spacing: 0.05em;
   word-spacing: 0.15em;
   line-height: 1.9;

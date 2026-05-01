@@ -1,65 +1,103 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Inter:wght@400;500;600;700&display=swap');
 
-/* ═══════════════════════════════════════════════════════════════
-   GOOGLE FONTS — loaded here so no separate link tag is needed
-═══════════════════════════════════════════════════════════════ */
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
+@import "tailwindcss";
+
+@theme {
+  /* Colors */
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-2: var(--color-surface-2);
+  --color-border: var(--color-border);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-text: var(--color-accent-text);
+  --color-sidebar: var(--color-sidebar);
+  --color-sidebar-text: var(--color-sidebar-text);
+  --color-sidebar-active-bg: var(--color-sidebar-active-bg);
+  --color-sidebar-active-text: var(--color-sidebar-active-text);
+  
+  --color-streak: var(--color-streak);
+  --color-xp: var(--color-xp);
+  
+  /* Fonts */
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+
+  /* Shadows */
+  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 10px 25px rgba(0, 0, 0, 0.08);
+
+  /* Animation */
+  --animate-float: float 3s ease-in-out infinite;
+  --animate-streak-pulse: streak-pulse 2s ease-in-out infinite;
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+  }
+
+  @keyframes streak-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+  }
+}
 
 /* ═══════════════════════════════════════════════════════════════
    DISPLAY MODE — LIGHT (default)
 ═══════════════════════════════════════════════════════════════ */
 :root,
 [data-display="light"] {
-  --color-bg:           #F0F2F7;
+  --color-bg:           #F8FAFC;
   --color-surface:      #FFFFFF;
-  --color-surface-2:    #F7F8FC;
-  --color-border:       #E4E7EF;
-  --color-text:         #0D1117;
-  --color-text-muted:   #6B7280;
+  --color-surface-2:    #F1F5F9;
+  --color-border:       #E2E8F0;
+  --color-text:         #0F172A;
+  --color-text-muted:   #64748B;
+  
   --color-sidebar:           #FFFFFF;
-  --color-sidebar-text:      #374151;
+  --color-sidebar-text:      #475569;
   --color-sidebar-active-text: #FFFFFF;
-  --scrollbar-track:       #F0F2F7;
-  --scrollbar-thumb:       #D1D5DB;
-  --scrollbar-thumb-hover: #9CA3AF;
+  
   --color-streak:        #F97316;
-  --color-streak-bg:     #FFF7ED;
   --color-xp:            #8B5CF6;
-  --color-xp-bg:         #F5F3FF;
   --color-goal-done:     #22C55E;
-  --color-goal-track:    #E5E7EB;
+
+  /* Aliases for original App.jsx Toast compatibility */
+  --card-bg: var(--color-surface);
+  --text-color: var(--color-text);
+  --card-border: var(--color-border);
 }
 
 /* ═══════════════════════════════════════════════════════════════
    DISPLAY MODE — DARK
 ═══════════════════════════════════════════════════════════════ */
 [data-display="dark"] {
-  --color-bg:           #0B0D14;
-  --color-surface:      #141720;
-  --color-surface-2:    #1C1F2E;
-  --color-border:       #252A3D;
-  --color-text:         #EDF0F7;
-  --color-text-muted:   #8892A4;
-  --color-sidebar:           #141720;
-  --color-sidebar-text:      #A8B5CC;
+  --color-bg:           #020617;
+  --color-surface:      #0F172A;
+  --color-surface-2:    #1E293B;
+  --color-border:       #334155;
+  --color-text:         #F8FAFC;
+  --color-text-muted:   #94A3B8;
+  
+  --color-sidebar:           #0F172A;
+  --color-sidebar-text:      #94A3B8;
   --color-sidebar-active-text: #FFFFFF;
-  --scrollbar-track:       #0B0D14;
-  --scrollbar-thumb:       #252A3D;
-  --scrollbar-thumb-hover: #343B58;
+  
   --color-streak:        #FB923C;
-  --color-streak-bg:     rgba(251, 146, 60, 0.12);
   --color-xp:            #A78BFA;
-  --color-xp-bg:         rgba(167, 139, 250, 0.12);
   --color-goal-done:     #4ADE80;
-  --color-goal-track:    #252A3D;
+
+  /* Aliases for original App.jsx Toast compatibility */
+  --card-bg: var(--color-surface);
+  --text-color: var(--color-text);
+  --card-border: var(--color-border);
 }
 
 /* ═══════════════════════════════════════════════════════════════
    ATMOSPHERE PRESETS
 ═══════════════════════════════════════════════════════════════ */
-:root,
 [data-atmosphere="classic-solid"] {
   --color-accent:            #2563EB;
   --color-accent-hover:      #1D4ED8;
@@ -109,11 +147,11 @@
 }
 
 [data-atmosphere="vercel-mono"] {
-  --color-accent:            #18181B;
-  --color-accent-hover:      #27272A;
+  --color-accent:            #000000;
+  --color-accent-hover:      #18181B;
   --color-accent-text:       #FAFAFA;
-  --color-sidebar-active-bg: #18181B;
-  --gradient-accent: linear-gradient(135deg, #52525B 0%, #18181B 100%);
+  --color-sidebar-active-bg: #000000;
+  --gradient-accent: linear-gradient(135deg, #52525B 0%, #000000 100%);
 }
 
 [data-atmosphere="aurora"] {
@@ -141,19 +179,6 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   BACKWARD-COMPAT ALIASES
-═══════════════════════════════════════════════════════════════ */
-:root {
-  --bg-color:    var(--color-bg);
-  --card-bg:     var(--color-surface);
-  --card-border: var(--color-border);
-  --text-color:  var(--color-text);
-  --muted:       var(--color-text-muted);
-  --accent:      var(--color-accent);
-  --accent-hover: var(--color-accent-hover);
-}
-
-/* ═══════════════════════════════════════════════════════════════
    TYPOGRAPHY
 ═══════════════════════════════════════════════════════════════ */
 :root {
@@ -161,9 +186,10 @@
   --font-body: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
 }
 
-[data-font="syne"] body {
-  font-family: 'Syne', ui-sans-serif, system-ui, sans-serif;
-}
+[data-font="syne"] body { --font-body: 'Syne', sans-serif; }
+[data-font="opendyslexic"] body { --font-body: 'Inter', sans-serif; } /* Real dyslexia font usually needs asset load, fallback to Inter for now */
+[data-font="serif"] body { --font-body: 'Georgia', serif; }
+[data-font="monospace"] body { --font-body: 'Monospace', monospace; }
 
 html {
   font-size: var(--font-scale);
@@ -175,102 +201,42 @@ body {
   color: var(--color-text);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
-  transition: background-color 0.25s ease, color 0.25s ease;
+  transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   margin: 0;
   padding: 0;
 }
 
-[data-font="opendyslexic"] body,
-[data-font="opendyslexic"] * {
-  font-family: 'Arial', 'Verdana', 'Trebuchet MS', sans-serif !important;
-  letter-spacing: 0.08em;
-  word-spacing: 0.18em;
-  line-height: 1.9;
-}
+/* Base resets and utils */
+*, *::before, *::after { box-sizing: border-box; border-color: var(--color-border); }
 
-[data-font="serif"] body {
-  font-family: 'Georgia', 'Times New Roman', serif;
-}
-
-[data-font="monospace"] body {
-  font-family: 'Courier New', 'Lucida Console', monospace;
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   ROOT ELEMENT
-═══════════════════════════════════════════════════════════════ */
-#root {
-  width: 100%;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   CUSTOM SCROLLBAR
-═══════════════════════════════════════════════════════════════ */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-}
-
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: var(--scrollbar-track); border-radius: 999px; }
-::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
-
-/* ═══════════════════════════════════════════════════════════════
-   GLOBAL RESETS
-═══════════════════════════════════════════════════════════════ */
-*, *::before, *::after { box-sizing: border-box; }
-img, video { max-width: 100%; height: auto; display: block; }
-
+/* Focus Rings */
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
-  border-radius: 4px;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+
+/* Helpers */
+.glass {
+  background: rgba(var(--color-surface), 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .skip-link {
-  position: absolute;
-  top: -100%;
-  left: 1rem;
-  padding: 0.5rem 1rem;
+  position: fixed;
+  top: -100px;
+  left: 0;
+  z-index: 1000;
   background: var(--color-accent);
-  color: var(--color-accent-text);
-  border-radius: 0 0 8px 8px;
-  font-weight: 600;
-  z-index: 9999;
-  transition: top 0.15s;
+  color: #fff;
+  padding: 10px 20px;
+  transition: top 0.2s;
 }
 .skip-link:focus { top: 0; }
 
-/* ═══════════════════════════════════════════════════════════════
-   GAMIFICATION — streak fire animation
-═══════════════════════════════════════════════════════════════ */
-@keyframes pulse-streak {
-  0%, 100% { transform: scale(1); }
-  50%       { transform: scale(1.12); }
-}
-
-.streak-pulse {
-  animation: pulse-streak 2s ease-in-out infinite;
-}
-
-@keyframes progress-fill {
-  from { width: 0%; }
-  to   { width: var(--progress-target); }
-}
-
-.progress-animate {
-  animation: progress-fill 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-@keyframes count-up {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.count-animate {
-  animation: count-up 0.4s ease-out forwards;
-}

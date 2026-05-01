@@ -4,17 +4,7 @@ import { fetchPreferences, savePreferences } from '../../theme/services/preferen
 import { DEFAULT_PREFERENCES } from '../../theme/constants/themes';
 import toast from 'react-hot-toast';
 
-/**
- * Manages settings page state.
- *
- * Keeps two copies of preferences:
- * - saved:   the last state persisted to Supabase (reference copy)
- * - draft:   the live preview state (updated instantly on interaction)
- *
- * Only when the user clicks "Save" does the draft get committed to saved + Supabase.
- */
 export function useSettings() {
-  // Load initial from localStorage
   const loadCurrent = () => {
     try {
       const raw = localStorage.getItem('sharp-study-prefs');
@@ -24,26 +14,23 @@ export function useSettings() {
     }
   };
 
-  const [saved,   setSaved]   = useState(() => loadCurrent());
-  const [draft,   setDraft]   = useState(() => loadCurrent());
-  const [saving,  setSaving]  = useState(false);
+  const [saved, setSaved] = useState(loadCurrent);
+  const [draft, setDraft] = useState(loadCurrent);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('sharp-study-token');
-    if (!token) return;
-
     let isMounted = true;
+
     fetchPreferences()
       .then(({ preferences }) => {
         if (!isMounted || !preferences) return;
-
         const nextPrefs = { ...DEFAULT_PREFERENCES, ...preferences };
         setSaved(nextPrefs);
         setDraft(nextPrefs);
         applyPreferences(nextPrefs);
       })
       .catch(() => {
-        // Keep local cache or default state if server fetch fails.
+        // Keep cached preferences if the backend is unavailable.
       });
 
     return () => {
@@ -51,34 +38,28 @@ export function useSettings() {
     };
   }, []);
 
-  /** Update a single field in the draft and apply instantly for live preview */
   const updateDraft = useCallback((key, value) => {
     setDraft((prev) => {
-      const next = { ...prev, [key]: value };
-      applyPreferences(next); // live preview — applies to document root immediately
-      return next;
+      return { ...prev, [key]: value };
     });
   }, []);
 
-  /** Discard unsaved changes — restore to last saved state */
   const discardChanges = useCallback(() => {
     setDraft({ ...saved });
-    applyPreferences(saved);
+    toast('Changes discarded');
   }, [saved]);
 
   const hasChanges = JSON.stringify(draft) !== JSON.stringify(saved);
 
-  /** Persist draft to Supabase */
   const save = useCallback(async () => {
     setSaving(true);
     try {
       await savePreferences(draft);
+      applyPreferences(draft);
       setSaved({ ...draft });
-      toast.success('Preferences saved.');
+      toast.success('Preferences saved successfully!');
     } catch (err) {
-      // Print the full error to the console and show the actual message on the screen
-      console.error("FULL ERROR DETAILS:", err);
-      toast.error(`Error: ${err.message}`, { duration: 6000 });
+      toast.error(err.message || 'Failed to save preferences');
     } finally {
       setSaving(false);
     }

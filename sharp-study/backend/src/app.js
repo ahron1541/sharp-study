@@ -4,6 +4,8 @@ const cors = require('cors');
 
 // Currently active features
 const authRoutes = require('./features/auth/auth.routes');
+const aiRoutes = require('./features/ai/ai.routes');
+const dashboardRoutes = require('./features/dashboard/dashboard.routes');
 
 // --- Temporarily commented out until we build these folders! ---
 // const documentRoutes = require('./features/documents/documents.routes');
@@ -23,9 +25,12 @@ app.use(cors({
   credentials: true, // <-- ADD THIS EXACT LINE
 }));
 app.use(express.json());
+app.set('etag', 'strong');
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // --- Temporarily disabled routes ---
 // app.use('/api/documents', documentRoutes);

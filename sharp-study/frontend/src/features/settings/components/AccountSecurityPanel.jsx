@@ -1,101 +1,78 @@
-import { Shield, Key, Trash2 } from 'lucide-react';
+import React from 'react';
+import { Shield, Key, Trash2, Mail, ExternalLink, ChevronRight } from 'lucide-react';
 
-/**
- * Account & Security placeholder panel.
- * Full implementation is a future module.
- */
 export default function AccountSecurityPanel() {
   return (
-    <section aria-labelledby="account-security-heading" className="flex-1">
-      <div className="mb-6">
-        <h2
-          id="account-security-heading"
-          className="text-xl font-bold text-text"
+    <div className="space-y-12">
+      <header>
+        <h2 className="text-2xl font-bold text-text mb-2">Account & Safety</h2>
+        <p className="text-text-muted font-medium">Protect your data and manage your authentication methods.</p>
+      </header>
+
+      <div className="space-y-4">
+        <SecurityOption 
+          icon={<Key className="text-blue-500" />}
+          label="Change Password"
+          sub="Ensure your account is protected with a strong password."
+          action="Update"
+        />
+        <SecurityOption 
+          icon={<Mail className="text-emerald-500" />}
+          label="Email Verification"
+          sub="Verified: ahron***@gmail.com"
+          action="Change"
+        />
+        <SecurityOption 
+          icon={<Shield className="text-orange-500" />}
+          label="Two-Factor Authentication"
+          sub="Add an extra layer of security (Coming Soon)."
+          disabled
+        />
+      </div>
+
+      <div className="pt-10 border-t border-border">
+         <h3 className="text-lg font-bold text-red-500 mb-6">Danger Area</h3>
+         <button className="flex items-center justify-between w-full p-6 rounded-3xl bg-red-500/5 border border-red-500/10 hover:bg-red-500/10 transition-all group">
+            <div className="flex items-center gap-4">
+               <div className="p-3 bg-red-500/20 rounded-2xl">
+                  <Trash2 className="text-red-600" size={20} />
+               </div>
+               <div className="text-left">
+                  <p className="font-bold text-red-600">Delete My Account</p>
+                  <p className="text-sm text-red-500/70 font-medium">This will permanently remove all your documents and study data.</p>
+               </div>
+            </div>
+            <ChevronRight className="text-red-400 group-hover:translate-x-1 transition-transform" />
+         </button>
+      </div>
+    </div>
+  );
+}
+
+function SecurityOption({ icon, label, sub, action, disabled = false }) {
+  return (
+    <div className={`p-6 rounded-[2rem] border border-border bg-surface-2 flex items-center justify-between gap-4 transition-all ${disabled ? 'opacity-50' : 'hover:border-accent/40'}`}>
+      <div className="flex items-center gap-4">
+        <div className="p-4 bg-surface rounded-2xl shadow-sm">
+          {icon}
+        </div>
+        <div>
+          <p className="font-bold text-text">{label}</p>
+          <p className="text-sm text-text-muted font-medium">{sub}</p>
+        </div>
+      </div>
+      {action && (
+        <button 
+          disabled={disabled}
+          className={`px-6 py-2.5 rounded-xl font-bold text-sm border transition-all ${
+            disabled 
+              ? 'bg-transparent text-text-muted cursor-not-allowed border-border' 
+              : 'bg-surface text-text border-border hover:border-accent hover:text-accent shadow-sm'
+          }`}
         >
-          Account &amp; Security
-        </h2>
-        <p className="text-sm text-muted mt-1">
-          Manage your login credentials and account security.
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-3">
-        {/* Change password */}
-        <div className="bg-surface rounded-xl p-5 border border-border flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Key size={20} className="text-accent" aria-hidden="true" />
-            <div>
-              <p className="text-sm font-semibold text-text">Change Password</p>
-              <p className="text-xs text-muted">
-                Update your password to keep your account secure.
-              </p>
-            </div>
-          </div>
-          <button
-            className="
-              px-4 py-2 text-sm font-semibold rounded-pill
-              border border-border text-text
-              hover:bg-surface-2 transition-colors
-              focus-visible:outline-none focus-visible:ring-2
-              focus-visible:ring-accent focus-visible:ring-offset-2
-            "
-            aria-label="Change your password"
-          >
-            Update
-          </button>
-        </div>
-
-        {/* Two-factor placeholder */}
-        <div className="bg-surface rounded-xl p-5 border border-border flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Shield size={20} className="text-green-500" aria-hidden="true" />
-            <div>
-              <p className="text-sm font-semibold text-text">
-                Two-Factor Authentication
-              </p>
-              <p className="text-xs text-muted">
-                Add an extra layer of protection to your account.
-              </p>
-            </div>
-          </div>
-          <button
-            disabled
-            className="
-              px-4 py-2 text-sm font-semibold rounded-pill
-              border border-border text-muted
-              cursor-not-allowed opacity-50
-            "
-            aria-label="Two-factor authentication — coming soon"
-          >
-            Coming soon
-          </button>
-        </div>
-
-        {/* Danger zone */}
-        <div className="bg-red-50 rounded-xl p-5 border border-red-200 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Trash2 size={20} className="text-red-500" aria-hidden="true" />
-            <div>
-              <p className="text-sm font-semibold text-red-700">Delete Account</p>
-              <p className="text-xs text-red-500">
-                Permanently remove your account and all study materials.
-              </p>
-            </div>
-          </div>
-          <button
-            className="
-              px-4 py-2 text-sm font-semibold rounded-pill
-              border border-red-300 text-red-600
-              hover:bg-red-100 transition-colors
-              focus-visible:outline-none focus-visible:ring-2
-              focus-visible:ring-red-400 focus-visible:ring-offset-2
-            "
-            aria-label="Delete your account permanently"
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-    </section>
+          {action}
+        </button>
+      )}
+    </div>
   );
 }

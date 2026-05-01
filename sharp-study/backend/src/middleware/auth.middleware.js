@@ -12,30 +12,25 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const requireAuth = async (req, res, next) => {
   try {
-    // 1. Check if the frontend sent the Bearer token
     const authHeader = req.headers.authorization;
-    
-    // DEBUG TRAP: Print exactly what arrived from the frontend
-    console.log("DEBUG - Received Auth Header:", authHeader);
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log("[ERROR] Auth Error: Missing or improperly formatted Authorization header.");
       return res.status(401).json({ error: 'Unauthorized: Missing token' });
     }
 
-    // 2. Extract the actual token string
     const token = authHeader.split(' ')[1];
+    if (!token || token === 'null' || token === 'undefined') {
+      return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+    }
 
-    // 3. Ask Supabase if this token is valid and who it belongs to
     const { data: { user }, error } = await supabase.auth.getUser(token);
 
     if (error || !user) {
-      console.log("[ERROR] Auth Error: Token rejected by Supabase.", error?.message);
       return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
     }
 
-    // 4. Success! Attach the user to the request and let them through
     req.user = user;
+    req.accessToken = token;
     next();
   } catch (err) {
     console.error("[ERROR] Auth Middleware Exception:", err.message);

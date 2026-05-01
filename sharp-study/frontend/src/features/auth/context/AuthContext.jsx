@@ -21,12 +21,11 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Timeout for session check (5 seconds max to allow for profile fetch)
+    // Timeout for initial session check
     const sessionTimeout = setTimeout(() => {
       setLoading(false);
     }, 5000);
 
-    // Make the callback async so we can await the profile fetch
     supabase.auth.getSession()
       .then(async ({ data: { session } }) => {
         clearTimeout(sessionTimeout);
@@ -34,11 +33,10 @@ export function AuthProvider({ children }) {
         
         if (session?.user) {
           localStorage.setItem('sharp-study-token', session.access_token);
-          // AWAIT the profile fetch before dropping the loading screen
+          // Await on initial load so the theme is ready before the app renders
           await fetchProfile(session.user.id);
         }
         
-        // NOW we stop loading, ensuring the theme is applied first
         setLoading(false);
       })
       .catch(() => {
@@ -48,12 +46,12 @@ export function AuthProvider({ children }) {
       });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         setUser(session?.user ?? null);
         if (session?.user) {
           localStorage.setItem('sharp-study-token', session.access_token);
-          // AWAIT here as well
-          await fetchProfile(session.user.id);
+          // Do NOT await here to prevent deadlock.
+          fetchProfile(session.user.id);
         } else {
           setProfile(null);
           localStorage.removeItem('sharp-study-token');
@@ -79,14 +77,14 @@ export function AuthProvider({ children }) {
         
       if (error) {
         console.error("Supabase error fetching profile:", error);
-        return; // Exit early if profile doesn't exist yet
+        return;
       }
         
       if (data) {
         setProfile(data);
         localStorage.setItem('sharp-study-role', data.role);
         
-        // Safely parse preferences just in case Supabase returns a string
+        // Safely apply preferences
         let userPrefs = DEFAULT_PREFERENCES;
         if (data.preferences) {
           userPrefs = typeof data.preferences === 'string' 
@@ -113,6 +111,7 @@ export function AuthProvider({ children }) {
     resetThemeOnLogout();
   };
 
+  // 1. Initial Load State (Handles F5 hard refreshes)
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-bg, #ffffff)' }}>
@@ -121,6 +120,9 @@ export function AuthProvider({ children }) {
     );
   }
 
+  // 2. We completely removed the `isTransitioning` overlay here!
+  // Now, the router passes straight through to the DashboardPage, 
+  // which will render its own theme-aware skeleton while waiting.
   return (
     <AuthContext.Provider value={{ user, profile, loading, signOut, supabase }}>
       {children}

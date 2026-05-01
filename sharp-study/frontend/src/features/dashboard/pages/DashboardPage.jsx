@@ -1,707 +1,260 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  BookOpen, CreditCard, HelpCircle, Upload, Flame,
-  Target, Star, Zap, TrendingUp, Plus, Search,
-  Archive, Trash2, Eye, ChevronRight, Award, Clock,
-} from 'lucide-react';
-import { useAuth }      from '../../auth/context/AuthContext';
-import { useNavigate }  from 'react-router-dom';
-import UploadModal      from '../../upload/components/UploadModal';
-import Modal            from '../../../shared/components/Modal';
-import toast            from 'react-hot-toast';
-import { getWeeklyHistory, recordStudySession } from '../hooks/useStreak';
+import React, { useState } from 'react';
+import { motion as Motion } from 'framer-motion';
+import { Flame, Star, Zap, BookOpen, CreditCard, HelpCircle, Plus, Search, Archive, Trash2, Eye, ChevronRight, Sparkles, Trophy, ArrowRight } from 'lucide-react';
+import { useDashboard } from '../hooks/useDashboard';
+import { useAuth as useAuthCore } from '../../auth/context/AuthContext';
 
-/* ─────────── constants ─────────── */
-const TABLE_MAP  = { study_guides: 'study_guides', flashcards: 'flashcard_sets', quizzes: 'quizzes' };
-const ROUTES_MAP = { study_guides: 'study-guide',  flashcards: 'flashcards',      quizzes: 'quiz' };
-const SECTION_META = {
-  study_guides: { icon: BookOpen,   label: 'Study Guides',   color: 'text-blue-500',   bg: 'bg-blue-500/10' },
-  flashcards:   { icon: CreditCard, label: 'Flashcard Sets', color: 'text-violet-500', bg: 'bg-violet-500/10' },
-  quizzes:      { icon: HelpCircle, label: 'Quizzes',        color: 'text-emerald-500',bg: 'bg-emerald-500/10' },
+const materialMeta = {
+  study_guides: { icon: BookOpen, label: 'Study Guide', color: 'text-blue-500', bg: 'bg-blue-500/10' },
+  flashcards: { icon: CreditCard, label: 'Flashcards', color: 'text-violet-500', bg: 'bg-violet-500/10' },
+  quizzes: { icon: HelpCircle, label: 'Quiz', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
 };
-const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-
-/* ─────────── sub-components ─────────── */
-
-function SkeletonCard() {
-  return (
-    <div className="rounded-2xl p-5 animate-pulse" style={{ background: 'var(--color-surface)' }}>
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-8 h-8 rounded-lg" style={{ background: 'var(--color-surface-2)' }} />
-        <div className="h-3 rounded-full w-20" style={{ background: 'var(--color-surface-2)' }} />
-      </div>
-      <div className="h-4 rounded-full w-4/5 mb-2" style={{ background: 'var(--color-surface-2)' }} />
-      <div className="h-3 rounded-full w-1/2 mb-5" style={{ background: 'var(--color-surface-2)' }} />
-      <div className="flex gap-2">
-        <div className="h-8 rounded-lg w-16" style={{ background: 'var(--color-surface-2)' }} />
-        <div className="h-8 rounded-lg w-14" style={{ background: 'var(--color-surface-2)' }} />
-      </div>
-    </div>
-  );
-}
-
-function MaterialCard({ item, type, onOpen, onArchive, onDelete }) {
-  const meta = SECTION_META[type];
-  const Icon = meta.icon;
-  const date = new Date(item.created_at).toLocaleDateString('en-PH', {
-    month: 'short', day: 'numeric',
-  });
-
-  return (
-    <article
-      className="rounded-2xl p-5 border transition-all duration-200 group cursor-pointer
-                 hover:-translate-y-0.5"
-      style={{
-        background:  'var(--color-surface)',
-        borderColor: 'var(--color-border)',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = 'var(--color-accent)';
-        e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,0.08)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = 'var(--color-border)';
-        e.currentTarget.style.boxShadow = 'none';
-      }}
-    >
-      {/* Type badge */}
-      <div className="flex items-center gap-2 mb-3">
-        <div className={`w-7 h-7 rounded-lg ${meta.bg} flex items-center justify-center`}>
-          <Icon size={14} className={meta.color} aria-hidden="true" />
-        </div>
-        <span className={`text-xs font-semibold ${meta.color}`}>{meta.label}</span>
-        <span className="ml-auto text-xs" style={{ color: 'var(--color-text-muted)' }}>{date}</span>
-      </div>
-
-      {/* Title */}
-      <h3
-        className="text-sm font-semibold mb-4 line-clamp-2"
-        style={{ color: 'var(--color-text)' }}
-      >
-        {item.title}
-      </h3>
-
-      {/* Actions */}
-      <div className="flex gap-1.5">
-        <button
-          onClick={() => onOpen(item.id, type)}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold
-                     text-white transition-colors"
-          style={{ background: 'var(--color-accent)' }}
-          aria-label={`Open ${item.title}`}
-        >
-          <Eye size={12} aria-hidden="true" />
-          Open
-        </button>
-        <button
-          onClick={() => onArchive(item.id)}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium
-                     border transition-colors hover:opacity-80"
-          style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-muted)' }}
-          aria-label={`Archive ${item.title}`}
-        >
-          <Archive size={12} aria-hidden="true" />
-        </button>
-        <button
-          onClick={() => onDelete(item)}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium
-                     border transition-colors"
-          style={{ borderColor: 'var(--color-border)', color: '#EF4444' }}
-          aria-label={`Delete ${item.title}`}
-        >
-          <Trash2 size={12} aria-hidden="true" />
-        </button>
-      </div>
-    </article>
-  );
-}
-
-function EmptyState({ type, onUpload }) {
-  const meta = SECTION_META[type];
-  const Icon = meta.icon;
-  return (
-    <div
-      className="rounded-2xl p-10 flex flex-col items-center text-center border border-dashed"
-      style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
-    >
-      <div
-        className={`w-12 h-12 rounded-2xl ${meta.bg} flex items-center justify-center mb-4`}
-        aria-hidden="true"
-      >
-        <Icon size={22} className={meta.color} />
-      </div>
-      <p className="text-sm font-semibold mb-1" style={{ color: 'var(--color-text)' }}>
-        No {meta.label.toLowerCase()} yet
-      </p>
-      <p className="text-xs mb-4" style={{ color: 'var(--color-text-muted)' }}>
-        Upload a file and let AI generate them for you.
-      </p>
-      <button
-        onClick={onUpload}
-        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold
-                   text-white transition-opacity hover:opacity-90"
-        style={{ background: 'var(--color-accent)' }}
-      >
-        <Plus size={14} aria-hidden="true" />
-        Upload a File
-      </button>
-    </div>
-  );
-}
-
-/* Streak widget */
-function StreakWidget({ streak, xp, level }) {
-  const current = streak?.current ?? 0;
-  const longest = streak?.longest ?? 0;
-  const weekly  = getWeeklyHistory(streak?.last_date, current);
-  const xpToNext = 100 - ((xp ?? 0) % 100);
-  const xpProgress = ((xp ?? 0) % 100);
-
-  return (
-    <div
-      className="rounded-2xl p-5 border"
-      style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-    >
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider mb-1"
-             style={{ color: 'var(--color-text-muted)' }}>
-            Study Streak
-          </p>
-          <div className="flex items-center gap-2">
-            <Flame
-              size={28}
-              className="streak-pulse"
-              style={{ color: current > 0 ? 'var(--color-streak)' : 'var(--color-text-muted)' }}
-              aria-hidden="true"
-            />
-            <span
-              className="text-4xl font-black"
-              style={{
-                color: current > 0 ? 'var(--color-streak)' : 'var(--color-text-muted)',
-                fontFamily: 'var(--font-display)',
-              }}
-            >
-              {current}
-            </span>
-            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>days</span>
-          </div>
-        </div>
-        <div className="text-right">
-          <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Best</p>
-          <p className="text-lg font-bold" style={{ color: 'var(--color-text)' }}>{longest}</p>
-        </div>
-      </div>
-
-      {/* Weekly dots */}
-      <div className="flex justify-between mb-4" aria-label="Weekly streak history">
-        {weekly.map((done, i) => (
-          <div key={i} className="flex flex-col items-center gap-1.5">
-            <div
-              className="w-7 h-7 rounded-full flex items-center justify-center transition-all"
-              style={{
-                background: done ? 'var(--color-streak)' : 'var(--color-surface-2)',
-              }}
-              aria-label={`${DAY_LABELS[i]}: ${done ? 'studied' : 'missed'}`}
-            >
-              {done && <Flame size={12} color="#fff" aria-hidden="true" />}
-            </div>
-            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-              {DAY_LABELS[i]}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* XP bar */}
-      <div
-        className="rounded-xl p-3 flex items-center gap-3"
-        style={{ background: 'var(--color-xp-bg)' }}
-      >
-        <div
-          className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-          style={{ background: 'var(--color-xp)', color: '#fff' }}
-        >
-          <Zap size={16} aria-hidden="true" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex justify-between text-xs mb-1">
-            <span style={{ color: 'var(--color-xp)', fontWeight: 700 }}>
-              Level {level ?? 1}
-            </span>
-            <span style={{ color: 'var(--color-text-muted)' }}>
-              {xpToNext} XP to next level
-            </span>
-          </div>
-          <div
-            className="h-1.5 rounded-full overflow-hidden"
-            style={{ background: 'var(--color-goal-track)' }}
-            role="progressbar"
-            aria-valuenow={xpProgress}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <div
-              className="h-full rounded-full transition-all duration-700"
-              style={{
-                width: `${xpProgress}%`,
-                background: 'var(--color-xp)',
-              }}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* Daily goals widget */
-function DailyGoalsWidget({ goals, studyGuideCount, flashcardCount, quizCount }) {
-  const items = [
-    {
-      label:   'Open a study guide',
-      icon:    BookOpen,
-      done:    studyGuideCount > 0,
-      color:   '#3B82F6',
-    },
-    {
-      label:   'Review flashcards',
-      icon:    CreditCard,
-      done:    flashcardCount > 0,
-      color:   '#8B5CF6',
-    },
-    {
-      label:   'Complete a quiz',
-      icon:    HelpCircle,
-      done:    quizCount > 0,
-      color:   '#10B981',
-    },
-    {
-      label:   goals?.completed_today ? 'Daily goal met' : 'Study today',
-      icon:    Target,
-      done:    goals?.completed_today ?? false,
-      color:   'var(--color-streak)',
-    },
-  ];
-
-  const doneCount = items.filter((i) => i.done).length;
-
-  return (
-    <div
-      className="rounded-2xl p-5 border"
-      style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-    >
-      <div className="flex items-center justify-between mb-4">
-        <p
-          className="text-xs font-semibold uppercase tracking-wider"
-          style={{ color: 'var(--color-text-muted)' }}
-        >
-          Daily Goals
-        </p>
-        <span
-          className="text-xs font-bold px-2 py-0.5 rounded-full"
-          style={{
-            background: 'var(--color-goal-done)',
-            color: '#fff',
-            opacity: doneCount === 0 ? 0.4 : 1,
-          }}
-        >
-          {doneCount}/{items.length}
-        </span>
-      </div>
-
-      <div className="space-y-2.5">
-        {items.map(({ label, icon: Icon, done, color }) => (
-          <div key={label} className="flex items-center gap-3">
-            <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0
-                         transition-all duration-300"
-              style={{
-                background: done ? color : 'var(--color-surface-2)',
-                opacity: done ? 1 : 0.5,
-              }}
-            >
-              <Icon size={14} color={done ? '#fff' : 'var(--color-text-muted)'} aria-hidden="true" />
-            </div>
-            <span
-              className="text-sm flex-1 transition-all duration-300"
-              style={{
-                color:          done ? 'var(--color-text)' : 'var(--color-text-muted)',
-                textDecoration: done ? 'line-through' : 'none',
-                opacity:        done ? 0.7 : 1,
-              }}
-            >
-              {label}
-            </span>
-            {done && (
-              <Star
-                size={14}
-                style={{ color: '#F59E0B' }}
-                aria-hidden="true"
-                fill="currentColor"
-              />
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* Stats bar */
-function StatsBar({ counts }) {
-  const stats = [
-    { label: 'Study Guides',   value: counts.study_guides ?? 0, icon: BookOpen,   color: '#3B82F6' },
-    { label: 'Flashcard Sets', value: counts.flashcards   ?? 0, icon: CreditCard, color: '#8B5CF6' },
-    { label: 'Quizzes',        value: counts.quizzes      ?? 0, icon: HelpCircle, color: '#10B981' },
-  ];
-
-  return (
-    <div className="grid grid-cols-3 gap-3 mb-6">
-      {stats.map(({ label, value, icon: Icon, color }) => (
-        <div
-          key={label}
-          className="rounded-2xl p-4 border flex flex-col gap-1"
-          style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-        >
-          <Icon size={16} style={{ color }} aria-hidden="true" />
-          <p
-            className="text-2xl font-black tabular-nums"
-            style={{ color: 'var(--color-text)', fontFamily: 'var(--font-display)' }}
-          >
-            {value}
-          </p>
-          <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* Section with cards */
-function MaterialSection({ type, loading, items, onUpload, onOpen, onArchive, onDelete }) {
-  const meta = SECTION_META[type];
-  const Icon = meta.icon;
-
-  return (
-    <section aria-labelledby={`section-${type}`} className="mb-8">
-      <div className="flex items-center gap-2 mb-3">
-        <Icon size={16} className={meta.color} aria-hidden="true" />
-        <h2
-          id={`section-${type}`}
-          className="text-sm font-bold"
-          style={{ color: 'var(--color-text)' }}
-        >
-          {meta.label}
-        </h2>
-        {!loading && (
-          <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-            ({items.length})
-          </span>
-        )}
-        <button
-          className="ml-auto flex items-center gap-1 text-xs font-semibold
-                     transition-opacity hover:opacity-70"
-          style={{ color: 'var(--color-accent)' }}
-          aria-label={`View all ${meta.label}`}
-        >
-          View all
-          <ChevronRight size={12} aria-hidden="true" />
-        </button>
-      </div>
-
-      {loading ? (
-        <div
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
-          aria-busy="true"
-          aria-label="Loading materials"
-        >
-          {[0, 1, 2].map((n) => <SkeletonCard key={n} />)}
-        </div>
-      ) : items.length === 0 ? (
-        <EmptyState type={type} onUpload={onUpload} />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {items.map((item) => (
-            <MaterialCard
-              key={item.id}
-              item={item}
-              type={type}
-              onOpen={onOpen}
-              onArchive={onArchive}
-              onDelete={onDelete}
-            />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-/* ─────────── main page ─────────── */
 
 export default function DashboardPage() {
-  const { supabase, profile } = useAuth();
-  const navigate = useNavigate();
-  const hasRecordedSession = useRef(false);
+  const { items = { study_guides: [], flashcards: [], quizzes: [] }, loading } = useDashboard();
+  const { profile } = useAuthCore();
+  const [search, setSearch] = useState('');
 
-  const [items,        setItems]        = useState({ study_guides: [], flashcards: [], quizzes: [] });
-  const [loading,      setLoading]      = useState(true);
-  const [search,       setSearch]       = useState('');
-  const [uploadOpen,   setUploadOpen]   = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [prefs,        setPrefs]        = useState(() => {
-    try { return JSON.parse(localStorage.getItem('sharp-study-prefs') ?? '{}'); } catch { return {}; }
-  });
+  const firstName = profile?.first_name || 'Student';
+  const streak = profile?.preferences?.streak?.current || 0;
+  const isFirstTime = items.study_guides.length === 0 && items.flashcards.length === 0 && items.quizzes.length === 0;
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    const [gRes, cRes, qRes] = await Promise.all([
-      supabase.from('study_guides')  .select('*').eq('is_archived', false).order('created_at', { ascending: false }).limit(9),
-      supabase.from('flashcard_sets').select('*').eq('is_archived', false).order('created_at', { ascending: false }).limit(9),
-      supabase.from('quizzes')       .select('*').eq('is_archived', false).order('created_at', { ascending: false }).limit(9),
-    ]);
-    setItems({
-      study_guides: gRes.data ?? [],
-      flashcards:   cRes.data ?? [],
-      quizzes:      qRes.data ?? [],
-    });
-    setLoading(false);
-  }, [supabase]);
-
-  useEffect(() => { fetchAll(); }, [fetchAll]);
-
-  // Record a study session on first dashboard load each day
-  useEffect(() => {
-    if (!profile || hasRecordedSession.current) return;
-    hasRecordedSession.current = true;
-
-    const currentPrefs = {
-      ...prefs,
-      streak:      profile.preferences?.streak      ?? { current: 0, longest: 0, last_date: null },
-      daily_goals: profile.preferences?.daily_goals ?? { target_minutes: 30, completed_today: false },
-      xp:          profile.preferences?.xp          ?? 0,
-      level:       profile.preferences?.level       ?? 1,
-    };
-
-    recordStudySession(currentPrefs).then((updated) => {
-      setPrefs(updated);
-      localStorage.setItem('sharp-study-prefs', JSON.stringify(updated));
-    });
-  }, [profile]);
-
-  const handleOpen = (id, type) => {
-    navigate(`/${ROUTES_MAP[type]}/${id}`);
+  const container = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.1 }
+    }
   };
 
-  const handleArchive = async (id) => {
-    const type = Object.keys(TABLE_MAP).find((k) =>
-      items[k].some((i) => i.id === id)
-    );
-    if (!type) return;
-    await supabase.from(TABLE_MAP[type]).update({ is_archived: true }).eq('id', id);
-    toast.success('Archived.');
-    fetchAll();
+  const itemAnim = {
+    hidden: { opacity: 0, y: 20 },
+    show: { opacity: 1, y: 0 }
   };
 
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
-    const type = Object.keys(TABLE_MAP).find((k) =>
-      items[k].some((i) => i.id === deleteTarget.id)
-    );
-    if (!type) return;
-    await supabase.from(TABLE_MAP[type]).delete().eq('id', deleteTarget.id);
-    toast.success('Deleted permanently.');
-    setDeleteTarget(null);
-    fetchAll();
-  };
-
-  const firstName = profile?.first_name ?? profile?.full_name?.split(' ')[0] ?? 'there';
-  const streak    = prefs.streak      ?? profile?.preferences?.streak      ?? { current: 0, longest: 0, last_date: null };
-  const goals     = prefs.daily_goals ?? profile?.preferences?.daily_goals ?? {};
-  const xp        = prefs.xp    ?? profile?.preferences?.xp    ?? 0;
-  const level     = prefs.level ?? profile?.preferences?.level ?? 1;
+  if (loading) return (
+    <div className="p-8 space-y-8 animate-pulse">
+      <div className="h-48 bg-surface rounded-3xl" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+         <div className="h-32 bg-surface rounded-3xl" />
+         <div className="h-32 bg-surface rounded-3xl" />
+      </div>
+    </div>
+  );
 
   return (
-    <>
-      <div className="p-4 sm:p-6 max-w-[1440px] mx-auto">
-
-        {/* Welcome banner */}
-        <div
-          className="rounded-2xl p-6 mb-6 relative overflow-hidden"
-          style={{
-            background: 'var(--gradient-accent)',
-            color: '#fff',
-          }}
+    <Motion.div 
+      variants={container}
+      initial="hidden"
+      animate="show"
+      className="p-6 md:p-10 max-w-7xl mx-auto space-y-10"
+    >
+      {/* Top Section: Welcome + Streak */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Welcome Card */}
+        <Motion.div 
+          variants={itemAnim}
+          className="lg:col-span-2 relative overflow-hidden rounded-[2.5rem] p-8 md:p-10 text-white shadow-2xl shadow-accent/20"
+          style={{ background: 'var(--gradient-accent)' }}
         >
-          {/* Background texture */}
-          <div
-            className="absolute inset-0 opacity-10 pointer-events-none"
-            style={{
-              backgroundImage: 'radial-gradient(circle at 80% 50%, rgba(255,255,255,0.3) 0%, transparent 60%)',
-            }}
-            aria-hidden="true"
-          />
-          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <p className="text-white/70 text-sm font-medium mb-1">
-                {new Date().toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric' })}
-              </p>
-              <h1
-                className="text-2xl sm:text-3xl font-black text-white leading-tight"
-                style={{ fontFamily: 'var(--font-display)' }}
-              >
-                Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, {firstName}
-              </h1>
-              {streak.current > 0 && (
-                <p className="text-white/80 text-sm mt-1 flex items-center gap-1.5">
-                  <Flame size={14} aria-hidden="true" />
-                  {streak.current}-day streak — keep it going!
-                </p>
-              )}
-            </div>
-            <button
-              onClick={() => setUploadOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm
-                         bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/20
-                         transition-colors text-white flex-shrink-0"
-              aria-label="Upload a file to generate study materials"
-            >
-              <Upload size={16} aria-hidden="true" />
-              Upload &amp; Generate
-            </button>
+          <div className="absolute top-0 right-0 p-8 opacity-10">
+            <Sparkles size={160} />
           </div>
+          <div className="relative z-10 flex flex-col h-full justify-between">
+            <div>
+              <Motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/20 backdrop-blur-md text-xs font-bold uppercase tracking-widest mb-6"
+              >
+                <Zap size={14} /> Global Achievement Unlocked
+              </Motion.div>
+              <h1 className="text-4xl md:text-5xl font-display font-extrabold leading-tight tracking-tight mb-4">
+                {isFirstTime ? `Hello, ${firstName}!` : `Welcome back, ${firstName}!`}
+              </h1>
+              <p className="text-white/80 text-lg max-w-md font-medium leading-relaxed">
+                {isFirstTime 
+                  ? "Let's turn your documents into interactive study materials in seconds." 
+                  : "Ready to pick up where you left off? Your study guides are waiting."}
+              </p>
+            </div>
+            <div className="mt-8 flex gap-4">
+              <button className="px-8 py-3.5 bg-white text-accent font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-xl">
+                Start Studying
+              </button>
+              <button className="px-8 py-3.5 bg-accent-hover text-white border border-white/20 font-bold rounded-2xl hover:bg-white/10 transition-all">
+                Upload New
+              </button>
+            </div>
+          </div>
+        </Motion.div>
+
+        {/* Streak Widget */}
+        <Motion.div 
+          variants={itemAnim}
+          className="rounded-[2.5rem] bg-surface p-8 border border-border shadow-card flex flex-col justify-between"
+        >
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-sm font-bold text-text-muted uppercase tracking-widest mb-1">Daily Streak</p>
+              <div className="flex items-baseline gap-2">
+                <span className="text-6xl font-display font-black text-streak">{streak}</span>
+                <span className="text-lg font-bold text-text-muted">days</span>
+              </div>
+            </div>
+            <div className="p-4 bg-streak/10 rounded-3xl animate-streak-pulse">
+              <Flame size={32} className="text-streak" fill="currentColor" />
+            </div>
+          </div>
+          
+          <div className="space-y-4 mt-8">
+             <div className="flex justify-between text-xs font-bold text-text-muted">
+                <span>Weekly Progress</span>
+                <span>{streak}/7 Days</span>
+             </div>
+             <div className="flex justify-between gap-2">
+                {[...Array(7)].map((_, i) => (
+                  <div 
+                    key={i} 
+                    className={`h-1.5 flex-1 rounded-full ${i < streak ? 'bg-streak' : 'bg-surface-2'}`}
+                  />
+                ))}
+             </div>
+             <div className="p-4 bg-surface-2 rounded-2xl border border-border flex items-center gap-3">
+                <Trophy size={18} className="text-yellow-500" />
+                <span className="text-xs font-semibold text-text">Keep going for a 7-day bonus!</span>
+             </div>
+          </div>
+        </Motion.div>
+      </div>
+
+      {/* Quick Access Section */}
+      <Motion.section variants={itemAnim} className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-display font-bold text-text">Quick Access</h2>
+          <button className="text-sm font-bold text-accent hover:underline flex items-center gap-1">
+            See all <ChevronRight size={14} />
+          </button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+           <QuickAccessCard 
+             label="Flashcard Arena"
+             sub="Test your active recall"
+             icon={CreditCard}
+             color="text-violet-500"
+             bg="bg-violet-500/10"
+           />
+           <QuickAccessCard 
+             label="Quiz Challenge"
+             sub="Master the core concepts"
+             icon={HelpCircle}
+             color="text-emerald-500"
+             bg="bg-emerald-500/10"
+           />
+        </div>
+      </Motion.section>
+
+      {/* SEARCH AND MATERIALS */}
+      <Motion.div variants={itemAnim} className="space-y-8">
+        <div className="relative group">
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-text-muted group-focus-within:text-accent transition-colors" size={20} />
+          <input 
+            type="text"
+            placeholder="Find a study guide, flashcard set, or quiz..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-14 pr-6 py-5 bg-surface border-2 border-transparent focus:border-accent/20 rounded-[2rem] shadow-card focus:shadow-xl focus:shadow-accent/5 focus:outline-none text-text font-medium transition-all"
+          />
         </div>
 
-        {/* Main grid: content left, widgets right */}
-        <div className="flex flex-col xl:flex-row gap-5">
+        {Object.entries(items).map(([key, list]) => {
+          const filteredList = search
+            ? list.filter((item) => item.title?.toLowerCase().includes(search.toLowerCase()))
+            : list;
 
-          {/* Left: stats + materials */}
-          <div className="flex-1 min-w-0">
-            {/* Stats bar */}
-            <StatsBar counts={{
-              study_guides: items.study_guides.length,
-              flashcards:   items.flashcards.length,
-              quizzes:      items.quizzes.length,
-            }} />
-
-            {/* Search */}
-            <div className="relative mb-5">
-              <Search
-                size={15}
-                className="absolute left-3 top-1/2 -translate-y-1/2"
-                style={{ color: 'var(--color-text-muted)' }}
-                aria-hidden="true"
-              />
-              <input
-                type="search"
-                placeholder="Search your study materials..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                aria-label="Search study materials"
-                className="w-full pl-9 pr-4 py-2.5 rounded-xl border text-sm
-                           focus:outline-none focus:ring-2 transition-colors"
-                style={{
-                  background:  'var(--color-surface)',
-                  borderColor: 'var(--color-border)',
-                  color:       'var(--color-text)',
-                  '--tw-ring-color': 'var(--color-accent)',
-                }}
-              />
-            </div>
-
-            {/* Material sections */}
-            {Object.keys(TABLE_MAP).map((type) => (
-              <MaterialSection
-                key={type}
-                type={type}
-                loading={loading}
-                items={search
-                  ? items[type].filter((i) =>
-                      i.title.toLowerCase().includes(search.toLowerCase())
-                    )
-                  : items[type]}
-                onUpload={() => setUploadOpen(true)}
-                onOpen={handleOpen}
-                onArchive={handleArchive}
-                onDelete={setDeleteTarget}
-              />
-            ))}
-          </div>
-
-          {/* Right: gamification widgets */}
-          <aside className="xl:w-72 flex-shrink-0 flex flex-col gap-4">
-            <StreakWidget streak={streak} xp={xp} level={level} />
-            <DailyGoalsWidget
-              goals={goals}
-              studyGuideCount={items.study_guides.length}
-              flashcardCount={items.flashcards.length}
-              quizCount={items.quizzes.length}
-            />
-
-            {/* Adaptive quiz tip */}
-            <div
-              className="rounded-2xl p-5 border"
-              style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <TrendingUp size={16} style={{ color: 'var(--color-accent)' }} aria-hidden="true" />
-                <p
-                  className="text-xs font-semibold uppercase tracking-wider"
-                  style={{ color: 'var(--color-text-muted)' }}
-                >
-                  Adaptive Learning
-                </p>
+          return (
+          <section key={key} className="space-y-6">
+            <div className="flex items-center gap-3 px-2">
+              <div className={`p-2 rounded-xl ${materialMeta[key].bg}`}>
+                {React.createElement(materialMeta[key].icon, { className: materialMeta[key].color, size: 18 })}
               </div>
-              <p className="text-sm mb-3" style={{ color: 'var(--color-text)' }}>
-                Quizzes get harder as you improve. Keep answering to unlock tougher questions.
-              </p>
-              <div className="flex items-center gap-2">
-                <Award size={14} style={{ color: '#F59E0B' }} aria-hidden="true" />
-                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                  Level {level} learner
-                </span>
-              </div>
+              <h3 className="text-lg font-bold text-text">{materialMeta[key].label}s</h3>
+              <span className="text-xs bg-surface-2 px-2.5 py-1 rounded-full font-bold text-text-muted">{filteredList.length}</span>
             </div>
-          </aside>
+            
+            {filteredList.length === 0 ? (
+              <div className="p-12 border-2 border-dashed border-border rounded-[2rem] flex flex-col items-center text-center">
+                 <div className="w-16 h-16 bg-surface-2 rounded-2xl flex items-center justify-center mb-4">
+                    {React.createElement(materialMeta[key].icon, { className: 'text-text-muted opacity-50', size: 32 })}
+                 </div>
+                 <h4 className="font-bold text-text mb-2">No items found</h4>
+                 <p className="text-sm text-text-muted max-w-xs mb-6">Create your first {materialMeta[key].label.toLowerCase()} by uploading a document.</p>
+                 <button className="px-6 py-2 bg-accent text-white rounded-xl text-sm font-bold shadow-lg shadow-accent/20">Add New</button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredList.map((item) => (
+                  <MaterialCard key={item.id} item={item} type={key} />
+                ))}
+              </div>
+            )}
+          </section>
+          );
+        })}
+      </Motion.div>
+    </Motion.div>
+  );
+}
+
+function QuickAccessCard({ label, sub, icon, color, bg }) {
+  const Icon = icon;
+
+  return (
+    <Motion.button 
+      whileHover={{ y: -5 }}
+      whileTap={{ scale: 0.98 }}
+      className="flex items-center gap-5 p-6 bg-surface border border-border rounded-[2rem] hover:border-accent hover:shadow-xl transition-all text-left w-full group"
+    >
+      <div className={`p-5 rounded-2xl ${bg}`}>
+        <Icon className={color} size={28} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <h4 className="font-bold text-text text-lg group-hover:text-accent transition-colors">{label}</h4>
+        <p className="text-sm text-text-muted font-medium">{sub}</p>
+      </div>
+      <ChevronRight className="text-text-muted group-hover:text-accent transition-colors" />
+    </Motion.button>
+  );
+}
+
+function MaterialCard({ item, type }) {
+  const meta = materialMeta[type];
+  const Icon = meta.icon;
+  const date = new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+  return (
+    <Motion.div 
+      whileHover={{ y: -8 }}
+      className="group relative bg-surface border border-border rounded-[2rem] p-6 shadow-card hover:shadow-2xl hover:shadow-accent/10 transition-all cursor-pointer"
+    >
+      <div className="flex justify-between items-start mb-6">
+        <div className={`p-3 rounded-2xl ${meta.bg}`}>
+          <Icon className={meta.color} size={22} />
+        </div>
+        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+           <button className="p-2 hover:bg-surface-2 rounded-xl text-text-muted"><Archive size={16} /></button>
+           <button className="p-2 hover:bg-red-500/10 rounded-xl text-red-500"><Trash2 size={16} /></button>
         </div>
       </div>
 
-      {/* Upload modal */}
-      <UploadModal
-        isOpen={uploadOpen}
-        onClose={() => setUploadOpen(false)}
-        onSuccess={() => { setUploadOpen(false); fetchAll(); }}
-      />
-
-      {/* Delete confirmation */}
-      <Modal
-        isOpen={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        title="Delete Permanently?"
-        size="sm"
-      >
-        <p className="text-sm mb-4" style={{ color: 'var(--color-text)' }}>
-          Are you sure you want to permanently delete{' '}
-          <strong>"{deleteTarget?.title}"</strong>? This cannot be undone.
-        </p>
-        <div className="flex gap-2">
-          <button
-            onClick={handleDelete}
-            className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-red-500
-                       hover:bg-red-600 transition-colors"
-          >
-            Delete
-          </button>
-          <button
-            onClick={() => setDeleteTarget(null)}
-            className="px-4 py-2 rounded-xl text-sm font-semibold border transition-colors"
-            style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
-          >
-            Cancel
-          </button>
-        </div>
-      </Modal>
-    </>
+      <h3 className="text-lg font-bold text-text mb-4 line-clamp-2 min-h-[3.5rem] group-hover:text-accent transition-colors">{item.title}</h3>
+      
+      <div className="flex items-center justify-between mt-auto pt-4 border-t border-border/50">
+        <span className="text-xs font-bold text-text-muted uppercase tracking-widest">{date}</span>
+        <button className="flex items-center gap-1 text-xs font-black text-accent hover:gap-2 transition-all">
+          Study Now <ArrowRight size={14} />
+        </button>
+      </div>
+    </Motion.div>
   );
 }

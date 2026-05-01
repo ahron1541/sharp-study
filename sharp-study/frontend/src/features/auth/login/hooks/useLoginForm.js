@@ -35,32 +35,39 @@ export function useLoginForm() {
     setLockInfo(null);
 
     try {
+      console.log("1. Starting login request...");
       const data = await loginUser({
         identifier: sanitizePlainText(identifier),
         password,
         rememberMe,
       });
+      console.log("2. Backend login successful! Data received:", data);
 
-      // Store token
-      localStorage.setItem('sharp-study-token', data.access_token);
-      if (rememberMe) {
-        localStorage.setItem('sharp-study-refresh', data.refresh_token);
-      }
+      const accessToken = data.access_token || data.session?.access_token || data.data?.session?.access_token;
+      const refreshToken = data.refresh_token || data.session?.refresh_token || data.data?.session?.refresh_token;
 
-      // Sync Supabase client session (needed for RLS)
-      await supabase.auth.setSession({
-        access_token:  data.access_token,
-        refresh_token: data.refresh_token,
+      console.log("3. Extracted tokens. Access:", !!accessToken, "Refresh:", !!refreshToken);
+
+      if (!accessToken) throw new Error("No access token from server.");
+
+      localStorage.setItem('sharp-study-token', accessToken);
+      if (rememberMe && refreshToken) localStorage.setItem('sharp-study-refresh', refreshToken);
+
+      console.log("4. Attempting to set Supabase session...");
+      const sessionResponse = await supabase.auth.setSession({
+        access_token:  accessToken,
+        refresh_token: refreshToken || '',
       });
+      console.log("5. Session set response:", sessionResponse);
 
+      console.log("6. Navigating to dashboard...");
       navigate('/dashboard');
+
     } catch (err) {
-      if (err.code === 'ACCOUNT_LOCKED') {
-        setLockInfo(err.message);
-      } else {
-        setErrors({ form: err.message });
-      }
+      console.error("CRITICAL ERROR IN SUBMIT:", err);
+      setErrors({ form: err.message || 'An unexpected login error occurred.' });
     } finally {
+      console.log("7. Finally block executed. Stopping loading spinner.");
       setLoading(false);
     }
   };

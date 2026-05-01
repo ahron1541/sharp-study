@@ -10,29 +10,35 @@ import { supabase } from '../../auth/context/AuthContext';
  */
 export function applyPreferences(prefs) {
   const root = document.documentElement;
+  const nextPrefs = { ...DEFAULT_PREFERENCES, ...prefs };
 
   // Display mode
-  const mode = prefs.display_mode ?? DEFAULT_PREFERENCES.display_mode;
+  const mode = nextPrefs.display_mode;
   root.setAttribute('data-display', mode);
 
   // Atmosphere
-  const atmosphere = prefs.atmosphere ?? DEFAULT_PREFERENCES.atmosphere;
+  const atmosphere = nextPrefs.atmosphere;
   root.setAttribute('data-atmosphere', atmosphere);
 
   // Font family
-  const font = prefs.font_family ?? DEFAULT_PREFERENCES.font_family;
+  const font = nextPrefs.font_family;
   root.setAttribute('data-font', font);
 
   // Font size
-  const size = prefs.font_size ?? DEFAULT_PREFERENCES.font_size;
+  const size = Number(nextPrefs.font_size) || DEFAULT_PREFERENCES.font_size;
   root.style.setProperty('--font-scale', `${size}px`);
+  root.style.setProperty('--base-font-size', `${size}px`);
 
   // Persist to localStorage for instant reload without flash
   try {
-    localStorage.setItem('sharp-study-prefs', JSON.stringify(prefs));
+    localStorage.setItem('sharp-study-prefs', JSON.stringify({ ...nextPrefs, font_size: size }));
   } catch {
     // localStorage unavailable — non-fatal
   }
+
+  window.dispatchEvent(new CustomEvent('sharp-study-preferences-applied', {
+    detail: { ...nextPrefs, font_size: size },
+  }));
 }
 
 /**
@@ -76,7 +82,7 @@ const PREFERENCES_TIMEOUT_MS = 5000;
  * Returns: { saveAndApply, loadingPreferences } for programmatic preference updates.
  */
 export function useTheme() {
-  const [loadingPreferences, setLoadingPreferences] = useState(true);
+  const [loadingPreferences, setLoadingPreferences] = useState(() => !getCachedPreferences());
   const isMounted = useRef(true);
 
   useEffect(() => {
@@ -86,16 +92,12 @@ export function useTheme() {
     const cached = getCachedPreferences();
     if (cached) {
       applyPreferences(cached);
-      // If cached, we're not "loading" - user sees instant result
-      setLoadingPreferences(false);
     } else {
       // No cache — use OS preference as temporary fallback
       applyPreferences({
         ...DEFAULT_PREFERENCES,
         display_mode: detectOSColorScheme(),
       });
-      // Still loading since we need to fetch from server
-      setLoadingPreferences(true);
     }
 
     const loadPreferences = async () => {

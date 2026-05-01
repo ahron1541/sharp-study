@@ -3,6 +3,7 @@ const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');  // npm install mammoth (for .docx)
 const { supabaseAdmin } = require('../../config/supabase');
 const { generateStudyGuide, generateFlashcards, generateQuiz } = require('./ai.service');
+const { invalidateDashboardCache } = require('../dashboard/dashboard.cache');
 
 // Multer — store file in memory (not disk), max 150MB, whitelist types
 const upload = multer({
@@ -11,6 +12,8 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     const allowed = [
       'application/pdf',
+      'text/plain',
+      'application/vnd.ms-powerpoint',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     ];
@@ -30,6 +33,9 @@ async function extractText(file) {
   if (file.mimetype.includes('wordprocessingml')) {
     const { value } = await mammoth.extractRawText({ buffer: file.buffer });
     return value;
+  }
+  if (file.mimetype === 'text/plain') {
+    return file.buffer.toString('utf8');
   }
   // For PPTX: use a basic text extraction
   // (npm install pizzip docxtemplater for full PPTX support)
@@ -63,6 +69,13 @@ const generateMaterials = [
 
       const userId = req.user.id;
       const docTitle = file.originalname.replace(/\.[^.]+$/, '');
+      const fileType = file.mimetype.includes('pdf')
+        ? 'pdf'
+        : file.mimetype.includes('word')
+          ? 'docx'
+          : file.mimetype.includes('presentationml')
+            ? 'pptx'
+            : null;
 
       // 2. Save document record
       const { data: doc } = await supabaseAdmin
@@ -70,8 +83,7 @@ const generateMaterials = [
         .insert({
           user_id: userId,
           title: docTitle,
-          file_type: file.mimetype.includes('pdf')
-            ? 'pdf' : file.mimetype.includes('word') ? 'docx' : 'pptx',
+          file_type: fileType,
           file_size_bytes: file.size,
           extracted_text: extractedText.substring(0, 50000), // cap DB storage
           status: 'processing',
@@ -141,6 +153,8 @@ const generateMaterials = [
         .from('documents')
         .update({ status: 'done' })
         .eq('id', doc.id);
+
+      invalidateDashboardCache(userId);
 
       res.json({ success: true, generated: generateOptions });
     } catch (err) {

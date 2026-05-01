@@ -1,121 +1,89 @@
-import { useState } from 'react';
-import { Settings, User } from 'lucide-react';
-import { useSettings }          from '../hooks/useSettings';
-import PersonalizationPanel     from '../components/PersonalizationPanel';
-import AccountSecurityPanel     from '../components/AccountSecurityPanel';
-import LivePreviewCard          from '../components/LivePreviewCard';
+import React, { useState } from 'react';
+import { Settings, User, Palette, Shield, ChevronRight } from 'lucide-react';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
+import PersonalizationPanel from '../components/PersonalizationPanel';
+import AccountSecurityPanel from '../components/AccountSecurityPanel';
+import LivePreviewCard from '../components/LivePreviewCard';
+import { useSettings } from '../hooks/useSettings';
 
 const TABS = [
-  { id: 'personalization', label: 'Personalization',    icon: Settings },
-  { id: 'account',         label: 'Account & Security', icon: User },
+  { id: 'personalization', label: 'Personalization', icon: Palette, sub: 'Fonts, colors, and atmosphere' },
+  { id: 'account', label: 'Account & Security', icon: Shield, sub: 'Privacy, password, and safety' },
 ];
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('personalization');
-  const { draft, hasChanges, saving, updateDraft, discardChanges, save } = useSettings();
+  const settings = useSettings();
 
   return (
-    <div
-      className="flex h-full"
-      style={{ background: 'var(--color-bg)' }}
-    >
-      {/* Left sub-nav — desktop */}
-      <aside
-        className="hidden sm:flex flex-col w-52 flex-shrink-0 border-r p-4 gap-1"
-        style={{ background: 'var(--color-surface-2)', borderColor: 'var(--color-border)' }}
-        aria-label="Settings navigation"
-      >
-        <h1
-          className="text-base font-black mb-3 px-2"
-          style={{ color: 'var(--color-text)', fontFamily: 'var(--font-display)' }}
-        >
-          Settings
-        </h1>
-        {TABS.map(({ id, label, icon: Icon }) => {
-          const isActive = activeTab === id;
-          return (
-            <button
-              key={id}
-              onClick={() => setActiveTab(id)}
-              role="tab"
-              aria-selected={isActive}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium
-                         text-left w-full transition-colors focus-visible:outline-none
-                         focus-visible:ring-2 focus-visible:ring-offset-1"
-              style={{
-                color:    isActive ? 'var(--color-accent)' : 'var(--color-text-muted)',
-                fontWeight: isActive ? '600' : '500',
-                '--tw-ring-color': 'var(--color-accent)',
-              }}
-            >
-              <span
-                className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                style={{ background: isActive ? 'var(--color-accent)' : 'transparent' }}
-                aria-hidden="true"
-              />
-              {label}
-            </button>
-          );
-        })}
-      </aside>
+    <div className="min-h-full bg-bg">
+      <div className="max-w-7xl mx-auto p-6 md:p-10">
+        <header className="mb-10">
+           <h1 className="text-4xl font-display font-black text-text tracking-tight mb-2">Settings</h1>
+           <p className="text-text-muted font-medium">Fine-tune your workspace to match your learning style.</p>
+        </header>
 
-      {/* Scrollable content area */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-5xl mx-auto p-5 sm:p-6">
-          <div className="flex flex-col lg:flex-row gap-6">
-
-            {/* Active panel */}
-            <div
-              id={`settings-panel-${activeTab}`}
-              role="tabpanel"
-              className="flex-1 min-w-0"
-            >
-              {activeTab === 'personalization' && (
-                <PersonalizationPanel
-                  draft={draft}
-                  hasChanges={hasChanges}
-                  saving={saving}
-                  updateDraft={updateDraft}
-                  discardChanges={discardChanges}
-                  onSave={save}
-                />
-              )}
-              {activeTab === 'account' && <AccountSecurityPanel />}
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_20rem] gap-8 items-start">
+          <div className="space-y-10">
+            {/* Desktop Navigation */}
+            <div className="flex flex-wrap gap-4">
+              {TABS.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-3 px-6 py-4 rounded-3xl transition-all duration-300 border-2 ${
+                      isActive 
+                        ? 'bg-accent border-accent text-white shadow-xl shadow-accent/20' 
+                        : 'bg-surface border-border text-text-muted hover:border-accent/40'
+                    }`}
+                  >
+                    <Icon size={20} />
+                    <div className="text-left">
+                       <p className={`font-bold ${isActive ? 'text-white' : 'text-text'}`}>{tab.label}</p>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Live preview — personalization only */}
-            {activeTab === 'personalization' && (
-              <div className="lg:w-56 flex-shrink-0">
-                <LivePreviewCard draft={draft} />
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile bottom tab bar */}
-      <div
-        className="sm:hidden fixed bottom-0 left-0 right-0 z-30 flex border-t"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-        role="tablist"
-        aria-label="Settings sections"
-      >
-        {TABS.map(({ id, label, icon: Icon }) => {
-          const isActive = activeTab === id;
-          return (
-            <button
-              key={id}
-              onClick={() => setActiveTab(id)}
-              role="tab"
-              aria-selected={isActive}
-              className="flex-1 flex flex-col items-center gap-0.5 py-3 text-xs font-medium"
-              style={{ color: isActive ? 'var(--color-accent)' : 'var(--color-text-muted)' }}
+            {/* Panel area */}
+            <Motion.div
+              layout
+              className="bg-surface rounded-[2.5rem] p-8 md:p-10 border border-border shadow-card"
             >
-              <Icon size={18} aria-hidden="true" />
-              {label}
-            </button>
-          );
-        })}
+              <AnimatePresence mode="wait">
+                <Motion.div
+                  key={activeTab}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  {activeTab === 'personalization' && <PersonalizationPanel {...settings} />}
+                  {activeTab === 'account' && <AccountSecurityPanel />}
+                </Motion.div>
+              </AnimatePresence>
+            </Motion.div>
+          </div>
+
+          {/* Sticky Sidebar (Preview) */}
+          <aside className="xl:sticky xl:top-10 space-y-6">
+             <div className="bg-surface-2 p-1 rounded-[2.8rem] border border-border">
+                <LivePreviewCard draft={settings.draft} />
+             </div>
+             <div className="p-8 rounded-[2.5rem] bg-accent/5 border border-accent/10">
+                <h4 className="font-bold text-accent mb-2 flex items-center gap-2">
+                   <Palette size={18} /> Accessibility Tip
+                </h4>
+                <p className="text-sm text-text-muted leading-relaxed">
+                   High contrast modes and Dyslexia-friendly fonts are available to make reading easier for everyone.
+                </p>
+             </div>
+          </aside>
+        </div>
       </div>
     </div>
   );
