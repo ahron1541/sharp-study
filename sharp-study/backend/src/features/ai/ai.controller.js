@@ -1,9 +1,32 @@
 const multer = require('multer');
-const pdfParse = require('pdf-parse'); // Standard, clean import
+const pdfParseRaw = require('pdf-parse'); 
 const mammoth = require('mammoth');
 const { supabaseAdmin } = require('../../config/supabase');
 const { generateStudyGuide, generateFlashcards, generateQuiz } = require('./ai.service');
 const { invalidateDashboardCache } = require('../dashboard/dashboard.cache');
+
+// ==========================================
+// 🛑 DEBUGGING BLOCK: WHAT IS PDF-PARSE? 🛑
+// ==========================================
+console.log('\n\n====================================');
+console.log('🔍 DEBUG: INSPECTING PDF-PARSE IMPORT');
+console.log('Type of import:', typeof pdfParseRaw);
+console.log('Is it null?', pdfParseRaw === null);
+if (pdfParseRaw && typeof pdfParseRaw === 'object') {
+    console.log('Available keys inside the object:', Object.keys(pdfParseRaw));
+    console.log('Does it have a .default?', !!pdfParseRaw.default);
+    console.log('Type of .default:', typeof pdfParseRaw.default);
+}
+console.log('Raw output of import:', pdfParseRaw);
+console.log('====================================\n\n');
+
+// Attempt to intelligently grab the function based on the debug output
+let pdfParseFunc = null;
+if (typeof pdfParseRaw === 'function') {
+    pdfParseFunc = pdfParseRaw;
+} else if (pdfParseRaw && typeof pdfParseRaw.default === 'function') {
+    pdfParseFunc = pdfParseRaw.default;
+}
 
 // Multer — store file in memory (not disk), max 150MB, whitelist types
 const upload = multer({
@@ -27,11 +50,14 @@ const upload = multer({
 
 async function extractText(file) {
   if (file.mimetype === 'application/pdf') {
-    // Safety check to ensure pdfParse loaded as a function
-    if (typeof pdfParse !== 'function') {
-      throw new Error('PDF parsing library is not configured correctly.');
+    if (!pdfParseFunc) {
+      console.error('CRITICAL: We still cannot find the PDF parsing function. Look at the debug logs above!');
+      throw new Error('PDF parsing library is completely broken or missing.');
     }
-    const data = await pdfParse(file.buffer);
+    
+    console.log('Attempting to parse PDF. Buffer size:', file.buffer.length);
+    const data = await pdfParseFunc(file.buffer);
+    console.log('PDF parsed successfully! Extracted characters:', data.text.length);
     return data.text;
   }
   
@@ -44,12 +70,10 @@ async function extractText(file) {
     return file.buffer.toString('utf8');
   }
   
-  // For PPTX: basic text extraction
   return file.buffer.toString('utf8').replace(/[^\x20-\x7E\n]/g, ' ').trim();
 }
 
 const generateMaterials = [
-  // 1. Multer middleware first
   (req, res, next) => {
     upload(req, res, (err) => {
       if (err) return res.status(400).json({ error: err.message });
@@ -57,7 +81,6 @@ const generateMaterials = [
     });
   },
   
-  // 2. Main handler
   async (req, res) => {
     try {
       const file = req.file;
@@ -68,23 +91,18 @@ const generateMaterials = [
         return res.status(400).json({ error: 'Select at least one generation option.' });
       }
 
-      // Extract text from the uploaded file
+      console.log('--- STARTING GENERATION PROCESS ---');
+      console.log('File type:', file.mimetype);
+
       const extractedText = await extractText(file);
       if (!extractedText || extractedText.trim().length < 100) {
-        return res.status(422).json({ error: 'Could not extract enough text from this file. It might be an image-based PDF or too short.' });
+        return res.status(422).json({ error: 'Could not extract enough text from this file.' });
       }
 
       const userId = req.user.id;
       const docTitle = file.originalname.replace(/\.[^.]+$/, '');
-      const fileType = file.mimetype.includes('pdf')
-        ? 'pdf'
-        : file.mimetype.includes('word')
-          ? 'docx'
-          : file.mimetype.includes('presentationml')
-            ? 'pptx'
-            : null;
+      const fileType = file.mimetype.includes('pdf') ? 'pdf' : file.mimetype.includes('word') ? 'docx' : file.mimetype.includes('presentationml') ? 'pptx' : null;
 
-      // Save document record
       const { data: doc, error: docError } = await supabaseAdmin
         .from('documents')
         .insert({
@@ -92,7 +110,7 @@ const generateMaterials = [
           title: docTitle,
           file_type: fileType,
           file_size_bytes: file.size,
-          extracted_text: extractedText.substring(0, 50000), // cap DB storage
+          extracted_text: extractedText.substring(0, 50000), 
           status: 'processing',
         })
         .select()
@@ -100,7 +118,6 @@ const generateMaterials = [
 
       if (docError) throw docError;
 
-      // Run AI generation in parallel
       const tasks = [];
 
       if (generateOptions.includes('study_guide')) {
@@ -157,24 +174,21 @@ const generateMaterials = [
         );
       }
 
-      // Wait for all AI tasks and database inserts to finish
       await Promise.all(tasks);
 
-      // Update document status
       await supabaseAdmin
         .from('documents')
         .update({ status: 'done' })
         .eq('id', doc.id);
 
-      // Assuming this is synchronous or handled appropriately
       if (typeof invalidateDashboardCache === 'function') {
          invalidateDashboardCache(userId);
       }
 
+      console.log('--- GENERATION COMPLETE ---');
       res.json({ success: true, generated: generateOptions });
     } catch (err) {
       console.error('AI generation error:', err);
-      // Update document status to error if something goes wrong
       res.status(500).json({ error: 'AI generation failed. Please try again.' });
     }
   },
