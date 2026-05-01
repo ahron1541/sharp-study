@@ -1,7 +1,8 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+// Updated model name - gemini-2.0-flash is the current available model
+const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 async function generateStudyGuide(extractedText) {
   const prompt = `
