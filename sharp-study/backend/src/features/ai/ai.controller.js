@@ -1,19 +1,6 @@
 const multer = require('multer');
-
-// Handle pdf-parse for both CommonJS and ES Module exports
-let pdfParse;
-try {
-  pdfParse = require('pdf-parse');
-  // If it has a default property (ESM export), use it, otherwise use the module directly
-  if (pdfParse && pdfParse.default) {
-    pdfParse = pdfParse.default;
-  }
-} catch (e) {
-  console.error('Failed to load pdf-parse:', e.message);
-  pdfParse = null;
-}
-
-const mammoth = require('mammoth');  // npm install mammoth (for .docx)
+const pdfParse = require('pdf-parse'); // Standard, clean import
+const mammoth = require('mammoth');
 const { supabaseAdmin } = require('../../config/supabase');
 const { generateStudyGuide, generateFlashcards, generateQuiz } = require('./ai.service');
 const { invalidateDashboardCache } = require('../dashboard/dashboard.cache');
@@ -40,30 +27,37 @@ const upload = multer({
 
 async function extractText(file) {
   if (file.mimetype === 'application/pdf') {
+    // Safety check to ensure pdfParse loaded as a function
+    if (typeof pdfParse !== 'function') {
+      throw new Error('PDF parsing library is not configured correctly.');
+    }
     const data = await pdfParse(file.buffer);
     return data.text;
   }
+  
   if (file.mimetype.includes('wordprocessingml')) {
     const { value } = await mammoth.extractRawText({ buffer: file.buffer });
     return value;
   }
+  
   if (file.mimetype === 'text/plain') {
     return file.buffer.toString('utf8');
   }
-  // For PPTX: use a basic text extraction
-  // (npm install pizzip docxtemplater for full PPTX support)
+  
+  // For PPTX: basic text extraction
   return file.buffer.toString('utf8').replace(/[^\x20-\x7E\n]/g, ' ').trim();
 }
 
 const generateMaterials = [
-  // multer middleware first
+  // 1. Multer middleware first
   (req, res, next) => {
     upload(req, res, (err) => {
       if (err) return res.status(400).json({ error: err.message });
       next();
     });
   },
-  // Then the main handler
+  
+  // 2. Main handler
   async (req, res) => {
     try {
       const file = req.file;
@@ -74,10 +68,10 @@ const generateMaterials = [
         return res.status(400).json({ error: 'Select at least one generation option.' });
       }
 
-      // 1. Extract text from the uploaded file
+      // Extract text from the uploaded file
       const extractedText = await extractText(file);
       if (!extractedText || extractedText.trim().length < 100) {
-        return res.status(422).json({ error: 'Could not extract enough text from this file.' });
+        return res.status(422).json({ error: 'Could not extract enough text from this file. It might be an image-based PDF or too short.' });
       }
 
       const userId = req.user.id;
@@ -90,8 +84,8 @@ const generateMaterials = [
             ? 'pptx'
             : null;
 
-      // 2. Save document record
-      const { data: doc } = await supabaseAdmin
+      // Save document record
+      const { data: doc, error: docError } = await supabaseAdmin
         .from('documents')
         .insert({
           user_id: userId,
@@ -104,7 +98,9 @@ const generateMaterials = [
         .select()
         .single();
 
-      // 3. Run AI generation in parallel
+      if (docError) throw docError;
+
+      // Run AI generation in parallel
       const tasks = [];
 
       if (generateOptions.includes('study_guide')) {
@@ -128,7 +124,8 @@ const generateMaterials = [
               .insert({ user_id: userId, document_id: doc.id, title: `Flashcards: ${docTitle}` })
               .select()
               .single();
-            if (set && cards.length) {
+              
+            if (set && cards && cards.length > 0) {
               await supabaseAdmin.from('flashcards').insert(
                 cards.map((c) => ({ set_id: set.id, front: c.front, back: c.back }))
               );
@@ -145,7 +142,8 @@ const generateMaterials = [
               .insert({ user_id: userId, document_id: doc.id, title: `Quiz: ${docTitle}` })
               .select()
               .single();
-            if (quiz && questions.length) {
+              
+            if (quiz && questions && questions.length > 0) {
               await supabaseAdmin.from('quiz_questions').insert(
                 questions.map((q) => ({
                   quiz_id: quiz.id,
@@ -159,19 +157,24 @@ const generateMaterials = [
         );
       }
 
+      // Wait for all AI tasks and database inserts to finish
       await Promise.all(tasks);
 
-      // 4. Update document status
+      // Update document status
       await supabaseAdmin
         .from('documents')
         .update({ status: 'done' })
         .eq('id', doc.id);
 
-      invalidateDashboardCache(userId);
+      // Assuming this is synchronous or handled appropriately
+      if (typeof invalidateDashboardCache === 'function') {
+         invalidateDashboardCache(userId);
+      }
 
       res.json({ success: true, generated: generateOptions });
     } catch (err) {
       console.error('AI generation error:', err);
+      // Update document status to error if something goes wrong
       res.status(500).json({ error: 'AI generation failed. Please try again.' });
     }
   },
