@@ -34,15 +34,26 @@ async function withRetry(apiCall, maxRetries = 3, initialDelayMs = 2000) {
 
 async function generateStudyGuide(extractedText) {
   const prompt = `
-You are an accessibility-focused study assistant for students with ADHD and Dyslexia.
-Given the lesson text below, create a structured study guide.
-Rules:
-- Use short sentences (max 15 words each).
-- Use simple language (Grade 7 reading level).
-- Use numbered headings and bullet points.
-- Put key terms in **bold**.
-- Keep the total response under 800 words.
-Respond in Markdown only.
+You are an accessibility-focused study coach for students with ADHD and Dyslexia.
+Turn the lesson text into a clean, fast study guide that feels easy to review.
+
+Output rules:
+- Return semantic HTML only. No markdown, no code fences, no explanations.
+- Use short sentences and simple language.
+- Keep the guide concise, focused, and skimmable.
+- Use these sections in this order:
+  1. <h1>Title</h1>
+  2. <h2>Overview</h2>
+  3. <h2>Key Concepts</h2>
+  4. <h2>Examples</h2>
+  5. <h2>Quick Reference</h2>
+  6. <h2>Self-Check</h2>
+  7. <h2>Discussion Questions</h2>
+- Use <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <table>, <thead>, <tbody>, <tr>, <th>, and <td> when useful.
+- Bold the most important terms and names.
+- Make Quick Reference a compact list or table of the most useful facts.
+- Put 5 to 7 discussion questions at the bottom.
+- Keep the total output under 900 words.
 
 Lesson text:
 """

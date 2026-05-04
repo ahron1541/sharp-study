@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Volume2, Square } from 'lucide-react';
 
 export default function TTSButton({ text }) {
   const [speaking, setSpeaking] = useState(false);
@@ -28,11 +29,23 @@ export default function TTSButton({ text }) {
     <button
       onClick={speaking ? stop : speak}
       aria-label={speaking ? 'Stop reading aloud' : 'Read aloud'}
-      className="flex items-center gap-2 px-4 py-2 rounded-lg
-                 bg-blue-600 text-white hover:bg-blue-700
-                 focus-visible:outline focus-visible:outline-2"
+      className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
+        speaking
+          ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
+          : 'bg-[var(--accent)] text-white hover:opacity-90 shadow-sm'
+      }`}
     >
-      {speaking ? '⏹ Stop Reading' : '🔊 Read Aloud'}
+      {speaking ? (
+        <>
+          <Square size={18} className="fill-current" aria-hidden="true" />
+          <span className="hidden sm:inline">Stop Reading</span>
+        </>
+      ) : (
+        <>
+          <Volume2 size={18} aria-hidden="true" />
+          <span className="hidden sm:inline">Read Aloud</span>
+        </>
+      )}
     </button>
   );
 }

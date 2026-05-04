@@ -187,6 +187,66 @@ body {
   color: var(--text-color);
 }
 
+.study-guide-content h1,
+.study-guide-content h2,
+.study-guide-content h3,
+.study-guide-content h4,
+.study-guide-content h5,
+.study-guide-content h6 {
+  scroll-margin-top: 7rem;
+}
+
+.study-guide-content blockquote {
+  margin: 1.5rem 0;
+  padding: 1rem 1.25rem;
+  border-left: 4px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: 1rem;
+}
+
+.study-guide-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.25rem 0;
+  overflow: hidden;
+  border-radius: 1rem;
+}
+
+.study-guide-content th,
+.study-guide-content td {
+  border: 1px solid var(--card-border);
+  padding: 0.85rem 1rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.study-guide-content thead th {
+  background: color-mix(in srgb, var(--accent) 12%, var(--card-bg));
+}
+
+.study-guide-content details {
+  margin: 1rem 0;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--card-border);
+  border-radius: 1rem;
+  background: var(--card-bg);
+}
+
+.study-guide-content summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.study-guide-content mark,
+.study-guide-highlight {
+  background: color-mix(in srgb, #facc15 65%, white);
+  color: var(--text-color);
+  padding: 0 0.15em;
+  border-radius: 0.3em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
 /* Global spinner keyframe — used by PillButton */
 @keyframes spin {
   to { transform: rotate(360deg); }

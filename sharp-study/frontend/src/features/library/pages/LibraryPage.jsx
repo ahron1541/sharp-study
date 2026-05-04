@@ -1,34 +1,26 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Archive,
-  Bold,
   BookOpen,
   CheckCircle2,
   CreditCard,
   FileText,
-  Heading1,
-  Heading2,
   HelpCircle,
-  Highlighter,
-  Italic,
-  List,
-  ListOrdered,
   Loader2,
   Plus,
-  Redo2,
   Search,
   Sparkles,
   Trash2,
-  Underline,
-  Undo2,
   Upload,
-  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Modal from '../../../shared/components/Modal';
 import { API_URL } from '../../../config/api';
 import { useAuth } from '../../auth/context/AuthContext';
 import { useDashboard } from '../../dashboard/hooks/useDashboard';
+import StudyGuideEditor from '../../study-guide/components/StudyGuideEditor';
+import { createInstructionalStudyGuideTemplate } from '../../study-guide/utils/content';
 
 const MATERIAL_TYPES = {
   study_guide: {
@@ -57,11 +49,12 @@ const MATERIAL_TYPES = {
   },
 };
 
-const EMPTY_EDITOR = '<h1>Untitled Study Material</h1><p>Start typing your notes here...</p>';
+const EMPTY_EDITOR = createInstructionalStudyGuideTemplate();
 const MAX_FILE_BYTES = 150 * 1024 * 1024;
 
 export default function LibraryPage() {
   const { user, supabase } = useAuth();
+  const navigate = useNavigate();
   const { items, loading, error, refetch } = useDashboard();
   const [search, setSearch] = useState('');
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -72,7 +65,6 @@ export default function LibraryPage() {
   const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState({ value: 0, message: '' });
-  const editorRef = useRef(null);
 
   const allMaterials = useMemo(() => {
     const safeItems = items ?? { study_guides: [], flashcards: [], quizzes: [] };
@@ -94,12 +86,6 @@ export default function LibraryPage() {
     setProgress({ value: 0, message: '' });
   };
 
-  const runEditorCommand = (command, value = null) => {
-    editorRef.current?.focus();
-    document.execCommand(command, false, value);
-    setEditorHtml(editorRef.current?.innerHTML ?? '');
-  };
-
   const handleFileChange = (event) => {
     const nextFile = event.target.files?.[0];
     if (!nextFile) return;
@@ -116,6 +102,11 @@ export default function LibraryPage() {
     }
 
     setFile(nextFile);
+  };
+
+  const handleSelectType = (nextType) => {
+    setSelectedType(nextType);
+    setEditorHtml(nextType === 'study_guide' ? EMPTY_EDITOR : '');
   };
 
   const saveManualMaterial = async () => {
@@ -145,7 +136,7 @@ export default function LibraryPage() {
           .single();
         if (setError) throw setError;
 
-        const text = editorRef.current?.innerText?.trim() || 'Front | Back';
+        const text = new DOMParser().parseFromString(editorHtml, 'text/html').body.textContent?.trim() || 'Front | Back';
         const [front = 'Question', back = text] = text.split('|').map((part) => part.trim());
         const { error: cardError } = await supabase.from('flashcards').insert({
           set_id: set.id,
@@ -163,7 +154,7 @@ export default function LibraryPage() {
           .single();
         if (quizError) throw quizError;
 
-        const text = editorRef.current?.innerText?.trim() || 'Write your question here';
+        const text = new DOMParser().parseFromString(editorHtml, 'text/html').body.textContent?.trim() || 'Write your question here';
         const { error: questionError } = await supabase.from('quiz_questions').insert({
           quiz_id: quiz.id,
           question: text,
@@ -314,16 +305,37 @@ export default function LibraryPage() {
                 const meta = MATERIAL_TYPES[material.type];
                 const Icon = meta.icon;
                 return (
-                  <article key={`${material.type}-${material.id}`} className="rounded-[2rem] border border-border bg-surface-2 p-5 transition hover:-translate-y-1 hover:border-accent hover:shadow-card-hover">
+                  <article 
+                    key={`${material.type}-${material.id}`} 
+                    onClick={() => {
+                      const route = material.type === 'study_guide' ? 'study-guide' : material.type;
+                      navigate(`/${route}/${material.id}`);
+                    }}
+                    className="cursor-pointer rounded-[2rem] border border-border bg-surface-2 p-5 transition hover:-translate-y-1 hover:border-accent hover:shadow-card-hover"
+                  >
                     <div className="mb-5 flex items-start justify-between gap-3">
                       <span className="flex h-11 w-11 items-center justify-center rounded-2xl" style={{ background: `${meta.color}1A`, color: meta.color }}>
                         <Icon size={20} aria-hidden="true" />
                       </span>
                       <div className="flex gap-1 text-text-muted">
-                        <button className="rounded-xl p-2 hover:bg-surface" aria-label="Archive">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Future archive functionality
+                          }}
+                          className="rounded-xl p-2 hover:bg-surface" 
+                          aria-label="Archive"
+                        >
                           <Archive size={16} />
                         </button>
-                        <button className="rounded-xl p-2 text-red-500 hover:bg-red-500/10" aria-label="Delete">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Future delete functionality
+                          }}
+                          className="rounded-xl p-2 text-red-500 hover:bg-red-500/10" 
+                          aria-label="Delete"
+                        >
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -350,14 +362,12 @@ export default function LibraryPage() {
         file={file}
         saving={saving}
         progress={progress}
-        editorRef={editorRef}
         onClose={resetWizard}
-        onSelectType={setSelectedType}
+        onSelectType={handleSelectType}
         onSelectMode={setCreationMode}
         onTitleChange={setTitle}
         onEditorChange={setEditorHtml}
         onFileChange={handleFileChange}
-        onCommand={runEditorCommand}
         onManualCreate={saveManualMaterial}
         onAutoCreate={generateAutomatically}
       />
@@ -374,14 +384,12 @@ function CreateWizard({
   file,
   saving,
   progress,
-  editorRef,
   onClose,
   onSelectType,
   onSelectMode,
   onTitleChange,
   onEditorChange,
   onFileChange,
-  onCommand,
   onManualCreate,
   onAutoCreate,
 }) {
@@ -477,12 +485,35 @@ function CreateWizard({
               placeholder={`${selectedMeta.label} title`}
               className="w-full rounded-2xl border border-border bg-surface-2 px-4 py-3 font-bold text-text outline-none focus:border-accent"
             />
-            <ManualProcessor
-              editorRef={editorRef}
-              html={editorHtml}
-              onChange={onEditorChange}
-              onCommand={onCommand}
-            />
+            {selectedType === 'study_guide' ? (
+              <>
+                <div className="rounded-[2rem] border border-dashed border-border bg-surface-2 p-4 text-sm leading-7 text-text-muted">
+                  Build the guide like a study coach would: short headings, tight bullets, bold keywords,
+                  and a quick review section at the bottom. The template already includes those prompts.
+                </div>
+                <StudyGuideEditor
+                  content={editorHtml}
+                  onChange={onEditorChange}
+                  mode="create"
+                  starterContent={EMPTY_EDITOR}
+                />
+              </>
+            ) : (
+              <div className="space-y-3">
+                <div className="rounded-[2rem] border border-dashed border-border bg-surface-2 p-4 text-sm leading-7 text-text-muted">
+                  {selectedType === 'flashcards'
+                    ? 'Type one flashcard as Front | Back, or add a short note you can transform later.'
+                    : 'Write one clear question, then save it into the quiz builder.'}
+                </div>
+                <textarea
+                  value={editorHtml}
+                  onChange={(event) => onEditorChange(event.target.value)}
+                  placeholder={selectedType === 'flashcards' ? 'Front | Back' : 'Write your question here'}
+                  rows={8}
+                  className="w-full rounded-[2rem] border border-border bg-surface-2 px-4 py-4 text-sm leading-7 text-text outline-none focus:border-accent"
+                />
+              </div>
+            )}
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button onClick={onClose} className="rounded-2xl px-5 py-3 font-bold text-text-muted hover:bg-surface-2">Cancel</button>
               <button
@@ -498,51 +529,5 @@ function CreateWizard({
         )}
       </div>
     </Modal>
-  );
-}
-
-function ManualProcessor({ editorRef, html, onChange, onCommand }) {
-  return (
-    <div className="rounded-[2rem] border border-border bg-surface overflow-hidden">
-      <div className="sticky top-0 z-10 flex flex-wrap gap-1 border-b border-border bg-surface/95 p-3 backdrop-blur">
-        <ToolButton label="Undo" onClick={() => onCommand('undo')} icon={Undo2} />
-        <ToolButton label="Redo" onClick={() => onCommand('redo')} icon={Redo2} />
-        <span className="mx-1 h-9 w-px bg-border" aria-hidden="true" />
-        <ToolButton label="Bold" onClick={() => onCommand('bold')} icon={Bold} />
-        <ToolButton label="Italic" onClick={() => onCommand('italic')} icon={Italic} />
-        <ToolButton label="Underline" onClick={() => onCommand('underline')} icon={Underline} />
-        <ToolButton label="Highlight" onClick={() => onCommand('backColor', '#FEF08A')} icon={Highlighter} />
-        <span className="mx-1 h-9 w-px bg-border" aria-hidden="true" />
-        <ToolButton label="Heading 1" onClick={() => onCommand('formatBlock', 'H1')} icon={Heading1} />
-        <ToolButton label="Heading 2" onClick={() => onCommand('formatBlock', 'H2')} icon={Heading2} />
-        <ToolButton label="Bullets" onClick={() => onCommand('insertUnorderedList')} icon={List} />
-        <ToolButton label="Numbers" onClick={() => onCommand('insertOrderedList')} icon={ListOrdered} />
-      </div>
-      <div
-        ref={editorRef}
-        contentEditable
-        suppressContentEditableWarning
-        onInput={(event) => onChange(event.currentTarget.innerHTML)}
-        dangerouslySetInnerHTML={{ __html: html }}
-        className="prose prose-slate max-w-none min-h-[28rem] overflow-y-auto bg-surface p-6 text-text outline-none dark:prose-invert"
-      />
-    </div>
-  );
-}
-
-function ToolButton({ label, onClick, icon: Icon }) {
-  return (
-    <button
-      type="button"
-      onMouseDown={(event) => {
-        event.preventDefault();
-        onClick();
-      }}
-      aria-label={label}
-      title={label}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-text-muted transition hover:bg-surface-2 hover:text-text"
-    >
-      <Icon size={17} aria-hidden="true" />
-    </button>
   );
 }
