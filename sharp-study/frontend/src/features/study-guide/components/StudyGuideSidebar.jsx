@@ -1,4 +1,4 @@
-import { ChevronDown, BookOpen } from 'lucide-react';
+import { BookOpen, Menu } from 'lucide-react';
 import { useState } from 'react';
 
 export default function StudyGuideSidebar({
@@ -22,10 +22,9 @@ export default function StudyGuideSidebar({
             onClick={() => setCollapsed((value) => !value)}
             aria-expanded={!collapsed}
             aria-label={collapsed ? 'Expand contents' : 'Collapse contents'}
-            className="flex items-center gap-1 rounded-full bg-[color:var(--color-surface-2)] px-3 py-1.5 text-xs font-bold text-[color:var(--color-text)] transition hover:bg-[color:var(--color-border)]"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-[color:var(--color-surface-2)] text-[color:var(--color-text)] transition hover:bg-[color:var(--color-border)]"
           >
-            {collapsed ? 'Open' : 'Close'}
-            <ChevronDown size={14} className={`transition-transform ${collapsed ? '-rotate-90' : 'rotate-0'}`} />
+            <Menu size={18} />
           </button>
         </div>
 
@@ -36,7 +35,7 @@ export default function StudyGuideSidebar({
             </p>
 
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-              {sections.length ? sections.map((section, index) => {
+              {sections.length ? sections.map((section) => {
                 const levelOffset = Math.max(0, Math.min(3, (section.level || 2) - 2));
                 return (
                   <button
@@ -46,24 +45,10 @@ export default function StudyGuideSidebar({
                     className="group flex w-full items-start gap-3 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] px-3 py-3 text-left transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)]"
                     style={{ marginLeft: `${levelOffset * 12}px` }}
                   >
-                    <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-surface)] text-xs font-black text-[color:var(--color-accent)]">
-                      {String(index + 1).padStart(2, '0')}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="truncate text-sm font-bold text-[color:var(--color-text)] group-hover:text-[color:var(--color-accent)]">
-                          {section.title}
-                        </h3>
-                        <span className="rounded-full border border-[color:var(--color-border)] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.18em] text-[color:var(--color-text-muted)]">
-                          H{section.level || 2}
-                        </span>
-                      </div>
-                      {section.summary ? (
-                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-[color:var(--color-text-muted)]">
-                          {section.summary}
-                        </p>
-                      ) : null}
-                    </div>
+                    <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-[color:var(--color-accent)]" />
+                    <h3 className="min-w-0 flex-1 truncate text-sm font-bold text-[color:var(--color-text)] group-hover:text-[color:var(--color-accent)]">
+                      {section.title}
+                    </h3>
                   </button>
                 );
               }) : (

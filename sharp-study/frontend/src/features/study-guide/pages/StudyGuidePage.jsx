@@ -49,6 +49,7 @@ export default function StudyGuidePage() {
 
   const contentRef = useRef(null);
   const selectionRangeRef = useRef(null);
+  const showContentsSidebar = false;
 
   useEffect(() => {
     let isMounted = true;
@@ -298,8 +299,10 @@ export default function StudyGuidePage() {
         </div>
       </section>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <StudyGuideSidebar sections={sections} onJumpToSection={jumpToSection} />
+      <div className="mt-6">
+        {showContentsSidebar && (
+          <StudyGuideSidebar sections={sections} onJumpToSection={jumpToSection} />
+        )}
 
         <div className="space-y-6">
           <section className="rounded-[2.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-6">
@@ -342,29 +345,24 @@ export default function StudyGuidePage() {
                     </button>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {outlineCards.map((section, index) => (
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {outlineCards.map((section) => (
                       <button
                         key={section.id}
                         type="button"
                         onClick={() => jumpToSection(section.id)}
-                        className="group rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md"
+                        className="group flex min-h-[8rem] flex-col justify-between rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md"
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-xs font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">
-                              Section {String(index + 1).padStart(2, '0')}
-                            </p>
-                            <h3 className="mt-2 text-base font-bold text-[color:var(--color-text)]">
-                              {section.title}
-                            </h3>
-                          </div>
+                          <h3 className="min-w-0 text-base font-bold leading-6 text-[color:var(--color-text)]">
+                            {section.title}
+                          </h3>
                           <span className="rounded-full bg-[color:var(--color-surface)] px-3 py-1 text-xs font-bold text-[color:var(--color-text-muted)]">
                             Jump
                           </span>
                         </div>
-                        <p className="mt-3 line-clamp-2 text-sm leading-6 text-[color:var(--color-text-muted)]">
-                          {section.summary || 'Open this section to review the full details.'}
+                        <p className="mt-3 text-sm leading-6 text-[color:var(--color-text-muted)]">
+                          Tap to jump to this heading or subheading.
                         </p>
                       </button>
                     ))}

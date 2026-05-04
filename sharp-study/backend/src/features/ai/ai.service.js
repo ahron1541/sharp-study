@@ -56,6 +56,9 @@ Output rules:
 - Use <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <table>, <thead>, <tbody>, <tr>, <th>, and <td> when useful.
 - Bold the most important terms and names.
 - Make Quick Reference a compact list or table of the most useful facts.
+- Prefer quick reference groupings that match the lesson content, such as Key Terms/Concepts, Key People, Key Dates, Key Events, Cause and Effect, Formula/Steps, Comparisons, or Timeline.
+- If the lesson naturally fits a table, use a simple accessible table with short headers and short cells.
+- Do not force sections that do not fit the lesson. Only include the most useful quick-reference groups for this topic.
 - Put 5 to 7 discussion questions at the bottom.
 - Prefer factual, study-friendly phrasing over filler prose.
 - Keep the total output under 900 words.
