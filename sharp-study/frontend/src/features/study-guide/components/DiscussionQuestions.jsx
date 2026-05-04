@@ -37,21 +37,22 @@ export default function DiscussionQuestions({ questions = [] }) {
         <p className="text-xl font-medium leading-relaxed text-[color:var(--color-text)]">
           {question.question}
         </p>
-        <div className="rounded-[1.75rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-5">
+        <div className="relative overflow-hidden rounded-[1.75rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-5 pb-20">
+          <div className={`transition-all duration-300 ${showAnswer ? 'blur-0 opacity-100' : 'blur-md opacity-85 select-none'}`}>
+            <p className="leading-7 text-[color:var(--color-text)]">
+              {question.answer}
+            </p>
+          </div>
+
           <button
             type="button"
             onClick={() => setShowAnswer((value) => !value)}
-            className="mx-auto mb-4 flex items-center gap-2 rounded-full bg-[color:var(--color-surface)] px-4 py-2 text-sm font-bold text-[color:var(--color-text)] shadow-sm transition hover:-translate-y-0.5"
+            className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-[color:var(--color-surface)] px-4 py-2 text-sm font-bold text-[color:var(--color-text)] shadow-sm transition hover:-translate-y-0.5"
           >
             {showAnswer ? <EyeOff size={16} /> : <Eye size={16} />}
             {showAnswer ? 'Hide answer' : 'Show example answer'}
           </button>
-
-          {showAnswer && (
-            <p className="leading-7 text-[color:var(--color-text)]">
-              {question.answer}
-            </p>
-          )}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[color:var(--color-surface-2)]/35" />
         </div>
 
         <div className="flex items-center justify-between">

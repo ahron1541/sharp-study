@@ -36,6 +36,7 @@ async function generateStudyGuide(extractedText) {
   const prompt = `
 You are an accessibility-focused study coach for students with ADHD and Dyslexia.
 Turn the lesson text into a clean, fast study guide that feels easy to review.
+The HTML will be rendered directly in a study-guide reader with a heading-based sidebar, so the structure must be accurate and useful for navigation.
 
 Output rules:
 - Return semantic HTML only. No markdown, no code fences, no explanations.
@@ -49,10 +50,14 @@ Output rules:
   5. <h2>Quick Reference</h2>
   6. <h2>Self-Check</h2>
   7. <h2>Discussion Questions</h2>
+- Use <h3> only for subheadings under a related <h2> section.
+- Every heading must have real content underneath it. Do not create empty headings, placeholder labels, or sections that say nothing.
+- Make the heading text specific, meaningful, and easy to jump to from a sidebar.
 - Use <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <table>, <thead>, <tbody>, <tr>, <th>, and <td> when useful.
 - Bold the most important terms and names.
 - Make Quick Reference a compact list or table of the most useful facts.
 - Put 5 to 7 discussion questions at the bottom.
+- Prefer factual, study-friendly phrasing over filler prose.
 - Keep the total output under 900 words.
 
 Lesson text:
