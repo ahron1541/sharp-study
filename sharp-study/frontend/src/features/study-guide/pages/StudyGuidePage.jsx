@@ -21,6 +21,15 @@ import {
   stripStudyGuideHtml,
 } from '../utils/content';
 
+const HIGHLIGHT_COLORS = [
+  { name: 'Yellow', value: '#fde68a' },
+  { name: 'Green', value: '#bbf7d0' },
+  { name: 'Blue', value: '#bfdbfe' },
+  { name: 'Pink', value: '#fbcfe8' },
+  { name: 'Purple', value: '#ddd6fe' },
+  { name: 'Orange', value: '#fed7aa' },
+];
+
 export default function StudyGuidePage() {
   const { id } = useParams();
   const { supabase } = useAuth();
@@ -31,7 +40,6 @@ export default function StudyGuidePage() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [content, setContent] = useState('');
-  const [sidebarTab, setSidebarTab] = useState('outline');
   const [selectionToolbar, setSelectionToolbar] = useState({
     visible: false,
     position: null,
@@ -104,13 +112,13 @@ export default function StudyGuidePage() {
   }, [content, sections]);
 
   const plainTextContent = useMemo(() => stripStudyGuideHtml(content), [content]);
+  const outlineCards = useMemo(() => sections.filter((section) => section.title), [sections]);
 
   const jumpToSection = (sectionId) => {
     const element = document.getElementById(sectionId);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-    setSidebarTab('outline');
   };
 
   const save = async () => {
@@ -167,7 +175,7 @@ export default function StudyGuidePage() {
     });
   };
 
-  const highlightSelection = () => {
+  const highlightSelection = (highlightColor = HIGHLIGHT_COLORS[0].value) => {
     const range = selectionRangeRef.current;
     const container = contentRef.current;
 
@@ -178,6 +186,7 @@ export default function StudyGuidePage() {
 
     const mark = document.createElement('mark');
     mark.className = 'study-guide-highlight';
+    mark.setAttribute('data-highlight-color', highlightColor);
 
     try {
       range.surroundContents(mark);
@@ -272,15 +281,97 @@ export default function StudyGuidePage() {
       </section>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <StudyGuideSidebar
-          sections={sections}
-          quickReferenceGroups={quickReferenceGroups}
-          activeTab={sidebarTab}
-          onTabChange={setSidebarTab}
-          onJumpToSection={jumpToSection}
-        />
+        <StudyGuideSidebar sections={sections} onJumpToSection={jumpToSection} />
 
         <div className="space-y-6">
+          <section className="rounded-[2.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-6">
+            <div className="flex flex-col gap-2 border-b border-[color:var(--color-border)] pb-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-[color:var(--color-text-muted)]">Inside the guide</p>
+                <h2 className="mt-2 text-2xl font-black text-[color:var(--color-text)]">Outline</h2>
+              </div>
+              <p className="text-sm text-[color:var(--color-text-muted)]">
+                Tap any item to jump to that section.
+              </p>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              {outlineCards.map((section, index) => (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => jumpToSection(section.id)}
+                  className="group rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">
+                        Section {String(index + 1).padStart(2, '0')}
+                      </p>
+                      <h3 className="mt-2 text-base font-bold text-[color:var(--color-text)]">
+                        {section.title}
+                      </h3>
+                    </div>
+                    <span className="rounded-full bg-[color:var(--color-surface)] px-3 py-1 text-xs font-bold text-[color:var(--color-text-muted)]">
+                      Jump
+                    </span>
+                  </div>
+                  <p className="mt-3 line-clamp-2 text-sm leading-6 text-[color:var(--color-text-muted)]">
+                    {section.summary || 'Open this section to review the full details.'}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-[2.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-6">
+            <div className="flex flex-col gap-2 border-b border-[color:var(--color-border)] pb-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-[color:var(--color-text-muted)]">Inside the guide</p>
+                <h2 className="mt-2 text-2xl font-black text-[color:var(--color-text)]">Quick reference</h2>
+              </div>
+              <p className="text-sm text-[color:var(--color-text-muted)]">
+                A compact review area for fast studying.
+              </p>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              {quickReferenceGroups.map((group) => (
+                <details
+                  key={group.id}
+                  className="group rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4"
+                  open
+                >
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-left">
+                    <div>
+                      <h3 className="text-lg font-black text-[color:var(--color-text)]">{group.label}</h3>
+                      <p className="mt-1 text-sm text-[color:var(--color-text-muted)]">
+                        Tap to collapse or expand the review notes.
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-[color:var(--color-surface)] px-3 py-1 text-xs font-bold text-[color:var(--color-text-muted)] transition group-open:rotate-180">
+                      More
+                    </span>
+                  </summary>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {group.items.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => jumpToSection(item.id)}
+                        className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md"
+                      >
+                        <p className="text-sm font-bold text-[color:var(--color-text)]">{item.title}</p>
+                        <p className="mt-2 text-sm leading-6 text-[color:var(--color-text-muted)]">{item.detail}</p>
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </div>
+          </section>
+
           {editing ? (
             <div className="scroll-mt-24">
               <StudyGuideEditor
@@ -304,7 +395,7 @@ export default function StudyGuidePage() {
               className="study-guide-reader rounded-[2.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-5 py-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:px-8 sm:py-8"
             >
               <article
-                className="study-guide-content prose prose-slate max-w-none text-[color:var(--color-text)] prose-headings:text-[color:var(--color-text)] prose-p:text-[color:var(--color-text)] prose-li:text-[color:var(--color-text)] prose-strong:text-[color:var(--color-text)] prose-blockquote:text-[color:var(--color-text-muted)] prose-a:text-[color:var(--color-accent)] dark:prose-invert"
+                className="study-guide-content max-w-none text-[color:var(--color-text)] leading-8"
                 dangerouslySetInnerHTML={{ __html: sanitizeHtml(renderedHtml) }}
               />
             </div>
@@ -321,6 +412,7 @@ export default function StudyGuidePage() {
         position={selectionToolbar.position}
         selectedText={selectionToolbar.selectedText}
         onHighlight={highlightSelection}
+        highlightColors={HIGHLIGHT_COLORS}
         onEdit={() => setEditing(true)}
         onClose={clearSelectionToolbar}
       />

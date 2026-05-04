@@ -37,13 +37,6 @@ export default function DiscussionQuestions({ questions = [] }) {
         <p className="text-xl font-medium leading-relaxed text-[color:var(--color-text)]">
           {question.question}
         </p>
-        <div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--color-text-muted)]">
-          <span>Difficulty:</span>
-          <span className="rounded-full bg-[color:var(--color-surface-2)] px-3 py-1 text-[color:var(--color-text)]">
-            {question.difficulty || 'Medium'}
-          </span>
-        </div>
-
         <div className="rounded-[1.75rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-5">
           <button
             type="button"

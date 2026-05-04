@@ -29,10 +29,10 @@ export default function TTSButton({ text }) {
     <button
       onClick={speaking ? stop : speak}
       aria-label={speaking ? 'Stop reading aloud' : 'Read aloud'}
-      className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
+      className={`inline-flex h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-bold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--color-accent)] ${
         speaking
           ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
-          : 'bg-[var(--accent)] text-white hover:opacity-90 shadow-sm'
+          : 'bg-[color:var(--color-accent)] text-[color:var(--color-accent-text)] hover:opacity-90 shadow-sm'
       }`}
     >
       {speaking ? (

@@ -247,6 +247,36 @@ body {
   -webkit-box-decoration-break: clone;
 }
 
+.study-guide-content mark[data-highlight-color="yellow"],
+.study-guide-highlight[data-highlight-color="yellow"] {
+  background: #fde68a;
+}
+
+.study-guide-content mark[data-highlight-color="green"],
+.study-guide-highlight[data-highlight-color="green"] {
+  background: #bbf7d0;
+}
+
+.study-guide-content mark[data-highlight-color="blue"],
+.study-guide-highlight[data-highlight-color="blue"] {
+  background: #bfdbfe;
+}
+
+.study-guide-content mark[data-highlight-color="pink"],
+.study-guide-highlight[data-highlight-color="pink"] {
+  background: #fbcfe8;
+}
+
+.study-guide-content mark[data-highlight-color="purple"],
+.study-guide-highlight[data-highlight-color="purple"] {
+  background: #ddd6fe;
+}
+
+.study-guide-content mark[data-highlight-color="orange"],
+.study-guide-highlight[data-highlight-color="orange"] {
+  background: #fed7aa;
+}
+
 /* Global spinner keyframe — used by PillButton */
 @keyframes spin {
   to { transform: rotate(360deg); }

@@ -467,3 +467,131 @@ cd frontend && npm run lint
 - File size limit: 150MB
 - Text extraction is capped at 50,000 characters in database
 - AI prompts are optimized for ADHD/Dyslexia friendly content
+
+
+my database in supabase:
+
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.audit_logs (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid,
+  event text NOT NULL,
+  metadata jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT audit_logs_pkey PRIMARY KEY (id),
+  CONSTRAINT audit_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
+);
+CREATE TABLE public.documents (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  title text NOT NULL,
+  file_url text,
+  file_type text CHECK (file_type = ANY (ARRAY['pdf'::text, 'pptx'::text, 'docx'::text])),
+  file_size_bytes bigint,
+  extracted_text text,
+  status text DEFAULT 'processing'::text CHECK (status = ANY (ARRAY['processing'::text, 'done'::text, 'error'::text])),
+  is_archived boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT documents_pkey PRIMARY KEY (id),
+  CONSTRAINT documents_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
+);
+CREATE TABLE public.flashcard_sets (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  document_id uuid,
+  title text NOT NULL,
+  is_archived boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT flashcard_sets_pkey PRIMARY KEY (id),
+  CONSTRAINT flashcard_sets_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+  CONSTRAINT flashcard_sets_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id)
+);
+CREATE TABLE public.flashcards (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  set_id uuid NOT NULL,
+  front text NOT NULL,
+  back text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT flashcards_pkey PRIMARY KEY (id),
+  CONSTRAINT flashcards_set_id_fkey FOREIGN KEY (set_id) REFERENCES public.flashcard_sets(id)
+);
+CREATE TABLE public.login_attempts (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  email text NOT NULL,
+  ip_address text,
+  succeeded boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT login_attempts_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.otp_codes (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  email text NOT NULL,
+  code text NOT NULL,
+  purpose text NOT NULL CHECK (purpose = ANY (ARRAY['signup'::text, 'password_reset'::text])),
+  expires_at timestamp with time zone NOT NULL,
+  used boolean DEFAULT false,
+  ip_address text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT otp_codes_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.password_history (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  password_hash text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT password_history_pkey PRIMARY KEY (id),
+  CONSTRAINT password_history_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
+);
+CREATE TABLE public.profiles (
+  id uuid NOT NULL,
+  email text NOT NULL,
+  full_name text,
+  role text DEFAULT 'student'::text CHECK (role = ANY (ARRAY['student'::text, 'admin'::text])),
+  is_blocked boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  username text UNIQUE,
+  first_name text,
+  middle_name text,
+  last_name text,
+  login_attempts integer DEFAULT 0,
+  locked_until timestamp with time zone,
+  password_hash text,
+  preferences jsonb DEFAULT '{"xp": 0, "level": 1, "streak": {"current": 0, "longest": 0, "last_date": null}, "font_size": 16, "atmosphere": "classic-solid", "daily_goals": {"target_minutes": 30, "completed_today": false}, "font_family": "dm-sans", "display_mode": "light"}'::jsonb,
+  CONSTRAINT profiles_pkey PRIMARY KEY (id),
+  CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.quiz_questions (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  quiz_id uuid NOT NULL,
+  question text NOT NULL,
+  options jsonb NOT NULL,
+  correct_index integer NOT NULL CHECK (correct_index >= 0 AND correct_index <= 3),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT quiz_questions_pkey PRIMARY KEY (id),
+  CONSTRAINT quiz_questions_quiz_id_fkey FOREIGN KEY (quiz_id) REFERENCES public.quizzes(id)
+);
+CREATE TABLE public.quizzes (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  document_id uuid,
+  title text NOT NULL,
+  is_archived boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT quizzes_pkey PRIMARY KEY (id),
+  CONSTRAINT quizzes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+  CONSTRAINT quizzes_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id)
+);
+CREATE TABLE public.study_guides (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  document_id uuid,
+  title text NOT NULL,
+  content text NOT NULL,
+  is_archived boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT study_guides_pkey PRIMARY KEY (id),
+  CONSTRAINT study_guides_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+  CONSTRAINT study_guides_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id)
+);

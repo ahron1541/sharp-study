@@ -37,7 +37,7 @@ export const sanitizeHtml = (dirty) => {
       'tr',
       'ul',
     ],
-    ALLOWED_ATTR: ['class', 'colspan', 'rowspan', 'href', 'rel', 'target'],
+    ALLOWED_ATTR: ['class', 'colspan', 'rowspan', 'href', 'rel', 'target', 'data-highlight-color'],
   });
 };
 
