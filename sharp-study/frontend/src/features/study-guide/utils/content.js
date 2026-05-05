@@ -326,22 +326,83 @@ function extractReferenceEntries(section) {
   };
 }
 
+function sentenceSplit(sourceText = '') {
+  return String(sourceText)
+    .replace(/\s+/g, ' ')
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 24);
+}
+
+function titleKeywords(title = '') {
+  return String(title)
+    .toLowerCase()
+    .match(/[a-z][a-z-]{2,}/g)?.filter((word) => !STOP_WORDS.has(word)) || [];
+}
+
+function inferEntriesFromSource(section, sourceText = '') {
+  const keywords = titleKeywords(section.title);
+  const sentences = sentenceSplit(sourceText);
+
+  if (!sentences.length) return [];
+
+  const ranked = sentences
+    .map((sentence) => {
+      const lower = sentence.toLowerCase();
+      const score = keywords.reduce((sum, keyword) => sum + (lower.includes(keyword) ? 1 : 0), 0);
+      return { sentence, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.sentence.length - b.sentence.length)
+    .slice(0, 4)
+    .map((item) => item.sentence);
+
+  return ranked;
+}
+
+function buildFallbackSectionTitle(section, sourceText = '') {
+  const keywords = titleKeywords(section.title);
+  const supporting = inferEntriesFromSource(section, sourceText)[0];
+  if (supporting) {
+    const shorter = supporting.length > 68 ? `${supporting.slice(0, 67).trimEnd()}…` : supporting;
+    return shorter;
+  }
+
+  if (keywords.length) {
+    return `Review how ${keywords.slice(0, 2).join(' and ')} appear in the lesson.`;
+  }
+
+  return '';
+}
+
 export function buildQuickReferenceGroups(sections, sourceText = '', fallbackTitle = 'Study Guide') {
   const groups = QUICK_REFERENCE_GROUPS.map((group) => {
     const items = sections
       .filter((section) => group.pattern.test(section.title))
       .map((section) => {
         const structured = extractReferenceEntries(section);
+        const inferredEntries = structured.entries.filter(Boolean).length >= 2
+          ? structured.entries
+          : inferEntriesFromSource(section, sourceText);
+        const finalEntries = (structured.entries.filter(Boolean).length ? structured.entries : inferredEntries)
+          .filter((entry) => entry && entry !== section.title)
+          .slice(0, 6);
+
         return {
           id: section.id,
           title: section.title,
-          detail: section.summary || section.snippets[0] || summarizeText(section.text, 120),
+          detail:
+            section.summary ||
+            section.snippets[0] ||
+            finalEntries[0] ||
+            summarizeText(section.text, 120) ||
+            buildFallbackSectionTitle(section, sourceText),
           format: structured.format,
-          entries: structured.entries,
+          entries: finalEntries,
         };
       });
 
-    return items.length ? { ...group, items } : null;
+    return items.length ? { ...group, items: items.filter((item) => item.detail || item.entries.length) } : null;
   }).filter(Boolean);
 
   if (groups.length) return groups;
@@ -349,16 +410,23 @@ export function buildQuickReferenceGroups(sections, sourceText = '', fallbackTit
   const keywords = extractKeywords(sourceText, 4);
   const fallbackItems = sections.slice(0, 4).map((section, index) => {
     const structured = extractReferenceEntries(section);
+    const inferredEntries = inferEntriesFromSource(section, sourceText);
+    const finalEntries = (structured.entries.filter(Boolean).length ? structured.entries : inferredEntries)
+      .filter((entry) => entry && entry !== section.title)
+      .slice(0, 6);
+
     return {
       id: section.id,
       title: section.title,
       detail:
         section.summary ||
         section.snippets[0] ||
+        finalEntries[0] ||
         summarizeText(section.text, 120) ||
-        (keywords[index] ? `Review how ${keywords[index]} fits into this lesson.` : ''),
+        (keywords[index] ? `Review how ${keywords[index]} fits into this lesson.` : '') ||
+        buildFallbackSectionTitle(section, sourceText),
       format: structured.format,
-      entries: structured.entries,
+      entries: finalEntries,
     };
   });
 

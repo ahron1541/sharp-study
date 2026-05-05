@@ -190,6 +190,7 @@ export default function StudyGuidePage() {
 
     return doc.body.innerHTML;
   }, [deferredContent, sections]);
+  const sanitizedRenderedHtml = useMemo(() => sanitizeHtml(renderedHtml), [renderedHtml]);
 
   const plainTextContent = useMemo(() => stripStudyGuideHtml(deferredContent), [deferredContent]);
   const hasPendingChanges = editing && (saving || content !== savedContent);
@@ -659,7 +660,7 @@ export default function StudyGuidePage() {
                         <article
                           ref={articleRef}
                           className="study-guide-content max-w-none text-[color:var(--color-text)]"
-                          dangerouslySetInnerHTML={{ __html: sanitizeHtml(renderedHtml) }}
+                          dangerouslySetInnerHTML={{ __html: sanitizedRenderedHtml }}
                         />
                       </div>
 
@@ -678,7 +679,7 @@ export default function StudyGuidePage() {
                         {quickReferenceGroups.map((group) => (
                           <section
                             key={group.id}
-                            className="study-guide-fade-up rounded-[1.6rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]/65 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm"
+                            className="study-guide-reference-card study-guide-fade-up rounded-[1.6rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]/65 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm"
                           >
                             <div>
                               <h3 className="text-lg font-black text-[color:var(--color-text)]">{group.label}</h3>

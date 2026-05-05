@@ -181,10 +181,13 @@ body {
 
 .study-guide-sidebar {
   transition: width 0.28s ease, transform 0.28s ease;
+  contain: layout paint;
 }
 
 .study-guide-reader {
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  content-visibility: auto;
+  contain-intrinsic-size: 900px;
 }
 
 .study-guide-reader:hover {
@@ -438,6 +441,7 @@ body {
   margin: 1.25rem 0;
   overflow: hidden;
   border-radius: 1rem;
+  background: color-mix(in srgb, var(--card-bg) 94%, transparent);
 }
 
 .study-guide-content th,
@@ -446,6 +450,7 @@ body {
   padding: 0.85rem 1rem;
   text-align: left;
   vertical-align: top;
+  background: color-mix(in srgb, var(--card-bg) 88%, transparent);
 }
 
 .study-guide-content thead th {
@@ -498,6 +503,18 @@ body {
 [data-display="dark"] .study-guide-content blockquote,
 [data-display="dark"] .study-guide-content details {
   background: rgba(15, 23, 42, 0.76);
+}
+
+[data-display="dark"] .study-guide-content table,
+[data-display="dark"] .study-guide-content th,
+[data-display="dark"] .study-guide-content td,
+[data-display="dark"] .study-guide-content thead th {
+  background: #162033;
+}
+
+.study-guide-reference-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 280px;
 }
 
 .study-guide-content mark,

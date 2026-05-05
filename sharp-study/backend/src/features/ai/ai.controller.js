@@ -247,9 +247,7 @@ const generateMaterials = [
       console.error('AI generation error:', err);
 
       if (documentId) {
-        const nextStatus = requestAborted || abortController.signal.aborted || err.message === 'Generation aborted.'
-          ? 'cancelled'
-          : 'failed';
+        const nextStatus = 'error';
         await supabaseAdmin.from('documents').update({ status: nextStatus }).eq('id', documentId);
       }
 

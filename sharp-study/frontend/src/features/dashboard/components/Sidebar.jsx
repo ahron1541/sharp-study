@@ -1,5 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
+  Archive,
   Home,
   BookMarked,
   Bell,
@@ -12,6 +13,11 @@ const NAV_ITEMS = [
   { to: '/dashboard', label: 'Home',         icon: Home },
   { to: '/library',   label: 'Your Library', icon: BookMarked },
   { to: '/notifications', label: 'Notification', icon: Bell },
+];
+
+const FOOTER_ITEMS = [
+  { to: '/archive', label: 'Archive', icon: Archive },
+  { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export default function Sidebar({
@@ -97,32 +103,46 @@ export default function Sidebar({
         })}
       </ul>
 
-      {/* Settings — pinned to bottom */}
+      {/* Footer actions — pinned to bottom */}
       <div className="p-2 border-t border-border flex-shrink-0">
         {isTransitioning ? (
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg">
-            <div className="w-5 h-5 rounded animate-pulse flex-shrink-0" style={{ background: 'var(--color-surface-2, #e2e8f0)' }} />
-            {!collapsed && <div className="h-4 w-16 rounded animate-pulse" style={{ background: 'var(--color-surface-2, #e2e8f0)' }} />}
+          <div className="space-y-1">
+            {[1, 2].map((item) => (
+              <div key={item} className="flex items-center gap-3 px-3 py-2.5 rounded-lg">
+                <div className="w-5 h-5 rounded animate-pulse flex-shrink-0" style={{ background: 'var(--color-surface-2, #e2e8f0)' }} />
+                {!collapsed && <div className="h-4 w-16 rounded animate-pulse" style={{ background: 'var(--color-surface-2, #e2e8f0)' }} />}
+              </div>
+            ))}
           </div>
         ) : (
-          <NavLink
-            to="/settings"
-            aria-label={collapsed ? 'Settings' : undefined}
-            aria-current={location.pathname === '/settings' ? 'page' : undefined}
-            onClick={isMobile ? onMobileClose : undefined}
-            className={`
-              flex items-center gap-3 px-3 py-2.5 rounded-lg
-              transition-colors duration-150 text-sm font-medium
-              focus-visible:outline-none focus-visible:ring-2
-              focus-visible:ring-accent focus-visible:ring-offset-1
-              ${location.pathname === '/settings'
-                ? 'bg-[var(--color-sidebar-active-bg)] text-[var(--color-sidebar-active-text)]'
-                : 'text-sidebar-text hover:bg-surface-2 hover:text-text'}
-            `}
-          >
-            <Settings size={18} aria-hidden="true" className="flex-shrink-0" />
-            {!collapsed && <span className="whitespace-nowrap">Settings</span>}
-          </NavLink>
+          <div className="space-y-1">
+            {FOOTER_ITEMS.map((footerItem) => {
+              const { to, label } = footerItem;
+              const FooterIcon = footerItem.icon;
+              const isActive = location.pathname === to;
+              return (
+                <NavLink
+                  key={to}
+                  to={to}
+                  aria-label={collapsed ? label : undefined}
+                  aria-current={isActive ? 'page' : undefined}
+                  onClick={isMobile ? onMobileClose : undefined}
+                  className={`
+                    flex items-center gap-3 px-3 py-2.5 rounded-lg
+                    transition-colors duration-150 text-sm font-medium
+                    focus-visible:outline-none focus-visible:ring-2
+                    focus-visible:ring-accent focus-visible:ring-offset-1
+                    ${isActive
+                      ? 'bg-[var(--color-sidebar-active-bg)] text-[var(--color-sidebar-active-text)]'
+                      : 'text-sidebar-text hover:bg-surface-2 hover:text-text'}
+                  `}
+                >
+                  <FooterIcon size={18} aria-hidden="true" className="flex-shrink-0" />
+                  {!collapsed && <span className="whitespace-nowrap">{label}</span>}
+                </NavLink>
+              );
+            })}
+          </div>
         )}
       </div>
     </nav>

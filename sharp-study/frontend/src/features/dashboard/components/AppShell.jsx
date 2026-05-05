@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Outlet, Link } from 'react-router-dom';
-import { Settings } from 'lucide-react';
+import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import TopBar  from './TopBar';
 
@@ -56,26 +55,6 @@ export default function AppShell() {
             onToggle={handleMenuToggle}
           />
         </aside>
-      )}
-
-      {/* Floating Settings Button when Sidebar is collapsed */}
-      {!isMobile && collapsed && (
-        <Link
-          to="/settings"
-          aria-label="Open Settings"
-          className="
-            fixed bottom-6 left-3 z-50
-            w-9 h-9 rounded-full
-            bg-accent text-accent-text
-            flex items-center justify-center
-            shadow-card-hover
-            hover:bg-accent-hover transition-colors
-            focus-visible:outline-none focus-visible:ring-2
-            focus-visible:ring-accent focus-visible:ring-offset-2
-          "
-        >
-          <Settings size={16} aria-hidden="true" />
-        </Link>
       )}
 
       {/* Mobile sidebar overlay */}

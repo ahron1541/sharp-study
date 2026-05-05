@@ -1,13 +1,9 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Archive,
   ArrowRight,
-  BookOpen,
   CheckCircle2,
-  CreditCard,
-  FileText,
-  HelpCircle,
   Loader2,
   Plus,
   Search,
@@ -20,37 +16,18 @@ import toast from 'react-hot-toast';
 import Modal from '../../../shared/components/Modal';
 import { API_URL } from '../../../config/api';
 import { useAuth } from '../../auth/context/AuthContext';
-import { useDashboard } from '../../dashboard/hooks/useDashboard';
-
-const MATERIAL_TYPES = {
-  study_guide: {
-    label: 'Study Guide',
-    plural: 'Study Guides',
-    table: 'study_guides',
-    icon: BookOpen,
-    color: '#3B82F6',
-    generateId: 'study_guide',
-    manualLabel: 'Open full editor',
-  },
-  flashcards: {
-    label: 'Flashcards',
-    plural: 'Flashcards',
-    table: 'flashcard_sets',
-    icon: CreditCard,
-    color: '#8B5CF6',
-    generateId: 'flashcards',
-    manualLabel: 'Quick create',
-  },
-  quiz: {
-    label: 'Quiz',
-    plural: 'Quizzes',
-    table: 'quizzes',
-    icon: HelpCircle,
-    color: '#10B981',
-    generateId: 'quiz',
-    manualLabel: 'Quick create',
-  },
-};
+import MaterialTypeIcon from '../components/MaterialTypeIcon';
+import PaginationControls from '../components/PaginationControls';
+import {
+  MATERIAL_TYPES,
+  MATERIAL_TYPE_KEYS,
+  PAGE_SIZE,
+  archiveMaterial,
+  deleteMaterial,
+  fetchMaterialCounts,
+  fetchMaterialsPage,
+  getMaterialRoute,
+} from '../utils/materials';
 
 const MAX_FILE_BYTES = 150 * 1024 * 1024;
 const GENERATION_STEPS = [
@@ -69,31 +46,78 @@ function createDefaultManualText(selectedType) {
 export default function LibraryPage() {
   const { user, supabase } = useAuth();
   const navigate = useNavigate();
-  const { items, loading, error, refetch } = useDashboard();
-  const [search, setSearch] = useState('');
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [selectedType, setSelectedType] = useState(null);
-  const [creationMode, setCreationMode] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deferredSearch = useDeferredValue(searchParams.get('q') || '');
+  const [items, setItems] = useState([]);
+  const [counts, setCounts] = useState({ study_guide: 0, flashcards: 0, quiz: 0 });
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [busyItemId, setBusyItemId] = useState('');
+  const [selectedTypeState, setSelectedTypeState] = useState(null);
+  const [creationModeState, setCreationModeState] = useState(null);
   const [title, setTitle] = useState('');
   const [manualText, setManualText] = useState('');
   const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState({ value: 0, title: '', detail: '' });
+  const [actionIntent, setActionIntent] = useState(null);
+  const [actionProgress, setActionProgress] = useState(null);
   const abortControllerRef = useRef(null);
-  const deferredSearch = useDeferredValue(search);
 
-  const allMaterials = useMemo(() => {
-    const safeItems = items ?? { study_guides: [], flashcards: [], quizzes: [] };
-    const query = deferredSearch.trim().toLowerCase();
-    const merged = [
-      ...(safeItems.study_guides ?? []).map((item) => ({ ...item, type: 'study_guide' })),
-      ...(safeItems.flashcards ?? []).map((item) => ({ ...item, type: 'flashcards' })),
-      ...(safeItems.quizzes ?? []).map((item) => ({ ...item, type: 'quiz' })),
-    ];
+  const activeType = MATERIAL_TYPE_KEYS.includes(searchParams.get('tab')) ? searchParams.get('tab') : 'study_guide';
+  const page = Math.max(1, Number(searchParams.get('page') || 1));
+  const activeMeta = MATERIAL_TYPES[activeType];
+  const search = searchParams.get('q') || '';
+  const showCreateModal = searchParams.get('modal') === 'create';
+  const requestedType = searchParams.get('type');
+  const requestedMode = searchParams.get('mode');
+  const selectedType = selectedTypeState || (MATERIAL_TYPE_KEYS.includes(requestedType) ? requestedType : null);
+  const creationMode = creationModeState || (requestedMode === 'automatic' || requestedMode === 'manual' ? requestedMode : null);
 
-    if (!query) return merged;
-    return merged.filter((item) => item.title?.toLowerCase().includes(query));
-  }, [deferredSearch, items]);
+  const setLibraryParams = useCallback((updates) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value === null || value === undefined || value === '') {
+        next.delete(key);
+      } else {
+        next.set(key, value);
+      }
+    });
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const loadPage = async ({ nextType = activeType, nextPage = page, nextSearch = deferredSearch } = {}) => {
+    if (!user?.id) return;
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const [nextCounts, paged] = await Promise.all([
+        fetchMaterialCounts(supabase, user.id, false),
+        fetchMaterialsPage({
+          supabase,
+          userId: user.id,
+          type: nextType,
+          archived: false,
+          search: nextSearch,
+          page: nextPage,
+        }),
+      ]);
+
+      setCounts(nextCounts);
+      setItems(paged.items);
+      setTotalPages(paged.totalPages);
+      if (nextPage > paged.totalPages) {
+        setLibraryParams({ page: null });
+      }
+    } catch (loadError) {
+      setError(loadError.message || 'Failed to load your library.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -101,25 +125,108 @@ export default function LibraryPage() {
     };
   }, []);
 
-  const resetWizard = (force = false) => {
-    if (saving && !force) return;
-    setWizardOpen(false);
-    setSelectedType(null);
-    setCreationMode(null);
-    setTitle('');
-    setManualText('');
-    setFile(null);
-    setProgress({ value: 0, title: '', detail: '' });
-  };
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (!user?.id) return;
+
+      setLoading(true);
+      setError('');
+
+      Promise.all([
+        fetchMaterialCounts(supabase, user.id, false),
+        fetchMaterialsPage({
+          supabase,
+          userId: user.id,
+          type: activeType,
+          archived: false,
+          search: deferredSearch,
+          page,
+        }),
+      ])
+        .then(([nextCounts, paged]) => {
+          setCounts(nextCounts);
+          setItems(paged.items);
+          setTotalPages(paged.totalPages);
+          if (page > paged.totalPages) {
+            setLibraryParams({ page: null });
+          }
+        })
+        .catch((loadError) => {
+          setError(loadError.message || 'Failed to load your library.');
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [activeType, deferredSearch, page, searchParams, setLibraryParams, supabase, user?.id]);
 
   const openWizard = () => {
-    setWizardOpen(true);
-    setSelectedType(null);
-    setCreationMode(null);
+    setSelectedTypeState(null);
+    setCreationModeState(null);
     setTitle('');
     setManualText('');
     setFile(null);
     setProgress({ value: 0, title: '', detail: '' });
+    setLibraryParams({ modal: 'create', type: activeType, mode: null });
+  };
+
+  const closeWizard = (force = false) => {
+    if (saving && !force) return;
+    setSelectedTypeState(null);
+    setCreationModeState(null);
+    setTitle('');
+    setManualText('');
+    setFile(null);
+    setProgress({ value: 0, title: '', detail: '' });
+    setLibraryParams({ modal: null, type: null, mode: null });
+  };
+
+  const handleSelectType = (nextType) => {
+    if (!nextType) {
+      setSelectedTypeState(null);
+      setCreationModeState(null);
+      setLibraryParams({ type: null, mode: null });
+      return;
+    }
+
+    setSelectedTypeState(nextType);
+    setCreationModeState(null);
+    setTitle('');
+    setManualText(createDefaultManualText(nextType));
+    setFile(null);
+    setProgress({ value: 0, title: '', detail: '' });
+    setLibraryParams({ type: nextType, mode: null });
+  };
+
+  const handleSelectMode = (nextMode) => {
+    if (selectedType === 'study_guide' && nextMode === 'manual') {
+      closeWizard(true);
+      navigate('/study-guide/new');
+      return;
+    }
+
+    setCreationModeState(nextMode);
+    setLibraryParams({ mode: nextMode });
+  };
+
+  const handleSearchChange = (value) => {
+    setLibraryParams({ q: value || null, page: null });
+  };
+
+  const handleChangeTypeTab = (type) => {
+    setLibraryParams({ tab: type, page: null });
+  };
+
+  const invalidateDashboardCache = async () => {
+    const token = localStorage.getItem('sharp-study-token');
+    if (!token) return;
+
+    await fetch(`${API_URL}/api/dashboard/invalidate`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => {});
   };
 
   const handleFileChange = (event) => {
@@ -138,25 +245,6 @@ export default function LibraryPage() {
     }
 
     setFile(nextFile);
-  };
-
-  const handleSelectType = (nextType) => {
-    setSelectedType(nextType);
-    setCreationMode(null);
-    setTitle('');
-    setManualText(createDefaultManualText(nextType));
-    setFile(null);
-    setProgress({ value: 0, title: '', detail: '' });
-  };
-
-  const handleSelectMode = (nextMode) => {
-    if (selectedType === 'study_guide' && nextMode === 'manual') {
-      setWizardOpen(false);
-      navigate('/study-guide/new');
-      return;
-    }
-
-    setCreationMode(nextMode);
   };
 
   const saveManualMaterial = async () => {
@@ -207,21 +295,14 @@ export default function LibraryPage() {
         if (questionError) throw questionError;
       }
 
-      const token = localStorage.getItem('sharp-study-token');
-      if (token) {
-        await fetch(`${API_URL}/api/dashboard/invalidate`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-        }).catch(() => {});
-      }
-
+      await invalidateDashboardCache();
+      await loadPage({ nextType: activeType, nextPage: page, nextSearch: deferredSearch });
       toast.success(`${MATERIAL_TYPES[selectedType].label} created.`);
-      await refetch();
-      setSaving(false);
-      resetWizard(true);
+      closeWizard(true);
     } catch (manualError) {
-      setSaving(false);
       toast.error(manualError.message || 'Failed to create material.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -264,150 +345,217 @@ export default function LibraryPage() {
       }
 
       setProgress(GENERATION_STEPS[3]);
+      await invalidateDashboardCache();
+      await loadPage({ nextType: activeType, nextPage: 1, nextSearch: deferredSearch });
       toast.success('Generated successfully.');
-      await refetch();
-      setSaving(false);
-      resetWizard(true);
+      closeWizard(true);
     } catch (generationError) {
-      setSaving(false);
-      if (generationError.name === 'AbortError') {
-        return;
+      if (generationError.name !== 'AbortError') {
+        setProgress({ value: 0, title: '', detail: '' });
+        toast.error(generationError.message || 'Generation failed.');
       }
-
-      setProgress({ value: 0, title: '', detail: '' });
-      toast.error(generationError.message || 'Generation failed.');
     } finally {
       timers.forEach((timer) => window.clearTimeout(timer));
       window.removeEventListener('beforeunload', abortGeneration);
       window.removeEventListener('pagehide', abortGeneration);
       abortControllerRef.current = null;
+      setSaving(false);
     }
   };
+
+  const runAction = async () => {
+    if (!actionIntent) return;
+    const { action, material } = actionIntent;
+
+    setBusyItemId(material.id);
+    setActionProgress({
+      title: action === 'archive' ? 'Archiving material' : 'Deleting material',
+      detail: action === 'archive'
+        ? 'Saving the material into your archive and refreshing your library.'
+        : 'Removing the material and updating the visible list safely.',
+      value: 24,
+    });
+
+    try {
+      if (action === 'archive') {
+        window.setTimeout(() => setActionProgress((current) => current ? { ...current, value: 68 } : current), 500);
+        await archiveMaterial({ supabase, type: material.type, id: material.id, archived: true });
+      } else {
+        window.setTimeout(() => setActionProgress((current) => current ? { ...current, value: 68 } : current), 500);
+        await deleteMaterial({ supabase, type: material.type, id: material.id });
+      }
+
+      setActionProgress((current) => current ? { ...current, value: 100 } : current);
+      await invalidateDashboardCache();
+      await loadPage({ nextType: activeType, nextPage: page, nextSearch: deferredSearch });
+      toast.success(action === 'archive' ? 'Moved to archive.' : 'Deleted successfully.');
+    } catch (actionError) {
+      toast.error(actionError.message || 'Action failed.');
+    } finally {
+      setBusyItemId('');
+      setActionIntent(null);
+      setActionProgress(null);
+    }
+  };
+
+  const totalVisible = counts[activeType] || 0;
 
   return (
     <>
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 lg:px-8">
-        <section className="rounded-[2.5rem] border border-border bg-surface px-6 py-6 shadow-card sm:px-8 sm:py-8">
-          <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+        <section className="rounded-[2rem] border border-border bg-surface px-6 py-6 shadow-card sm:px-8">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <p className="text-xs font-black uppercase tracking-[0.24em] text-text-muted">Your library</p>
-              <h1 className="mt-3 text-[clamp(2.35rem,4vw,4.25rem)] font-display font-black leading-none text-text">
-                Study materials that stay organized and easy to review.
+              <h1 className="mt-3 text-[clamp(2.1rem,4vw,3.8rem)] font-display font-black leading-none text-text">
+                Faster, cleaner access to your study materials.
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-text-muted sm:text-base">
-                Create a study guide, flashcards, or quiz manually, or generate one from your notes with Gemini AI.
+                Browse one material type at a time, search by title, and keep older items in the archive instead of overloading the main workspace.
               </p>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <button
-                onClick={openWizard}
-                className="inline-flex items-center justify-center gap-2 rounded-[1.4rem] bg-accent px-6 py-3.5 font-bold text-accent-text shadow-lg shadow-accent/15 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-accent-hover"
-              >
-                <Plus size={18} aria-hidden="true" />
-                Create study material
-              </button>
-            </div>
+            <button
+              onClick={openWizard}
+              className="inline-flex items-center justify-center gap-2 rounded-[1.25rem] bg-accent px-6 py-3.5 font-bold text-accent-text transition-colors hover:bg-accent-hover"
+            >
+              <Plus size={18} aria-hidden="true" />
+              Create study material
+            </button>
           </div>
         </section>
 
         <section className="grid gap-4 md:grid-cols-3">
-          {Object.entries(MATERIAL_TYPES).map(([key, meta]) => {
-            const Icon = meta.icon;
-            const count = key === 'study_guide'
-              ? items.study_guides.length
-              : key === 'flashcards'
-                ? items.flashcards.length
-                : items.quizzes.length;
-
+          {MATERIAL_TYPE_KEYS.map((typeKey) => {
+            const meta = MATERIAL_TYPES[typeKey];
+            const active = activeType === typeKey;
             return (
-              <div
-                key={key}
-                className="rounded-[2rem] border border-border bg-surface px-5 py-5 shadow-card transition-transform duration-200 hover:-translate-y-0.5"
+              <button
+                key={typeKey}
+                type="button"
+                onClick={() => handleChangeTypeTab(typeKey)}
+                className={`rounded-[1.8rem] border px-5 py-5 text-left transition-colors ${
+                  active
+                    ? 'border-accent bg-surface shadow-card'
+                    : 'border-border bg-surface hover:bg-surface-2'
+                }`}
               >
                 <div className="flex items-center gap-4">
                   <span
                     className="flex h-12 w-12 items-center justify-center rounded-2xl"
                     style={{ background: `${meta.color}1A`, color: meta.color }}
                   >
-                    <Icon size={22} aria-hidden="true" />
+                    <MaterialTypeIcon type={typeKey} size={22} />
                   </span>
                   <div>
-                    <p className="text-2xl font-black text-text">{count}</p>
+                    <p className="text-2xl font-black text-text">{counts[typeKey] || 0}</p>
                     <p className="text-sm font-semibold text-text-muted">{meta.plural}</p>
                   </div>
                 </div>
-              </div>
+              </button>
             );
           })}
         </section>
 
-        <section className="rounded-[2.5rem] border border-border bg-surface p-5 shadow-card sm:p-6">
-          <div className="relative mb-6">
-            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true" />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search your library..."
-              className="w-full rounded-2xl border border-border bg-surface-2 py-3 pl-11 pr-4 font-medium text-text outline-none transition-colors duration-200 focus:border-accent"
-            />
+        <section className="rounded-[2rem] border border-border bg-surface p-5 shadow-card sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">{activeMeta.label}</p>
+              <h2 className="mt-2 text-3xl font-black text-text">{activeMeta.plural}</h2>
+              <p className="mt-2 text-sm leading-7 text-text-muted">
+                Showing up to {PAGE_SIZE} cards per page with focused loading for better performance on older devices.
+              </p>
+            </div>
+
+            <div className="relative w-full max-w-md">
+              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true" />
+              <input
+                value={search}
+                onChange={(event) => handleSearchChange(event.target.value)}
+                placeholder={`Search ${activeMeta.plural.toLowerCase()}...`}
+                className="w-full rounded-2xl border border-border bg-surface-2 py-3 pl-11 pr-4 font-medium text-text outline-none transition-colors focus:border-accent"
+              />
+            </div>
           </div>
 
-          {error ? <p className="mb-4 rounded-2xl bg-red-500/10 p-4 text-sm font-semibold text-red-500">{error}</p> : null}
+          {error ? <p className="mt-5 rounded-2xl bg-red-500/10 p-4 text-sm font-semibold text-red-500">{error}</p> : null}
 
           {loading ? (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {[1, 2, 3, 4, 5, 6].map((item) => (
-                <div key={item} className="h-44 rounded-[2rem] bg-surface-2 animate-pulse" />
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: PAGE_SIZE }).map((_, index) => (
+                <div key={index} className="h-44 rounded-[1.8rem] bg-surface-2 animate-pulse" />
               ))}
             </div>
-          ) : allMaterials.length === 0 ? (
-            <div className="rounded-[2rem] border-2 border-dashed border-border px-6 py-12 text-center">
-              <FileText className="mx-auto mb-4 text-text-muted" size={42} aria-hidden="true" />
-              <h2 className="text-xl font-bold text-text">No materials found</h2>
-              <p className="mt-2 text-text-muted">Create one manually or generate one from a document with Gemini AI.</p>
+          ) : items.length === 0 ? (
+            <div className="mt-6 rounded-[1.8rem] border-2 border-dashed border-border px-6 py-12 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-2">
+                <MaterialTypeIcon type={activeType} size={28} className="text-text-muted" />
+              </div>
+              <h3 className="mt-4 text-xl font-bold text-text">No {activeMeta.plural.toLowerCase()} yet</h3>
+              <p className="mt-2 max-w-md mx-auto text-text-muted">
+                {search
+                  ? `No ${activeMeta.plural.toLowerCase()} match "${search}".`
+                  : `Create your first ${activeMeta.label.toLowerCase()} or move older ones into the archive when this section grows.`}
+              </p>
+              <button
+                onClick={openWizard}
+                className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-accent px-5 py-3 font-bold text-accent-text"
+              >
+                <Plus size={16} />
+                Add new
+              </button>
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {allMaterials.map((material) => {
-                const meta = MATERIAL_TYPES[material.type];
-                const Icon = meta.icon;
-
-                return (
+            <>
+              <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {items.map((material) => (
                   <article
-                    key={`${material.type}-${material.id}`}
+                    key={material.id}
                     onClick={() => {
-                      const route = material.type === 'study_guide' ? 'study-guide' : material.type;
-                      navigate(`/${route}/${material.id}`);
+                      if (busyItemId) return;
+                      navigate(getMaterialRoute(activeType, material.id));
                     }}
-                    className="group cursor-pointer rounded-[2rem] border border-border bg-surface-2 p-5 transition-transform duration-200 hover:-translate-y-0.5"
+                    className={`group rounded-[1.8rem] border border-border bg-surface-2 p-5 transition-colors ${
+                      busyItemId ? 'cursor-wait opacity-75' : 'cursor-pointer hover:bg-surface'
+                    }`}
                   >
                     <div className="mb-5 flex items-start justify-between gap-3">
                       <span
                         className="flex h-11 w-11 items-center justify-center rounded-2xl"
-                        style={{ background: `${meta.color}1A`, color: meta.color }}
+                        style={{ background: `${activeMeta.color}1A`, color: activeMeta.color }}
                       >
-                        <Icon size={20} aria-hidden="true" />
+                        <MaterialTypeIcon type={activeType} size={20} />
                       </span>
+
                       <div className="flex gap-1 text-text-muted">
                         <button
-                          onClick={(event) => event.stopPropagation()}
-                          className="rounded-xl p-2 transition-colors duration-200 hover:bg-surface"
-                          aria-label="Archive"
+                          type="button"
+                          disabled={Boolean(busyItemId)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setActionIntent({ action: 'archive', material: { ...material, type: activeType } });
+                          }}
+                          className="rounded-xl p-2 transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label={`Archive ${material.title}`}
                         >
                           <Archive size={16} />
                         </button>
                         <button
-                          onClick={(event) => event.stopPropagation()}
-                          className="rounded-xl p-2 text-red-500 transition-colors duration-200 hover:bg-red-500/10"
-                          aria-label="Delete"
+                          type="button"
+                          disabled={Boolean(busyItemId)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setActionIntent({ action: 'delete', material: { ...material, type: activeType } });
+                          }}
+                          className="rounded-xl p-2 text-red-500 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label={`Delete ${material.title}`}
                         >
                           <Trash2 size={16} />
                         </button>
                       </div>
                     </div>
 
-                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-text-muted">{meta.label}</p>
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">{activeMeta.label}</p>
                     <h3 className="mt-2 min-h-14 text-lg font-bold text-text">{material.title}</h3>
                     <div className="mt-5 flex items-center justify-between">
                       <p className="text-xs font-semibold text-text-muted">
@@ -417,21 +565,28 @@ export default function LibraryPage() {
                           year: 'numeric',
                         })}
                       </p>
-                      <span className="inline-flex items-center gap-1 text-xs font-bold text-text-muted transition-transform duration-200 group-hover:translate-x-0.5">
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-text-muted">
                         Open
                         <ArrowRight size={14} />
                       </span>
                     </div>
                   </article>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-text-muted">
+                  Showing {items.length} of {totalVisible} {activeMeta.plural.toLowerCase()}.
+                </p>
+                <PaginationControls page={page} totalPages={totalPages} onChange={(nextPage) => setLibraryParams({ page: nextPage === 1 ? null : String(nextPage) })} />
+              </div>
+            </>
           )}
         </section>
       </main>
 
       <CreateWizard
-        isOpen={wizardOpen}
+        isOpen={showCreateModal}
         selectedType={selectedType}
         creationMode={creationMode}
         title={title}
@@ -439,7 +594,7 @@ export default function LibraryPage() {
         file={file}
         saving={saving}
         progress={progress}
-        onClose={resetWizard}
+        onClose={closeWizard}
         onSelectType={handleSelectType}
         onSelectMode={handleSelectMode}
         onTitleChange={setTitle}
@@ -448,6 +603,61 @@ export default function LibraryPage() {
         onManualCreate={saveManualMaterial}
         onAutoCreate={generateAutomatically}
       />
+
+      <Modal
+        isOpen={Boolean(actionIntent) && !actionProgress}
+        onClose={() => setActionIntent(null)}
+        title={actionIntent?.action === 'archive' ? 'Archive material?' : 'Delete material?'}
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm leading-7 text-text">
+            {actionIntent?.action === 'archive'
+              ? `Move "${actionIntent?.material?.title}" to the archive? You can restore it later from the Archive page.`
+              : `Delete "${actionIntent?.material?.title}" permanently? This will also remove its related cards or questions when needed.`}
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setActionIntent(null)}
+              className="rounded-xl border border-border px-4 py-2 text-sm font-bold text-text"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={runAction}
+              className={`rounded-xl px-4 py-2 text-sm font-bold ${
+                actionIntent?.action === 'archive'
+                  ? 'bg-accent text-accent-text'
+                  : 'bg-red-500 text-white'
+              }`}
+            >
+              {actionIntent?.action === 'archive' ? 'Archive' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(actionProgress)}
+        onClose={() => {}}
+        title={actionProgress?.title || 'Processing'}
+        size="md"
+        closeOnBackdrop={false}
+        closeOnEscape={false}
+        showCloseButton={false}
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Loader2 className="animate-spin text-accent" size={18} />
+            <p className="text-sm text-text-muted">{actionProgress?.detail}</p>
+          </div>
+          <div className="h-3 overflow-hidden rounded-full bg-surface-2">
+            <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${actionProgress?.value || 0}%` }} />
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }
@@ -485,58 +695,42 @@ function CreateWizard({
     >
       <div className="space-y-6">
         <section className="rounded-[2rem] border border-border bg-surface-2/80 p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">Step {currentStep} of 3</p>
-              <h3 className="mt-2 text-2xl font-black text-text">
-                {!selectedType
-                  ? 'Choose what you want to create'
-                  : !creationMode
-                    ? `Choose how to create your ${selectedMeta.label.toLowerCase()}`
-                    : creationMode === 'automatic'
-                      ? `Generate ${selectedMeta.label} from a file`
-                      : `Quick create ${selectedMeta.label.toLowerCase()}`}
-              </h3>
-              <p className="mt-2 max-w-2xl text-sm leading-7 text-text-muted">
-                {!selectedType
-                  ? 'Start with the material type, then decide whether you want a manual flow or AI generation.'
-                  : !creationMode
-                    ? 'Manual study guide creation opens a full-page editor. Flashcards and quizzes stay lightweight here.'
-                    : creationMode === 'automatic'
-                      ? 'Keep this window open while Gemini AI works. Closing the tab will stop the request on your side.'
-                      : 'Use the quick form below for smaller manual entries.'}
-              </p>
-            </div>
-            {selectedType ? (
-              <button
-                type="button"
-                onClick={() => {
-                  if (saving) return;
-                  onSelectType(null);
-                }}
-                className="inline-flex items-center justify-center rounded-2xl border border-border px-4 py-2 text-sm font-bold text-text transition-colors duration-200 hover:bg-surface"
-              >
-                Change type
-              </button>
-            ) : null}
-          </div>
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">Step {currentStep} of 3</p>
+          <h3 className="mt-2 text-2xl font-black text-text">
+            {!selectedType
+              ? 'Choose what you want to create'
+              : !creationMode
+                ? `Choose how to create your ${selectedMeta.label.toLowerCase()}`
+                : creationMode === 'automatic'
+                  ? `Generate ${selectedMeta.label} from a file`
+                  : `Quick create ${selectedMeta.label.toLowerCase()}`}
+          </h3>
+          <p className="mt-2 max-w-2xl text-sm leading-7 text-text-muted">
+            {!selectedType
+              ? 'Start with the material type, then decide whether you want a manual flow or AI generation.'
+              : !creationMode
+                ? 'Manual study guide creation opens a full-page editor. Flashcards and quizzes stay lightweight here.'
+                : creationMode === 'automatic'
+                  ? 'Keep this window open while Gemini AI works. Closing the tab will stop the request on your side.'
+                  : 'Use the quick form below for smaller manual entries.'}
+          </p>
         </section>
 
         {!selectedType ? (
           <div className="grid gap-4 md:grid-cols-3">
-            {Object.entries(MATERIAL_TYPES).map(([key, meta]) => {
-              const Icon = meta.icon;
+            {MATERIAL_TYPE_KEYS.map((typeKey) => {
+              const meta = MATERIAL_TYPES[typeKey];
               return (
                 <button
-                  key={key}
-                  onClick={() => onSelectType(key)}
-                  className="rounded-[2rem] border border-border bg-surface p-6 text-left transition-transform duration-200 hover:-translate-y-0.5"
+                  key={typeKey}
+                  onClick={() => onSelectType(typeKey)}
+                  className="rounded-[2rem] border border-border bg-surface p-6 text-left transition-colors hover:bg-surface-2"
                 >
                   <span
                     className="flex h-14 w-14 items-center justify-center rounded-2xl"
                     style={{ background: `${meta.color}1A`, color: meta.color }}
                   >
-                    <Icon size={28} aria-hidden="true" />
+                    <MaterialTypeIcon type={typeKey} size={28} />
                   </span>
                   <h3 className="mt-5 text-xl font-black text-text">{meta.label}</h3>
                   <p className="mt-2 text-sm leading-7 text-text-muted">Create a new {meta.label.toLowerCase()} with a cleaner, focused flow.</p>
@@ -550,69 +744,46 @@ function CreateWizard({
           <div className="grid gap-4 lg:grid-cols-2">
             <button
               onClick={() => onSelectMode('manual')}
-              className="rounded-[2rem] border border-border bg-surface p-6 text-left transition-transform duration-200 hover:-translate-y-0.5"
+              className="rounded-[2rem] border border-border bg-surface p-6 text-left transition-colors hover:bg-surface-2"
             >
-              <FileText className="text-accent" size={30} aria-hidden="true" />
-              <div className="mt-5 flex items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-xl font-black text-text">{selectedMeta.manualLabel}</h3>
-                  <p className="mt-2 text-sm leading-7 text-text-muted">
-                    {selectedType === 'study_guide'
-                      ? 'Open the dedicated study guide editor page with a larger layout, cleaner focus, and better room for longer writing.'
-                      : 'Create a starter entry quickly without leaving the library.'}
-                  </p>
-                </div>
-                <ArrowRight className="shrink-0 text-text-muted" size={20} />
-              </div>
+              <h3 className="text-xl font-black text-text">{selectedType === 'study_guide' ? 'Open full editor' : 'Quick create'}</h3>
+              <p className="mt-2 text-sm leading-7 text-text-muted">
+                {selectedType === 'study_guide'
+                  ? 'Open the dedicated study guide editor page with more room, better focus, and less lag.'
+                  : 'Create a starter entry quickly without leaving the library.'}
+              </p>
             </button>
 
             <button
               onClick={() => onSelectMode('automatic')}
-              className="rounded-[2rem] border border-border bg-surface p-6 text-left transition-transform duration-200 hover:-translate-y-0.5"
+              className="rounded-[2rem] border border-border bg-surface p-6 text-left transition-colors hover:bg-surface-2"
             >
-              <Sparkles className="text-accent" size={30} aria-hidden="true" />
-              <div className="mt-5 flex items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-xl font-black text-text">Generate with Gemini AI</h3>
-                  <p className="mt-2 text-sm leading-7 text-text-muted">
-                    Upload a TXT, PDF, DOCX, or PPTX file and let Gemini AI build the first draft for you.
-                  </p>
-                </div>
-                <ArrowRight className="shrink-0 text-text-muted" size={20} />
-              </div>
+              <h3 className="text-xl font-black text-text">Generate with Gemini AI</h3>
+              <p className="mt-2 text-sm leading-7 text-text-muted">
+                Upload a TXT, PDF, DOCX, or PPTX file and let Gemini AI build the first draft for you.
+              </p>
             </button>
           </div>
         ) : null}
 
         {selectedType && creationMode === 'automatic' ? (
           <div className="space-y-5">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
-              <label className="flex min-h-56 cursor-pointer flex-col justify-between rounded-[2rem] border border-dashed border-border bg-surface p-6 transition-colors duration-200 hover:border-accent">
-                <div>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent">
-                    <Upload size={24} aria-hidden="true" />
-                  </div>
-                  <h3 className="mt-5 text-xl font-black text-text">{file ? file.name : 'Choose a file or drag one here'}</h3>
-                  <p className="mt-2 text-sm leading-7 text-text-muted">
-                    Works best with readable notes, exported slides, reviewers, and text-based documents up to 150MB.
-                  </p>
+            <label className="flex min-h-56 cursor-pointer flex-col justify-between rounded-[2rem] border border-dashed border-border bg-surface p-6 transition-colors hover:border-accent">
+              <div>
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+                  <Upload size={24} aria-hidden="true" />
                 </div>
-                <div className="mt-6 flex items-center justify-between gap-4 text-sm font-semibold text-text-muted">
-                  <span>Accepted: TXT, PDF, DOCX, PPTX</span>
-                  <span>Max 150MB</span>
-                </div>
-                <input className="sr-only" type="file" accept=".txt,.pdf,.docx,.pptx" onChange={onFileChange} />
-              </label>
-
-              <div className="rounded-[2rem] border border-border bg-surface p-5">
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Tips</p>
-                <ul className="mt-4 space-y-3 text-sm leading-7 text-text-muted">
-                  <li>Use PPTX instead of old PPT so slide text can be extracted properly.</li>
-                  <li>Free-tier AI can be busy, so generation now retries more gently instead of bursting requests.</li>
-                  <li>Keep this modal open while generating. It locks on purpose to protect the request from accidental interruption.</li>
-                </ul>
+                <h3 className="mt-5 text-xl font-black text-text">{file ? file.name : 'Choose a file or drag one here'}</h3>
+                <p className="mt-2 text-sm leading-7 text-text-muted">
+                  Works best with readable notes, exported slides, reviewers, and text-based documents up to 150MB.
+                </p>
               </div>
-            </div>
+              <div className="mt-6 flex items-center justify-between gap-4 text-sm font-semibold text-text-muted">
+                <span>Accepted: TXT, PDF, DOCX, PPTX</span>
+                <span>Max 150MB</span>
+              </div>
+              <input className="sr-only" type="file" accept=".txt,.pdf,.docx,.pptx" onChange={onFileChange} />
+            </label>
 
             {saving ? (
               <div className="rounded-[2rem] border border-border bg-surface p-5">
@@ -625,10 +796,7 @@ function CreateWizard({
                 </div>
 
                 <div className="mt-5 h-3 overflow-hidden rounded-full bg-surface-2">
-                  <div
-                    className="h-full rounded-full bg-accent transition-[width] duration-500"
-                    style={{ width: `${progress.value}%` }}
-                  />
+                  <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${progress.value}%` }} />
                 </div>
 
                 <div className="mt-5 grid gap-3 md:grid-cols-3">
@@ -644,17 +812,13 @@ function CreateWizard({
             ) : null}
 
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <button
-                onClick={onClose}
-                disabled={saving}
-                className="rounded-2xl px-5 py-3 font-bold text-text-muted transition-colors duration-200 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <button onClick={onClose} disabled={saving} className="rounded-2xl px-5 py-3 font-bold text-text-muted disabled:opacity-50">
                 Cancel
               </button>
               <button
                 onClick={onAutoCreate}
                 disabled={!file || saving}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-6 py-3 font-bold text-accent-text transition-transform duration-200 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-6 py-3 font-bold text-accent-text disabled:opacity-50"
               >
                 {saving ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
                 Generate with Gemini AI
@@ -669,29 +833,19 @@ function CreateWizard({
               value={title}
               onChange={(event) => onTitleChange(event.target.value)}
               placeholder={`${selectedMeta.label} title`}
-              className="w-full rounded-2xl border border-border bg-surface px-4 py-3 font-bold text-text outline-none transition-colors duration-200 focus:border-accent"
+              className="w-full rounded-2xl border border-border bg-surface px-4 py-3 font-bold text-text outline-none focus:border-accent"
             />
-
-            <div className="rounded-[2rem] border border-border bg-surface-2/80 p-4 text-sm leading-7 text-text-muted">
-              {selectedType === 'flashcards'
-                ? 'Add one starter card using Front | Back. You can expand the set after opening it.'
-                : 'Write one clear starter question. The quiz page can handle the rest of the editing.'}
-            </div>
 
             <textarea
               value={manualText}
               onChange={(event) => onManualTextChange(event.target.value)}
               placeholder={selectedType === 'flashcards' ? 'Front | Back' : 'Write your question here'}
               rows={8}
-              className="w-full rounded-[2rem] border border-border bg-surface px-4 py-4 text-sm leading-7 text-text outline-none transition-colors duration-200 focus:border-accent"
+              className="w-full rounded-[2rem] border border-border bg-surface px-4 py-4 text-sm leading-7 text-text outline-none focus:border-accent"
             />
 
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <button
-                onClick={onClose}
-                disabled={saving}
-                className="rounded-2xl px-5 py-3 font-bold text-text-muted transition-colors duration-200 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <button onClick={onClose} disabled={saving} className="rounded-2xl px-5 py-3 font-bold text-text-muted disabled:opacity-50">
                 Cancel
               </button>
               <button

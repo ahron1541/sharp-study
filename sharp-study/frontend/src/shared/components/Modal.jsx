@@ -52,11 +52,11 @@ export default function Modal({
         aria-hidden="true"
       />
       {/* Modal panel */}
-      <div className={`relative bg-[var(--card-bg)] rounded-2xl shadow-2xl w-full
-                       ${sizes[size]} border border-[var(--card-border)] z-10`}>
+      <div className={`relative w-full rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-2xl z-10
+                       ${sizes[size]}`}>
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-[var(--card-border)]">
-          <h2 id="modal-title" className="text-lg font-semibold text-[var(--text-color)]">
+        <div className="flex items-center justify-between border-b border-[color:var(--color-border)] p-5">
+          <h2 id="modal-title" className="text-lg font-semibold text-[color:var(--color-text)]">
             {title}
           </h2>
           {showCloseButton ? (
@@ -64,10 +64,10 @@ export default function Modal({
               ref={firstFocusRef}
               onClick={onClose}
               aria-label="Close dialog"
-              className="p-1 rounded-lg hover:bg-[var(--card-border)] transition-colors
-                         focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+              className="rounded-lg p-1 transition-colors hover:bg-[color:var(--color-surface-2)]
+                         focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--color-accent)]"
             >
-              <X size={20} className="text-[var(--muted)]" />
+              <X size={20} className="text-[color:var(--color-text-muted)]" />
             </button>
           ) : (
             <span ref={firstFocusRef} tabIndex={-1} aria-hidden="true" />

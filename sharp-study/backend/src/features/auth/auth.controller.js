@@ -13,6 +13,48 @@ const transporter = nodemailer.createTransport({
 
 const generateOTP = () => crypto.randomInt(100000, 999999).toString();
 
+function getIsoDateToday() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function updateStreakPreferences(preferences = {}) {
+  const nextPreferences = { ...preferences };
+  const currentStreak = preferences?.streak || {};
+  const history = Array.isArray(currentStreak.history) ? currentStreak.history : [];
+  const today = getIsoDateToday();
+  const lastDate = currentStreak.last_date;
+
+  let current = Number(currentStreak.current || 0);
+  const longest = Number(currentStreak.longest || 0);
+
+  if (lastDate === today) {
+    nextPreferences.streak = {
+      ...currentStreak,
+      current,
+      longest: Math.max(longest, current),
+      last_date: today,
+      history: Array.from(new Set([...history, today])).sort(),
+    };
+    return nextPreferences;
+  }
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayIso = yesterday.toISOString().slice(0, 10);
+
+  current = lastDate === yesterdayIso ? current + 1 : 1;
+
+  nextPreferences.streak = {
+    ...currentStreak,
+    current,
+    longest: Math.max(longest, current),
+    last_date: today,
+    history: Array.from(new Set([...history, today])).sort(),
+  };
+
+  return nextPreferences;
+}
+
 // --- 1. REQUEST OTP ---
 exports.requestSignupOtp = async (req, res) => {
   try {
@@ -184,7 +226,7 @@ exports.login = async (req, res) => {
     // 2. Search Supabase for BOTH Email OR Username
     const { data: user, error: userError } = await supabase
       .from('profiles')
-      .select('id, email, password_hash, is_blocked, username')
+      .select('id, email, password_hash, is_blocked, username, preferences')
       .or(`email.eq.${cleanIdentifier},username.eq.${cleanIdentifier}`)
       .maybeSingle();
 
@@ -223,6 +265,12 @@ exports.login = async (req, res) => {
       ip_address: req.ip, 
       succeeded: true 
     }]);
+
+    const nextPreferences = updateStreakPreferences(user.preferences || {});
+    await supabase
+      .from('profiles')
+      .update({ preferences: nextPreferences })
+      .eq('id', user.id);
 
     res.status(200).json({
       message: 'Login successful',

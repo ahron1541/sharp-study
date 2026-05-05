@@ -7,7 +7,8 @@ import { API_URL } from '../../../config/api';
  * Returns study_guides, flashcard_sets, and quizzes with
  * loading and error states.
  */
-export function useDashboard() {
+export function useDashboard(options = {}) {
+  const { limit = 12 } = options;
   const { supabase } = useAuth();
   const [studyGuides,    setStudyGuides]    = useState([]);
   const [flashcardSets,  setFlashcardSets]  = useState([]);
@@ -22,7 +23,7 @@ export function useDashboard() {
     try {
       const token = localStorage.getItem('sharp-study-token');
       if (token) {
-        const response = await fetch(`${API_URL}/api/dashboard?limit=12`, {
+        const response = await fetch(`${API_URL}/api/dashboard?limit=${limit}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
@@ -41,21 +42,21 @@ export function useDashboard() {
           .select('id, title, created_at, document_id')
           .eq('is_archived', false)
           .order('created_at', { ascending: false })
-          .limit(12),
+          .limit(limit),
 
         supabase
           .from('flashcard_sets')
           .select('id, title, created_at, document_id')
           .eq('is_archived', false)
           .order('created_at', { ascending: false })
-          .limit(12),
+          .limit(limit),
 
         supabase
           .from('quizzes')
           .select('id, title, created_at, document_id')
           .eq('is_archived', false)
           .order('created_at', { ascending: false })
-          .limit(12),
+          .limit(limit),
       ]);
 
       if (guidesRes.error)   throw guidesRes.error;
@@ -70,7 +71,7 @@ export function useDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, [limit, supabase]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(fetchAll, 0);
