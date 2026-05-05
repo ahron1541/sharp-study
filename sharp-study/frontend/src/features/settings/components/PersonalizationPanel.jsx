@@ -20,13 +20,18 @@ export default function PersonalizationPanel({
   draft,
   hasChanges,
   saving,
+  blocking,
+  saveState,
   updateDraft,
   discardChanges,
   save,
 }) {
-
   return (
-    <div className="space-y-12">
+    <div className="relative space-y-12" aria-busy={blocking}>
+      {blocking ? (
+        <div className="absolute inset-0 z-10 rounded-[2rem] bg-bg/65 backdrop-blur-sm" aria-hidden="true" />
+      ) : null}
+
       <header>
         <h2 className="text-2xl font-bold text-text mb-2">Workspace Design</h2>
         <p className="text-text-muted font-medium">Customize your interface to create the perfect study atmosphere.</p>
@@ -44,6 +49,8 @@ export default function PersonalizationPanel({
             return (
               <button
                 key={mode.id}
+                type="button"
+                disabled={blocking}
                 onClick={() => updateDraft('display_mode', mode.id)}
                 className={`flex items-center justify-center gap-2 py-3 rounded-2xl transition-all duration-300 font-bold ${
                   isActive 
@@ -68,6 +75,8 @@ export default function PersonalizationPanel({
             return (
               <button
                 key={preset.id}
+                type="button"
+                disabled={blocking}
                 onClick={() => updateDraft('atmosphere', preset.id)}
                 className={`relative h-14 rounded-2xl px-6 flex items-center gap-3 transition-all duration-300 ${
                   isActive ? 'ring-2 ring-accent ring-offset-4' : 'hover:scale-102'
@@ -93,6 +102,8 @@ export default function PersonalizationPanel({
              return (
                 <button
                   key={font.id}
+                  type="button"
+                  disabled={blocking}
                   onClick={() => updateDraft('font_family', font.id)}
                   style={{ fontFamily: FONT_PREVIEW[font.id] }}
                   className={`p-5 rounded-2xl border-2 text-left transition-all ${
@@ -121,6 +132,7 @@ export default function PersonalizationPanel({
              min={FONT_SIZE_MIN}
              max={FONT_SIZE_MAX}
              value={draft.font_size}
+             disabled={blocking}
              onChange={(e) => updateDraft('font_size', Number(e.target.value))}
              className="w-full h-3 bg-surface-2 rounded-full appearance-none cursor-pointer accent-accent"
            />
@@ -131,9 +143,28 @@ export default function PersonalizationPanel({
         </div>
       </section>
 
+      {saveState.phase !== 'idle' ? (
+        <section className="rounded-[1.8rem] border border-border bg-surface-2 p-5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-bold text-text">{saveState.title}</p>
+              <p className="mt-1 text-sm text-text-muted">{saveState.detail}</p>
+            </div>
+            <span className="text-sm font-black text-accent">{saveState.progress}%</span>
+          </div>
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-surface">
+            <div
+              className="h-full rounded-full bg-accent transition-all duration-300"
+              style={{ width: `${Math.max(8, saveState.progress)}%` }}
+            />
+          </div>
+        </section>
+      ) : null}
+
       {/* Footer Actions */}
       <footer className="pt-8 border-t border-border flex items-center gap-4">
         <button
+          type="button"
           onClick={save}
           disabled={!hasChanges || saving}
           className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-2xl font-bold transition-all ${
@@ -147,8 +178,10 @@ export default function PersonalizationPanel({
         </button>
         {hasChanges && (
           <button
+            type="button"
+            disabled={blocking}
             onClick={discardChanges}
-            className="px-8 py-4 rounded-2xl font-bold text-text-muted hover:bg-surface-2 transition-all flex items-center gap-2"
+            className="px-8 py-4 rounded-2xl font-bold text-text-muted hover:bg-surface-2 transition-all flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <RotateCcw size={18} />
             Discard

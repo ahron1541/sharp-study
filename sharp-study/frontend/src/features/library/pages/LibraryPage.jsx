@@ -408,10 +408,10 @@ export default function LibraryPage() {
             <div className="max-w-3xl">
               <p className="text-xs font-black uppercase tracking-[0.24em] text-text-muted">Your library</p>
               <h1 className="mt-3 text-[clamp(2.1rem,4vw,3.8rem)] font-display font-black leading-none text-text">
-                Faster, cleaner access to your study materials.
+                Keep your study momentum moving.
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-text-muted sm:text-base">
-                Browse one material type at a time, search by title, and keep older items in the archive instead of overloading the main workspace.
+                Return to the lesson you need, stay focused on one material type at a time, and build a library that makes every study session easier to start.
               </p>
             </div>
 
@@ -463,7 +463,7 @@ export default function LibraryPage() {
               <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">{activeMeta.label}</p>
               <h2 className="mt-2 text-3xl font-black text-text">{activeMeta.plural}</h2>
               <p className="mt-2 text-sm leading-7 text-text-muted">
-                Showing up to {PAGE_SIZE} cards per page with focused loading for better performance on older devices.
+                One clear page at a time, so you can review, practice, and keep making progress without losing your focus.
               </p>
             </div>
 

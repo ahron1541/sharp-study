@@ -186,10 +186,11 @@
   --font-body: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
 }
 
-[data-font="syne"] body { --font-body: 'Syne', sans-serif; }
-[data-font="opendyslexic"] body { --font-body: 'Inter', sans-serif; } /* Real dyslexia font usually needs asset load, fallback to Inter for now */
-[data-font="serif"] body { --font-body: 'Georgia', serif; }
-[data-font="monospace"] body { --font-body: 'Monospace', monospace; }
+[data-font="dm-sans"] { --font-body: 'DM Sans', ui-sans-serif, system-ui, sans-serif; }
+[data-font="syne"] { --font-body: 'Syne', ui-sans-serif, system-ui, sans-serif; }
+[data-font="opendyslexic"] { --font-body: 'Inter', 'Verdana', ui-sans-serif, system-ui, sans-serif; } /* Real dyslexia font usually needs asset load, fallback to Inter for now */
+[data-font="serif"] { --font-body: 'Georgia', 'Times New Roman', serif; }
+[data-font="monospace"] { --font-body: 'Courier New', ui-monospace, monospace; }
 
 html {
   font-size: var(--font-scale);

@@ -1,59 +1,240 @@
-import React from 'react';
-import { Shield, Key, Trash2, Mail, ExternalLink, ChevronRight } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { CheckCircle2, Key, Loader2, Mail, Shield } from 'lucide-react';
+import toast from 'react-hot-toast';
+
+import Modal from '../../../shared/components/Modal';
+import { useAuth } from '../../auth/context/AuthContext';
+import { changePassword, resendVerificationEmail } from '../../auth/shared/services/auth.service';
+
+const PASSWORD_RULES = [
+  { label: 'At least 12 characters', test: (value) => value.length >= 12 },
+  { label: 'One uppercase letter', test: (value) => /[A-Z]/.test(value) },
+  { label: 'One lowercase letter', test: (value) => /[a-z]/.test(value) },
+  { label: 'One number', test: (value) => /[0-9]/.test(value) },
+  { label: 'One special character', test: (value) => /[^A-Za-z0-9]/.test(value) },
+];
 
 export default function AccountSecurityPanel() {
+  const { user, profile } = useAuth();
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [busyAction, setBusyAction] = useState('');
+
+  const isEmailVerified = Boolean(user?.email_confirmed_at);
+  const emailLabel = profile?.email || user?.email || 'No email available';
+  const passwordChecks = useMemo(
+    () => PASSWORD_RULES.map((rule) => ({ ...rule, passed: rule.test(passwordForm.newPassword) })),
+    [passwordForm.newPassword],
+  );
+
+  const closePasswordModal = () => {
+    if (busyAction === 'password') return;
+    setPasswordModalOpen(false);
+    setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  };
+
+  const handlePasswordChange = async () => {
+    if (!passwordChecks.every((rule) => rule.passed)) {
+      toast.error('Please meet all password requirements first.');
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast.error('Your new passwords do not match.');
+      return;
+    }
+
+    setBusyAction('password');
+    try {
+      const result = await changePassword({
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      });
+
+      toast.success(result.message || 'Password updated successfully.');
+      closePasswordModal();
+    } catch (error) {
+      toast.error(error.message || 'Failed to update password.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleVerificationAction = async () => {
+    if (isEmailVerified) {
+      toast.success('Your email is already verified.');
+      return;
+    }
+
+    setBusyAction('verification');
+    try {
+      const result = await resendVerificationEmail();
+      toast.success(result.message || 'Verification email sent.');
+    } catch (error) {
+      toast.error(error.message || 'Failed to send verification email.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   return (
-    <div className="space-y-12">
-      <header>
-        <h2 className="text-2xl font-bold text-text mb-2">Account & Safety</h2>
-        <p className="text-text-muted font-medium">Protect your data and manage your authentication methods.</p>
-      </header>
+    <>
+      <div className="space-y-12">
+        <header>
+          <h2 className="text-2xl font-bold text-text mb-2">Account & Safety</h2>
+          <p className="text-text-muted font-medium">Keep your account secure with working essentials first.</p>
+        </header>
 
-      <div className="space-y-4">
-        <SecurityOption 
-          icon={<Key className="text-blue-500" />}
-          label="Change Password"
-          sub="Ensure your account is protected with a strong password."
-          action="Update"
-        />
-        <SecurityOption 
-          icon={<Mail className="text-emerald-500" />}
-          label="Email Verification"
-          sub="Verified: ahron***@gmail.com"
-          action="Change"
-        />
-        <SecurityOption 
-          icon={<Shield className="text-orange-500" />}
-          label="Two-Factor Authentication"
-          sub="Add an extra layer of security (Coming Soon)."
-          disabled
-        />
-      </div>
+        <div className="space-y-4">
+          <SecurityOption
+            icon={<Key className="text-blue-500" aria-hidden="true" />}
+            label="Change Password"
+            sub="Update your password with confirmation and reuse protection."
+            actionLabel="Change password"
+            onAction={() => setPasswordModalOpen(true)}
+            busy={busyAction === 'password'}
+          />
 
-      <div className="pt-10 border-t border-border">
-         <h3 className="text-lg font-bold text-red-500 mb-6">Danger Area</h3>
-         <button className="flex items-center justify-between w-full p-6 rounded-3xl bg-red-500/5 border border-red-500/10 hover:bg-red-500/10 transition-all group">
-            <div className="flex items-center gap-4">
-               <div className="p-3 bg-red-500/20 rounded-2xl">
-                  <Trash2 className="text-red-600" size={20} />
-               </div>
-               <div className="text-left">
-                  <p className="font-bold text-red-600">Delete My Account</p>
-                  <p className="text-sm text-red-500/70 font-medium">This will permanently remove all your documents and study data.</p>
-               </div>
+          <SecurityOption
+            icon={<Mail className="text-emerald-500" aria-hidden="true" />}
+            label="Email Verification"
+            sub={isEmailVerified ? `Verified: ${emailLabel}` : `Not verified yet: ${emailLabel}`}
+            actionLabel={isEmailVerified ? 'Verified' : 'Send verification'}
+            onAction={handleVerificationAction}
+            busy={busyAction === 'verification'}
+            disabled={busyAction === 'password' || isEmailVerified}
+          />
+        </div>
+
+        <div className="rounded-[2rem] border border-border bg-surface-2 p-6">
+          <div className="flex items-start gap-4">
+            <div className="rounded-2xl bg-surface p-4 shadow-sm">
+              <Shield className="text-accent" size={20} aria-hidden="true" />
             </div>
-            <ChevronRight className="text-red-400 group-hover:translate-x-1 transition-transform" />
-         </button>
+            <div>
+              <p className="font-bold text-text">Security roadmap</p>
+              <p className="mt-1 text-sm leading-7 text-text-muted">
+                Two-factor authentication and advanced account controls are being prepared. For now, this page focuses on password updates and email verification only.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+
+      <Modal
+        isOpen={passwordModalOpen}
+        onClose={closePasswordModal}
+        title="Change Password"
+        size="md"
+        closeOnBackdrop={busyAction !== 'password'}
+        closeOnEscape={busyAction !== 'password'}
+        showCloseButton={busyAction !== 'password'}
+      >
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-text" htmlFor="current-password">
+              Current password
+            </label>
+            <input
+              id="current-password"
+              type="password"
+              value={passwordForm.currentPassword}
+              disabled={busyAction === 'password'}
+              onChange={(event) => setPasswordForm((prev) => ({ ...prev, currentPassword: event.target.value }))}
+              className="w-full rounded-2xl border border-border bg-surface-2 px-4 py-3 text-text outline-none transition-colors focus:border-accent disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-text" htmlFor="new-password">
+              New password
+            </label>
+            <input
+              id="new-password"
+              type="password"
+              value={passwordForm.newPassword}
+              disabled={busyAction === 'password'}
+              onChange={(event) => setPasswordForm((prev) => ({ ...prev, newPassword: event.target.value }))}
+              className="w-full rounded-2xl border border-border bg-surface-2 px-4 py-3 text-text outline-none transition-colors focus:border-accent disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-text" htmlFor="confirm-password">
+              Confirm new password
+            </label>
+            <input
+              id="confirm-password"
+              type="password"
+              value={passwordForm.confirmPassword}
+              disabled={busyAction === 'password'}
+              onChange={(event) => setPasswordForm((prev) => ({ ...prev, confirmPassword: event.target.value }))}
+              className="w-full rounded-2xl border border-border bg-surface-2 px-4 py-3 text-text outline-none transition-colors focus:border-accent disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </div>
+
+          <div className="rounded-[1.5rem] border border-border bg-surface-2 p-4">
+            <p className="text-sm font-bold text-text">Password checklist</p>
+            <div className="mt-3 space-y-2">
+              {passwordChecks.map((rule) => (
+                <div key={rule.label} className="flex items-center gap-2 text-sm">
+                  <CheckCircle2
+                    size={16}
+                    className={rule.passed ? 'text-emerald-500' : 'text-text-muted'}
+                    aria-hidden="true"
+                  />
+                  <span className={rule.passed ? 'text-text' : 'text-text-muted'}>{rule.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {busyAction === 'password' ? (
+            <div className="rounded-[1.5rem] border border-border bg-surface-2 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-bold text-text">Updating your password securely</p>
+                <span className="text-sm font-black text-accent">Working</span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface">
+                <div className="h-full w-3/4 animate-pulse rounded-full bg-accent" />
+              </div>
+            </div>
+          ) : null}
+
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={closePasswordModal}
+              disabled={busyAction === 'password'}
+              className="rounded-2xl border border-border px-5 py-3 font-bold text-text disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handlePasswordChange}
+              disabled={busyAction === 'password'}
+              className="inline-flex items-center gap-2 rounded-2xl bg-accent px-5 py-3 font-bold text-accent-text disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busyAction === 'password' ? <Loader2 className="animate-spin" size={16} /> : null}
+              Update password
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }
 
-function SecurityOption({ icon, label, sub, action, disabled = false }) {
+function SecurityOption({ icon, label, sub, actionLabel, onAction, disabled = false, busy = false }) {
   return (
-    <div className={`p-6 rounded-[2rem] border border-border bg-surface-2 flex items-center justify-between gap-4 transition-all ${disabled ? 'opacity-50' : 'hover:border-accent/40'}`}>
+    <div className="p-6 rounded-[2rem] border border-border bg-surface-2 flex items-center justify-between gap-4">
       <div className="flex items-center gap-4">
-        <div className="p-4 bg-surface rounded-2xl shadow-sm">
+        <div className="p-4 bg-surface rounded-2xl shadow-sm" aria-hidden="true">
           {icon}
         </div>
         <div>
@@ -61,18 +242,19 @@ function SecurityOption({ icon, label, sub, action, disabled = false }) {
           <p className="text-sm text-text-muted font-medium">{sub}</p>
         </div>
       </div>
-      {action && (
-        <button 
-          disabled={disabled}
-          className={`px-6 py-2.5 rounded-xl font-bold text-sm border transition-all ${
-            disabled 
-              ? 'bg-transparent text-text-muted cursor-not-allowed border-border' 
-              : 'bg-surface text-text border-border hover:border-accent hover:text-accent shadow-sm'
-          }`}
-        >
-          {action}
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={onAction}
+        disabled={disabled || busy}
+        className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm border transition-all ${
+          disabled || busy
+            ? 'bg-transparent text-text-muted cursor-not-allowed border-border opacity-70'
+            : 'bg-surface text-text border-border hover:border-accent hover:text-accent shadow-sm'
+        }`}
+      >
+        {busy ? <Loader2 size={16} className="animate-spin" /> : null}
+        {actionLabel}
+      </button>
     </div>
   );
 }

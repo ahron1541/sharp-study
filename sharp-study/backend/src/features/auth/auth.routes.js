@@ -18,6 +18,8 @@ router.post('/login', authController.login);
 router.post('/forgot-password/request-otp', authController.requestPasswordReset);
 router.post('/forgot-password/verify-otp', authController.verifyResetOtp);
 router.post('/forgot-password/reset', authController.resetPassword);
+router.post('/change-password', requireAuth, authController.changePassword);
+router.post('/email-verification/resend', requireAuth, authController.resendEmailVerification);
 
 // GET  /api/auth/preferences  — fetch current user's preferences
 router.get('/preferences', requireAuth, async (req, res) => {

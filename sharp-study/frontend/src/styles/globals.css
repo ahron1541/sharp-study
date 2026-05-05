@@ -94,6 +94,19 @@ img, video, canvas, svg {
   border-radius: 4px;
 }
 
+button,
+[role='button'],
+a[href],
+summary,
+label[for] {
+  cursor: pointer;
+}
+
+button:disabled,
+[role='button'][aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
 /* =============================
    CSS MEDIA QUERIES
    ============================= */

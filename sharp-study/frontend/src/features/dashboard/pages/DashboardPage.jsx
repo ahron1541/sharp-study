@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, BookOpen, CalendarDays, CreditCard, Flame, HelpCircle, Sparkles, Trophy, Zap } from 'lucide-react';
 
@@ -12,17 +12,21 @@ const SECTION_ORDER = [
   ['flashcards', 'flashcards', 'Flashcards', 'Flashcards'],
   ['quizzes', 'quiz', 'Quizzes', 'Quiz'],
 ];
+const STREAK_CALENDAR_MAINTENANCE = true;
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { items = { study_guides: [], flashcards: [], quizzes: [] }, loading } = useDashboard({ limit: 3 });
   const { profile } = useAuthCore();
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [now, setNow] = useState(() => new Date());
+  const calendarRef = useRef(null);
 
   const firstName = profile?.first_name || 'Student';
-  const streakPrefs = profile?.preferences?.streak || {};
+  const streakPrefs = useMemo(() => profile?.preferences?.streak || {}, [profile?.preferences?.streak]);
   const streak = Number(streakPrefs.current || 0);
-  const streakHistory = resolveStreakHistory(streakPrefs);
+  const streakHistory = useMemo(() => resolveStreakHistory(streakPrefs), [streakPrefs]);
+  const weeklyProgress = useMemo(() => buildWeeklyProgress(streakHistory, now), [streakHistory, now]);
   const isFirstTime = items.study_guides.length === 0 && items.flashcards.length === 0 && items.quizzes.length === 0;
 
   const streakMeta = useMemo(() => {
@@ -49,6 +53,37 @@ export default function DashboardPage() {
       message: 'Every study day counts. A short focused session today keeps the streak alive.',
     };
   }, [streak]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(new Date());
+    }, 30000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!calendarOpen) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (calendarRef.current && !calendarRef.current.contains(event.target)) {
+        setCalendarOpen(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setCalendarOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [calendarOpen]);
 
   if (loading) {
     return (
@@ -152,25 +187,43 @@ export default function DashboardPage() {
 
           <div className="mt-5 flex items-center justify-between gap-3">
             <div className="flex flex-1 gap-2">
-              {buildWeeklyProgress(streakHistory).map((active, index) => (
+              {weeklyProgress.map((active, index) => (
                 <div key={index} className={`h-2 flex-1 rounded-full ${active ? 'bg-streak' : 'bg-surface-2'}`} />
               ))}
             </div>
-            <button
-              type="button"
-              onClick={() => setCalendarOpen((value) => !value)}
-              className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-bold text-text"
-            >
-              <CalendarDays size={16} />
-              Calendar
-            </button>
-          </div>
+            <div className="relative shrink-0" ref={calendarRef}>
+              <button
+                type="button"
+                disabled={STREAK_CALENDAR_MAINTENANCE}
+                onClick={() => setCalendarOpen((value) => !value)}
+                aria-expanded={calendarOpen}
+                aria-haspopup="dialog"
+                aria-controls="streak-calendar-popover"
+                className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-bold text-text disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <CalendarDays size={16} aria-hidden="true" />
+                {STREAK_CALENDAR_MAINTENANCE ? 'Under maintenance' : 'Calendar'}
+              </button>
 
-          {calendarOpen ? (
-            <div className="mt-5 rounded-[1.5rem] border border-border bg-surface-2 p-4">
-              <StreakCalendar history={streakHistory} />
+              {STREAK_CALENDAR_MAINTENANCE ? (
+                <div className="absolute right-0 top-[calc(100%+0.75rem)] z-20 w-[min(24rem,calc(100vw-3rem))] rounded-[1.5rem] border border-border bg-surface p-4 shadow-[0_20px_60px_rgba(15,23,42,0.22)]">
+                  <p className="text-sm font-black text-text">Streak calendar is under maintenance</p>
+                  <p className="mt-2 text-sm leading-7 text-text-muted">
+                    We are recalibrating the date history so your streak view returns with cleaner and more reliable tracking.
+                  </p>
+                </div>
+              ) : calendarOpen ? (
+                <div
+                  id="streak-calendar-popover"
+                  role="dialog"
+                  aria-label="Study streak calendar"
+                  className="absolute right-0 top-[calc(100%+0.75rem)] z-20 w-[min(24rem,calc(100vw-3rem))] rounded-[1.5rem] border border-border bg-surface p-4 shadow-[0_20px_60px_rgba(15,23,42,0.22)]"
+                >
+                  <StreakCalendar history={streakHistory} now={now} />
+                </div>
+              ) : null}
             </div>
-          ) : null}
+          </div>
         </div>
       </section>
 
@@ -219,12 +272,14 @@ export default function DashboardPage() {
               ) : (
                 <div className="mt-6 grid gap-4 lg:grid-cols-3">
                   {sectionItems.map((item) => (
-                    <article
+                    <button
+                      type="button"
                       key={item.id}
                       onClick={() => navigate(getMaterialRoute(routeType, item.id))}
-                      className="cursor-pointer rounded-[1.8rem] border border-border bg-surface-2 p-5 transition-colors hover:bg-surface"
+                      aria-label={`Open ${item.title}`}
+                      className="rounded-[1.8rem] border border-border bg-surface-2 p-5 text-left transition-colors hover:bg-surface"
                     >
-                      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-surface text-accent">
+                      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-surface text-accent" aria-hidden="true">
                         <MaterialTypeIcon type={routeType} size={20} />
                       </span>
                       <p className="mt-5 text-xs font-black uppercase tracking-[0.2em] text-text-muted">
@@ -241,10 +296,10 @@ export default function DashboardPage() {
                         </p>
                         <span className="inline-flex items-center gap-1 text-xs font-bold text-text-muted">
                           Open
-                          <ArrowRight size={14} />
+                          <ArrowRight size={14} aria-hidden="true" />
                         </span>
                       </div>
-                    </article>
+                    </button>
                   ))}
                 </div>
               )}
@@ -263,9 +318,10 @@ function QuickAccessCard({ icon, label, sub, onClick }) {
       type="button"
       onClick={onClick}
       className="flex items-center gap-4 rounded-[1.8rem] border border-border bg-surface-2 p-5 text-left transition-colors hover:bg-surface"
+      aria-label={label}
     >
-      <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface text-accent">
-        <QuickIcon size={26} />
+      <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface text-accent" aria-hidden="true">
+        <QuickIcon size={26} aria-hidden="true" />
       </span>
       <div className="min-w-0">
         <h3 className="text-lg font-bold text-text">{label}</h3>
@@ -277,39 +333,43 @@ function QuickAccessCard({ icon, label, sub, onClick }) {
 
 function resolveStreakHistory(streakPrefs) {
   const history = Array.isArray(streakPrefs?.history) ? streakPrefs.history : [];
-  if (history.length) return history;
+  if (history.length) {
+    return [...new Set(history.map((value) => normalizeDateKey(value)).filter(Boolean))];
+  }
 
   const current = Number(streakPrefs?.current || 0);
   const lastDate = streakPrefs?.last_date;
   if (!current || !lastDate) return [];
 
   const dates = [];
-  const anchor = new Date(lastDate);
+  const anchor = parseDateLike(lastDate);
+  if (!anchor) return [];
+
   for (let offset = current - 1; offset >= 0; offset -= 1) {
     const next = new Date(anchor);
     next.setDate(anchor.getDate() - offset);
-    dates.push(next.toISOString().slice(0, 10));
+    dates.push(formatLocalDateKey(next));
   }
   return dates;
 }
 
-function buildWeeklyProgress(history) {
+function buildWeeklyProgress(history, now = new Date()) {
   const set = new Set(history);
   const values = [];
-  const today = new Date();
+  const today = startOfDay(now);
 
   for (let offset = 6; offset >= 0; offset -= 1) {
     const next = new Date(today);
     next.setDate(today.getDate() - offset);
-    values.push(set.has(next.toISOString().slice(0, 10)));
+    values.push(set.has(formatLocalDateKey(next)));
   }
 
   return values;
 }
 
-function StreakCalendar({ history }) {
+function StreakCalendar({ history, now }) {
   const hitDays = new Set(history);
-  const today = new Date();
+  const today = startOfDay(now);
   const year = today.getFullYear();
   const month = today.getMonth();
   const firstDay = new Date(year, month, 1);
@@ -337,10 +397,10 @@ function StreakCalendar({ history }) {
           const dayNumber = index - startOffset + 1;
           const inMonth = dayNumber >= 1 && dayNumber <= lastDay.getDate();
           const date = inMonth ? new Date(year, month, dayNumber) : null;
-          const isoDate = date ? date.toISOString().slice(0, 10) : '';
-          const isFuture = date ? date > today : false;
+          const isoDate = date ? formatLocalDateKey(date) : '';
+          const isFuture = date ? startOfDay(date).getTime() > today.getTime() : false;
           const isActive = date ? hitDays.has(isoDate) : false;
-          const isToday = date ? isoDate === today.toISOString().slice(0, 10) : false;
+          const isToday = date ? isoDate === formatLocalDateKey(today) : false;
 
           return (
             <div
@@ -364,4 +424,32 @@ function StreakCalendar({ history }) {
       </div>
     </div>
   );
+}
+
+function parseDateLike(value) {
+  if (!value) return null;
+  if (value instanceof Date) return new Date(value);
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  const next = new Date(value);
+  return Number.isNaN(next.getTime()) ? null : next;
+}
+
+function normalizeDateKey(value) {
+  const parsed = parseDateLike(value);
+  return parsed ? formatLocalDateKey(parsed) : '';
+}
+
+function formatLocalDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }

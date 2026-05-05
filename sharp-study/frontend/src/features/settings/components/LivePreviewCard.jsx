@@ -13,11 +13,11 @@ export default function LivePreviewCard({ draft }) {
     '--color-text': isDark ? '#F8FAFC' : '#0F172A',
     '--color-text-muted': isDark ? '#94A3B8' : '#64748B',
     '--color-border': isDark ? '#334155' : '#E2E8F0',
-    fontFamily: draft.font_family === 'serif' ? 'Georgia, serif' : 
-                draft.font_family === 'monospace' ? 'monospace' : 
+    fontFamily: draft.font_family === 'serif' ? 'Georgia, "Times New Roman", serif' :
+                draft.font_family === 'monospace' ? '"Courier New", monospace' :
                 draft.font_family === 'syne' ? 'Syne, sans-serif' :
                 draft.font_family === 'opendyslexic' ? 'Inter, Verdana, sans-serif' :
-                'DM Sans, sans-serif',
+                '"DM Sans", sans-serif',
     fontSize: `${Math.max(12, Number(draft.font_size) || 16) * 0.58}px`
   };
 

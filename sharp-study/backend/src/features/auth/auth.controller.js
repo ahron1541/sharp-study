@@ -434,3 +434,110 @@ exports.resetPassword = async (req, res) => {
     res.status(500).json({ error: 'Failed to reset password' });
   }
 };
+
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current password and new password are required.' });
+    }
+
+    if (newPassword.length < 12) {
+      return res.status(400).json({ error: 'New password must be at least 12 characters long.' });
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('password_hash')
+      .eq('id', req.user.id)
+      .single();
+
+    if (profileError) throw profileError;
+    if (!profile?.password_hash) {
+      return res.status(400).json({ error: 'Password data is not available for this account.' });
+    }
+
+    const isCurrentMatch = await bcrypt.compare(currentPassword, profile.password_hash);
+    if (!isCurrentMatch) {
+      return res.status(400).json({ error: 'Your current password is incorrect.' });
+    }
+
+    const isSameAsCurrent = await bcrypt.compare(newPassword, profile.password_hash);
+    if (isSameAsCurrent) {
+      return res.status(400).json({ error: 'Choose a new password that is different from your current password.' });
+    }
+
+    const { data: passwordHistory, error: historyError } = await supabase
+      .from('password_history')
+      .select('password_hash')
+      .eq('user_id', req.user.id)
+      .order('created_at', { ascending: false })
+      .limit(8);
+
+    if (historyError) throw historyError;
+
+    for (const entry of passwordHistory || []) {
+      const wasUsedBefore = await bcrypt.compare(newPassword, entry.password_hash);
+      if (wasUsedBefore) {
+        return res.status(400).json({ error: 'Please choose a password you have not used before.' });
+      }
+    }
+
+    const nextHash = await bcrypt.hash(newPassword, 12);
+
+    const { error: authError } = await supabase.auth.admin.updateUserById(req.user.id, {
+      password: newPassword,
+    });
+    if (authError) throw authError;
+
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ password_hash: nextHash })
+      .eq('id', req.user.id);
+    if (updateError) throw updateError;
+
+    const { error: historyInsertError } = await supabase
+      .from('password_history')
+      .insert({ user_id: req.user.id, password_hash: nextHash });
+    if (historyInsertError) throw historyInsertError;
+
+    res.status(200).json({ success: true, message: 'Password updated successfully.' });
+  } catch (error) {
+    console.error('Change Password Error:', error);
+    res.status(500).json({ error: 'Failed to update password.' });
+  }
+};
+
+exports.resendEmailVerification = async (req, res) => {
+  try {
+    if (req.user.email_confirmed_at) {
+      return res.status(200).json({
+        success: true,
+        alreadyVerified: true,
+        message: 'Your email is already verified.',
+      });
+    }
+
+    const resendOptions = {};
+    if (process.env.APP_URL) {
+      resendOptions.emailRedirectTo = `${process.env.APP_URL.replace(/\/$/, '')}/login`;
+    }
+
+    const { error } = await supabaseAuth.auth.resend({
+      type: 'signup',
+      email: req.user.email,
+      options: resendOptions,
+    });
+
+    if (error) throw error;
+
+    res.status(200).json({
+      success: true,
+      message: 'Verification email sent successfully.',
+    });
+  } catch (error) {
+    console.error('Resend Email Verification Error:', error);
+    res.status(500).json({ error: 'Failed to send verification email.' });
+  }
+};

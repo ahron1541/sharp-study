@@ -16,7 +16,23 @@ export default function SettingsPage() {
   const settings = useSettings();
 
   return (
-    <div className="min-h-full bg-bg">
+    <div className="relative min-h-full bg-bg">
+      {settings.blocking ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-bg/72 backdrop-blur-sm px-4">
+          <div className="w-full max-w-md rounded-[2rem] border border-border bg-surface p-6 shadow-2xl">
+            <p className="text-lg font-black text-text">{settings.saveState.title}</p>
+            <p className="mt-2 text-sm leading-7 text-text-muted">{settings.saveState.detail}</p>
+            <div className="mt-5 h-3 overflow-hidden rounded-full bg-surface-2">
+              <div
+                className="h-full rounded-full bg-accent transition-all duration-300"
+                style={{ width: `${Math.max(10, settings.saveState.progress)}%` }}
+              />
+            </div>
+            <p className="mt-3 text-right text-sm font-bold text-accent">{settings.saveState.progress}%</p>
+          </div>
+        </div>
+      ) : null}
+
       <div className="max-w-7xl mx-auto p-6 md:p-10">
         <header className="mb-10">
            <h1 className="text-4xl font-display font-black text-text tracking-tight mb-2">Settings</h1>
@@ -33,6 +49,8 @@ export default function SettingsPage() {
                 return (
                   <button
                     key={tab.id}
+                    type="button"
+                    disabled={settings.blocking}
                     onClick={() => setActiveTab(tab.id)}
                     className={`flex items-center gap-3 px-6 py-4 rounded-3xl transition-all duration-300 border-2 ${
                       isActive 

@@ -53,3 +53,15 @@ export const resetPassword = (email, password) =>
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
+
+export const changePassword = (payload) =>
+  request('/api/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const resendVerificationEmail = () =>
+  request('/api/auth/email-verification/resend', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
