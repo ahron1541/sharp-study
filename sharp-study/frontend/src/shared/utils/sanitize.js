@@ -37,7 +37,9 @@ export const sanitizeHtml = (dirty) => {
       'tr',
       'ul',
     ],
-    ALLOWED_ATTR: ['class', 'colspan', 'rowspan', 'href', 'rel', 'target', 'data-highlight-color'],
+    ALLOWED_ATTR: ['class', 'id', 'colspan', 'rowspan', 'href', 'rel', 'target', 'data-highlight-color'],
+    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'textarea', 'select'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onmouseenter', 'onmouseleave', 'style'],
   });
 };
 

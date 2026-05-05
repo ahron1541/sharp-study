@@ -1,12 +1,22 @@
 const HEADING_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
 
 const QUICK_REFERENCE_GROUPS = [
-  { id: 'key-terms', label: 'Key Terms/Concepts', pattern: /term|concept|definition|vocabulary|glossary/i },
-  { id: 'key-people', label: 'Key People', pattern: /people|person|figure|character|leader|hero/i },
-  { id: 'key-dates', label: 'Key Dates', pattern: /date|timeline|chronology|history|year/i },
-  { id: 'key-events', label: 'Key Events', pattern: /event|events|process|steps|sequence/i },
-  { id: 'cause-effect', label: 'Cause and Effect', pattern: /cause|effect|reason|result|impact/i },
+  { id: 'key-terms', label: 'Key Terms and Concepts', pattern: /term|concept|definition|vocabulary|glossary|idea/i },
+  { id: 'key-people', label: 'Key People', pattern: /people|person|figure|character|leader|hero|scientist|author/i },
+  { id: 'key-dates', label: 'Key Dates and Timeline', pattern: /date|timeline|chronology|history|year|period|era/i },
+  { id: 'key-events', label: 'Processes and Events', pattern: /event|events|process|steps|sequence|cycle|stages/i },
+  { id: 'cause-effect', label: 'Cause and Effect', pattern: /cause|effect|reason|result|impact|outcome/i },
+  { id: 'formulas', label: 'Formulas and Methods', pattern: /formula|equation|method|procedure|strategy|solve|calculation/i },
+  { id: 'comparisons', label: 'Comparisons', pattern: /compare|contrast|difference|similar|versus/i },
+  { id: 'examples', label: 'Examples and Applications', pattern: /example|application|case|scenario|practice/i },
 ];
+
+const STOP_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'because', 'by', 'can', 'for', 'from', 'has', 'have', 'how',
+  'if', 'in', 'into', 'is', 'it', 'its', 'of', 'on', 'or', 'that', 'the', 'their', 'there', 'these', 'this',
+  'to', 'was', 'were', 'what', 'when', 'where', 'which', 'who', 'why', 'with', 'your', 'you', 'than', 'then',
+  'they', 'them', 'will', 'would', 'about', 'after', 'before', 'during', 'over', 'under', 'between',
+]);
 
 function escapeHtml(value) {
   return String(value)
@@ -235,35 +245,131 @@ function inferTopic(sections, fallbackTitle) {
   return fallbackTitle || 'the topic';
 }
 
-export function buildQuickReferenceGroups(sections, fallbackTitle = 'Study Guide') {
+function extractKeywords(sourceText = '', limit = 6) {
+  const counts = new Map();
+  const words = String(sourceText)
+    .toLowerCase()
+    .match(/[a-z][a-z-]{2,}/g) || [];
+
+  words.forEach((word) => {
+    if (STOP_WORDS.has(word)) return;
+    counts.set(word, (counts.get(word) || 0) + 1);
+  });
+
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([word]) => word);
+}
+
+function inferDynamicReferenceLabel(sections, fallbackTitle) {
+  const titles = sections
+    .map((section) => section.title)
+    .filter(Boolean)
+    .filter((title) => title !== 'Overview');
+
+  if (titles.some((title) => /formula|equation|solve|calculate/i.test(title))) {
+    return 'Formulas and Steps';
+  }
+  if (titles.some((title) => /timeline|year|history|era|date/i.test(title))) {
+    return 'Timeline and Key Details';
+  }
+  if (titles.some((title) => /compare|contrast|difference/i.test(title))) {
+    return 'Comparisons';
+  }
+  if (titles.some((title) => /example|application|case/i.test(title))) {
+    return 'Examples and Applications';
+  }
+
+  return `${fallbackTitle} Key Points`;
+}
+
+function inferReferenceFormat(section) {
+  if (/process|steps|sequence|timeline|chronology|procedure|method|stages/i.test(section.title || '')) {
+    return 'ordered';
+  }
+  return 'unordered';
+}
+
+function extractReferenceEntries(section) {
+  const doc = new DOMParser().parseFromString(`<div>${section.html || ''}</div>`, 'text/html');
+  const orderedItems = Array.from(doc.querySelectorAll('ol > li'))
+    .map((node) => node.textContent?.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  if (orderedItems.length) {
+    return {
+      format: 'ordered',
+      entries: orderedItems.slice(0, 6),
+    };
+  }
+
+  const unorderedItems = Array.from(doc.querySelectorAll('ul > li'))
+    .map((node) => node.textContent?.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  if (unorderedItems.length) {
+    return {
+      format: 'unordered',
+      entries: unorderedItems.slice(0, 6),
+    };
+  }
+
+  const snippetEntries = (section.snippets || [])
+    .map((item) => item?.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, 5);
+
+  return {
+    format: inferReferenceFormat(section),
+    entries: snippetEntries.length ? snippetEntries : [section.summary || summarizeText(section.text, 120)].filter(Boolean),
+  };
+}
+
+export function buildQuickReferenceGroups(sections, sourceText = '', fallbackTitle = 'Study Guide') {
   const groups = QUICK_REFERENCE_GROUPS.map((group) => {
     const items = sections
       .filter((section) => group.pattern.test(section.title))
-      .map((section) => ({
-        id: section.id,
-        title: section.title,
-        detail: section.summary || section.snippets[0] || summarizeText(section.text, 120),
-      }));
+      .map((section) => {
+        const structured = extractReferenceEntries(section);
+        return {
+          id: section.id,
+          title: section.title,
+          detail: section.summary || section.snippets[0] || summarizeText(section.text, 120),
+          format: structured.format,
+          entries: structured.entries,
+        };
+      });
 
     return items.length ? { ...group, items } : null;
   }).filter(Boolean);
 
   if (groups.length) return groups;
 
-  const fallbackItems = sections.slice(0, 4).map((section) => ({
-    id: section.id,
-    title: section.title,
-    detail: section.summary || section.snippets[0] || summarizeText(section.text, 120),
-  }));
+  const keywords = extractKeywords(sourceText, 4);
+  const fallbackItems = sections.slice(0, 4).map((section, index) => {
+    const structured = extractReferenceEntries(section);
+    return {
+      id: section.id,
+      title: section.title,
+      detail:
+        section.summary ||
+        section.snippets[0] ||
+        summarizeText(section.text, 120) ||
+        (keywords[index] ? `Review how ${keywords[index]} fits into this lesson.` : ''),
+      format: structured.format,
+      entries: structured.entries,
+    };
+  });
 
   return [{
-    id: 'quick-recall',
-    label: `${fallbackTitle} Recall`,
+    id: 'lesson-reference',
+    label: inferDynamicReferenceLabel(sections, fallbackTitle),
     items: fallbackItems,
   }];
 }
 
-export function buildDiscussionQuestions(sections, fallbackTitle = 'this lesson') {
+export function buildDiscussionQuestions(sections, sourceText = '', fallbackTitle = 'this lesson') {
   const questionSection = sections.find((section) => /discussion questions|self[- ]?check|reflection|review questions?/i.test(section.title));
 
   if (questionSection) {
@@ -283,37 +389,41 @@ export function buildDiscussionQuestions(sections, fallbackTitle = 'this lesson'
   const topic = inferTopic(sections, fallbackTitle);
   const focusSections = sections.filter((section) => section.title !== 'Overview').slice(0, 4);
   const summary = focusSections[0]?.summary || 'the main ideas from the guide';
+  const keywords = extractKeywords(sourceText, 3);
+  const keywordPhrase = keywords.length ? keywords.join(', ') : topic;
+  const firstSection = focusSections[0]?.title || topic;
+  const secondSection = focusSections[1]?.title || 'the next main section';
 
   return [
     {
       id: 'dq-1',
-      question: `How would you explain ${topic} in one minute to a classmate?`,
-      answer: `Focus on the most important idea, then add one supporting detail from ${summary}.`,
+      question: `How would you explain ${topic} to a classmate using ideas from ${firstSection}?`,
+      answer: `Start with the main idea, then connect it to one concrete detail from ${summary}.`,
     },
     {
       id: 'dq-2',
-      question: `Which part of the lesson feels most important for remembering later?`,
-      answer: `Pick the section that has the strongest definitions, dates, or examples.`,
+      question: `Which lesson details about ${keywordPhrase} feel most important to remember later?`,
+      answer: `Choose the terms, facts, or examples that appear most often and explain why they matter.`,
     },
     {
       id: 'dq-3',
-      question: `What real-world example makes ${topic} easier to understand?`,
-      answer: `Use a school, community, or daily-life example that matches the lesson.`,
+      question: `What example from real life would make ${topic} easier to understand?`,
+      answer: `Use a school, community, work, or daily-life situation that matches the lesson.`,
     },
     {
       id: 'dq-4',
-      question: `What is one question you would still ask after reading this guide?`,
-      answer: `Turn a confusing point into a study question and review that section again.`,
+      question: `How does ${firstSection} connect with ${secondSection}?`,
+      answer: `Look for cause-and-effect, comparison, sequence, or shared vocabulary between both sections.`,
     },
     {
       id: 'dq-5',
-      question: `How does this guide connect the main ideas across its sections?`,
-      answer: `Look for links between the overview, key details, and the final takeaways.`,
+      question: `What is one question you would still ask after reading this lesson?`,
+      answer: `Turn one confusing point into a short study question, then revisit the heading where it appears.`,
     },
     {
       id: 'dq-6',
-      question: `Which details would you put into a quick review sheet before a quiz?`,
-      answer: `Choose short definitions, major names, important dates, and any repeated ideas.`,
+      question: `Which details would you place in a quick review sheet before a quiz on ${topic}?`,
+      answer: `Keep only the shortest definitions, repeated ideas, and high-value facts from the lesson.`,
     },
   ];
 }

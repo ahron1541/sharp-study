@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Edit2, Save, Eye, Loader2, MoreHorizontal } from 'lucide-react';
+import { ArrowLeft, Edit2, Loader2, PanelLeftClose, PanelLeftOpen, Volume2, VolumeX } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useAuth } from '../../auth/context/AuthContext';
-import Button from '../../../shared/components/Button';
 import Breadcrumb from '../../../shared/components/Breadcrumb';
+import Modal from '../../../shared/components/Modal';
 import { sanitizeHtml } from '../../../shared/utils/sanitize';
-import TTSButton from '../components/TTSButton';
 import StudyGuideEditor from '../components/StudyGuideEditor';
 import StudyGuideSidebar from '../components/StudyGuideSidebar';
 import SelectionToolbar from '../components/SelectionToolbar';
@@ -29,6 +28,30 @@ const HIGHLIGHT_COLORS = [
   { name: 'Orange', value: '#fed7aa' },
 ];
 
+const DRAFT_SYNC_DELAY_MS = 2 * 60 * 1000;
+const draftStorageKey = (guideId) => `sharp-study-guide-draft:${guideId}`;
+const saveLogPrefix = '[StudyGuideDraft]';
+
+function formatRelativeSyncTime(timestamp) {
+  if (!timestamp) return 'Not synced yet';
+
+  const diffMs = Date.now() - new Date(timestamp).getTime();
+  if (Number.isNaN(diffMs) || diffMs < 0) return 'Just now';
+
+  const diffSeconds = Math.floor(diffMs / 1000);
+  if (diffSeconds < 10) return 'Just now';
+  if (diffSeconds < 60) return `${diffSeconds}s ago`;
+
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
 export default function StudyGuidePage() {
   const { id } = useParams();
   const { supabase } = useAuth();
@@ -38,18 +61,30 @@ export default function StudyGuidePage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState('saved');
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const [savedContent, setSavedContent] = useState('');
   const [content, setContent] = useState('');
-  const [activeTab, setActiveTab] = useState('outline');
+  const [activeTab, setActiveTab] = useState('guide');
   const [showLoadingSkeleton, setShowLoadingSkeleton] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeSectionId, setActiveSectionId] = useState('');
+  const [speaking, setSpeaking] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState(null);
   const [selectionToolbar, setSelectionToolbar] = useState({
     visible: false,
     position: null,
     selectedText: '',
   });
+  const [syncClock, setSyncClock] = useState(0);
 
   const contentRef = useRef(null);
+  const articleRef = useRef(null);
   const selectionRangeRef = useRef(null);
-  const showContentsSidebar = false;
+  const utteranceRef = useRef(null);
+  const lastSavedContentRef = useRef('');
+  const lastLocalSaveAtRef = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -61,7 +96,7 @@ export default function StudyGuidePage() {
       setLoading(true);
       const { data, error } = await supabase
         .from('study_guides')
-        .select('*')
+        .select('*, document:documents(title, extracted_text)')
         .eq('id', id)
         .single();
 
@@ -77,8 +112,28 @@ export default function StudyGuidePage() {
       }
 
       const normalizedContent = normalizeStudyGuideHtml(data.content);
-      setGuide({ ...data, content: normalizedContent });
-      setContent(normalizedContent);
+      let nextContent = normalizedContent;
+
+      try {
+        const cachedDraft = localStorage.getItem(draftStorageKey(id));
+        if (cachedDraft) {
+          const parsedDraft = JSON.parse(cachedDraft);
+          if (parsedDraft?.content && parsedDraft.content !== normalizedContent) {
+            nextContent = parsedDraft.content;
+            setLastSyncedAt(parsedDraft.updatedAt || data.updated_at || data.created_at || null);
+            console.info(`${saveLogPrefix} restored cached draft`, { guideId: id, updatedAt: parsedDraft.updatedAt });
+          }
+        }
+      } catch (draftError) {
+        console.warn(`${saveLogPrefix} failed to restore local draft`, draftError);
+      }
+
+      setGuide({ ...data, content: nextContent });
+      setContent(nextContent);
+      setSavedContent(normalizedContent);
+      lastSavedContentRef.current = normalizedContent;
+      setLastSyncedAt(data.updated_at || data.created_at || null);
+      setSaveState(nextContent === normalizedContent ? 'saved' : 'cached');
       setLoading(false);
     };
 
@@ -90,14 +145,30 @@ export default function StudyGuidePage() {
     };
   }, [id, supabase]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setSyncClock(Date.now());
+    }, 30000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
   const sections = useMemo(() => extractStudyGuideSections(content), [content]);
+  const lessonText = useMemo(
+    () => guide?.document?.extracted_text || stripStudyGuideHtml(content),
+    [guide?.document?.extracted_text, content]
+  );
+  const resolvedActiveSectionId = useMemo(
+    () => (sections.some((section) => section.id === activeSectionId) ? activeSectionId : sections[0]?.id || ''),
+    [sections, activeSectionId]
+  );
   const quickReferenceGroups = useMemo(
-    () => buildQuickReferenceGroups(sections, guide?.title),
-    [sections, guide?.title]
+    () => buildQuickReferenceGroups(sections, lessonText, guide?.document?.title || guide?.title),
+    [sections, lessonText, guide?.document?.title, guide?.title]
   );
   const discussionQuestions = useMemo(
-    () => buildDiscussionQuestions(sections, guide?.title),
-    [sections, guide?.title]
+    () => buildDiscussionQuestions(sections, lessonText, guide?.document?.title || guide?.title),
+    [sections, lessonText, guide?.document?.title, guide?.title]
   );
 
   const renderedHtml = useMemo(() => {
@@ -120,46 +191,265 @@ export default function StudyGuidePage() {
   }, [content, sections]);
 
   const plainTextContent = useMemo(() => stripStudyGuideHtml(content), [content]);
-  const outlineCards = useMemo(() => sections.filter((section) => section.title), [sections]);
+  const hasPendingChanges = editing && (saving || content !== savedContent);
+  const effectiveSaveState = useMemo(() => {
+    if (!editing) return saveState;
+    if (saving) return 'saving';
+    if (saveState === 'error') return 'error';
+    return content === savedContent ? 'saved' : 'cached';
+  }, [content, editing, saveState, savedContent, saving]);
+  const lastSyncLabel = useMemo(() => {
+    void syncClock;
+    if (effectiveSaveState === 'cached') {
+      return `Local draft ${formatRelativeSyncTime(lastSyncedAt)}`;
+    }
+    if (effectiveSaveState === 'saving') {
+      return 'Syncing now';
+    }
+    if (effectiveSaveState === 'error') {
+      return 'Sync failed';
+    }
+    return `Last sync ${formatRelativeSyncTime(lastSyncedAt)}`;
+  }, [effectiveSaveState, lastSyncedAt, syncClock]);
 
-  const jumpToSection = (sectionId) => {
+  const stopReading = useCallback(() => {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    utteranceRef.current = null;
+    setSpeaking(false);
+  }, []);
+
+  const writeDraftToLocalCache = useCallback((nextContent) => {
+    if (!id) return;
+    try {
+      const payload = {
+        content: nextContent,
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(draftStorageKey(id), JSON.stringify(payload));
+      lastLocalSaveAtRef.current = Date.now();
+      setLastSyncedAt(payload.updatedAt);
+      console.info(`${saveLogPrefix} draft cached locally`, { guideId: id, bytes: nextContent.length });
+    } catch (cacheError) {
+      console.warn(`${saveLogPrefix} failed to cache draft locally`, cacheError);
+    }
+  }, [id]);
+
+  const clearDraftFromLocalCache = useCallback(() => {
+    if (!id) return;
+    try {
+      localStorage.removeItem(draftStorageKey(id));
+      console.info(`${saveLogPrefix} cleared local draft cache`, { guideId: id });
+    } catch (cacheError) {
+      console.warn(`${saveLogPrefix} failed to clear local draft cache`, cacheError);
+    }
+  }, [id]);
+
+  const handleReadAloud = useCallback(() => {
+    if (!window.speechSynthesis) {
+      toast.error('Text-to-speech is not supported in this browser.');
+      return;
+    }
+
+    if (speaking) {
+      stopReading();
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(plainTextContent);
+    utterance.lang = 'en-US';
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    utterance.onstart = () => setSpeaking(true);
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    utteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  }, [plainTextContent, speaking, stopReading]);
+
+  useEffect(() => {
+    return () => stopReading();
+  }, [stopReading]);
+
+  const jumpToSection = useCallback((sectionId) => {
     const element = document.getElementById(sectionId);
     if (element) {
+      setActiveSectionId(sectionId);
       element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setMobileSidebarOpen(false);
     }
-  };
+  }, []);
 
-  const save = async () => {
-    if (!guide) return;
-
-    setSaving(true);
-    const { error } = await supabase
-      .from('study_guides')
-      .update({ content, title: guide.title })
-      .eq('id', id);
-    setSaving(false);
-
-    if (!error) {
-      toast.success('Study guide saved!');
-      setEditing(false);
-    } else {
-      toast.error('Failed to save.');
-    }
-  };
-
-  const clearSelectionToolbar = () => {
+  const clearSelectionToolbar = useCallback(() => {
     selectionRangeRef.current = null;
     setSelectionToolbar({
       visible: false,
       position: null,
       selectedText: '',
     });
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!renderedHtml || editing) return undefined;
+
+    const headings = Array.from(
+      articleRef.current?.querySelectorAll('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]') || []
+    );
+
+    if (!headings.length) return undefined;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visibleHeading = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+
+        if (visibleHeading?.target?.id) {
+          setActiveSectionId(visibleHeading.target.id);
+        }
+      },
+      {
+        rootMargin: '-96px 0px -55% 0px',
+        threshold: [0.1, 0.5, 1],
+      }
+    );
+
+    headings.forEach((heading) => observer.observe(heading));
+    return () => observer.disconnect();
+  }, [renderedHtml, editing]);
+
+  const save = useCallback(async ({ nextContent = content, exitEditing = false, showToast = true, reason = 'manual' } = {}) => {
+    if (!guide) return false;
+    if (nextContent === savedContent) {
+      setSaveState('saved');
+      if (exitEditing) setEditing(false);
+      return true;
+    }
+
+    setSaving(true);
+    setSaveState('saving');
+    console.info(`${saveLogPrefix} syncing draft to database`, { guideId: id, reason, size: nextContent.length });
+
+    const { error } = await supabase
+      .from('study_guides')
+      .update({ content: nextContent, title: guide.title })
+      .eq('id', id);
+
+    setSaving(false);
+
+    if (error) {
+      setSaveState('error');
+      console.error(`${saveLogPrefix} database sync failed`, { guideId: id, reason, error });
+      if (showToast) toast.error('Failed to save your study guide.');
+      return false;
+    }
+
+    lastSavedContentRef.current = nextContent;
+    setSavedContent(nextContent);
+    setGuide((currentGuide) => (currentGuide ? { ...currentGuide, content: nextContent } : currentGuide));
+    setLastSyncedAt(new Date().toISOString());
+    setSaveState('saved');
+    clearDraftFromLocalCache();
+    console.info(`${saveLogPrefix} database sync complete`, { guideId: id, reason });
+    if (showToast) toast.success('Study guide saved.');
+    if (exitEditing) setEditing(false);
+    return true;
+  }, [clearDraftFromLocalCache, content, guide, id, savedContent, supabase]);
+
+  const switchToReadMode = useCallback(async () => {
+    const saved = await save({ exitEditing: true, showToast: false });
+    if (saved) {
+      setActiveTab('guide');
+      clearSelectionToolbar();
+    }
+  }, [clearSelectionToolbar, save]);
+
+  useEffect(() => {
+    if (!editing) return undefined;
+    if (content === savedContent) return undefined;
+
+    const timer = window.setTimeout(() => {
+      save({ nextContent: content, showToast: false, reason: 'scheduled-sync' });
+    }, DRAFT_SYNC_DELAY_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [content, editing, save, savedContent]);
+
+  const handleEditorChange = useCallback((nextContent) => {
+    setContent(nextContent);
+    if (nextContent !== savedContent) {
+      setSaveState('cached');
+      writeDraftToLocalCache(nextContent);
+    }
+  }, [savedContent, writeDraftToLocalCache]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event) => {
+      if (!hasPendingChanges) return undefined;
+      event.preventDefault();
+      event.returnValue = '';
+      return '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasPendingChanges]);
+
+  useEffect(() => {
+    if (!hasPendingChanges) return undefined;
+
+    const handleDocumentClick = (event) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (!link) return;
+      if (link.target && link.target !== '_self') return;
+
+      const href = link.getAttribute('href');
+      if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) {
+        return;
+      }
+
+      const url = new URL(link.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+
+      const nextPath = `${url.pathname}${url.search}${url.hash}`;
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (nextPath === currentPath) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      setPendingNavigation({ kind: 'path', to: nextPath });
+    };
+
+    document.addEventListener('click', handleDocumentClick, true);
+    return () => document.removeEventListener('click', handleDocumentClick, true);
+  }, [hasPendingChanges]);
+
+  const requestNavigation = useCallback((nextPath) => {
+    if (hasPendingChanges) {
+      setPendingNavigation({ kind: 'path', to: nextPath });
+      return;
+    }
+
+    stopReading();
+    navigate(nextPath);
+  }, [hasPendingChanges, navigate, stopReading]);
 
   const showSelectionToolbar = () => {
     if (editing) return;
     const selection = window.getSelection();
     const selectedText = selection?.toString().trim();
+
     if (!selection || selection.isCollapsed || !selectedText || !contentRef.current) {
       clearSelectionToolbar();
       return;
@@ -185,7 +475,7 @@ export default function StudyGuidePage() {
 
   const highlightSelection = (highlightColor = HIGHLIGHT_COLORS[0].value) => {
     const range = selectionRangeRef.current;
-    const container = contentRef.current;
+    const container = articleRef.current;
 
     if (!range || !container) {
       clearSelectionToolbar();
@@ -204,9 +494,35 @@ export default function StudyGuidePage() {
       range.insertNode(mark);
     }
 
-    setContent(container.innerHTML);
+    const updatedContent = container.innerHTML;
+    setContent(updatedContent);
+    writeDraftToLocalCache(updatedContent);
+    setSaveState('cached');
     clearSelectionToolbar();
     window.getSelection()?.removeAllRanges();
+  };
+
+  const handleDiscardAndLeave = () => {
+    stopReading();
+    if (pendingNavigation?.kind === 'path') {
+      navigate(pendingNavigation.to);
+    }
+    setPendingNavigation(null);
+  };
+
+  const handleSaveAndLeave = async () => {
+    const saved = await save({ showToast: false, reason: 'navigation-sync' });
+    if (!saved) return;
+
+    stopReading();
+    if (pendingNavigation?.kind === 'path') {
+      navigate(pendingNavigation.to);
+    }
+    setPendingNavigation(null);
+  };
+
+  const handleStayEditing = () => {
+    setPendingNavigation(null);
   };
 
   if (loading) {
@@ -226,307 +542,332 @@ export default function StudyGuidePage() {
   }
 
   if (!guide) {
-    return <p className="text-center mt-20 text-[color:var(--color-text-muted)]">Guide not found.</p>;
+    return <p className="mt-20 text-center text-[color:var(--color-text-muted)]">Guide not found.</p>;
   }
 
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <Breadcrumb
-        items={[
-          { label: 'Library', href: '/library' },
-          { label: guide.title },
-        ]}
-      />
+    <>
+      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <Breadcrumb
+          items={[
+            { label: 'Library', href: '/library' },
+            { label: guide.title },
+          ]}
+        />
 
-      <section className="mt-4 rounded-[2.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-6">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+        <section className="study-guide-fade-up mt-4 rounded-[2.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/96 p-5 shadow-[0_20px_65px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:p-6">
           <div className="flex items-start gap-4">
             <button
-              onClick={() => navigate('/library')}
+              onClick={() => requestNavigation('/library')}
               aria-label="Go back to library"
               className="mt-1 rounded-full p-2 text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface-2)] hover:text-[color:var(--color-text)]"
             >
               <ArrowLeft size={20} />
             </button>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-black uppercase tracking-[0.25em] text-[color:var(--color-text-muted)]">Study guide</p>
-              <h1 className="mt-2 text-3xl font-black leading-tight text-[color:var(--color-text)] sm:text-4xl">
+              <h1 className="mt-2 text-[clamp(2.2rem,3.5vw,3.85rem)] font-black leading-[1.05] text-[color:var(--color-text)]">
                 {guide.title}
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-7 text-[color:var(--color-text-muted)] sm:text-base">
-                The guide is rendered as structured sections, quick references, and discussion questions
-                so the text feels easier to scan and easier to study.
+                Built from the uploaded lesson and shaped for cleaner reading, quicker review, and steadier focus.
               </p>
             </div>
           </div>
+        </section>
 
-          <div className="flex flex-wrap items-center gap-3 xl:justify-end">
-            <TTSButton text={plainTextContent} />
-
-            {editing ? (
-              <>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  icon={<Eye size={16} />}
-                  onClick={() => setEditing(false)}
-                >
-                  Preview
-                </Button>
-                <Button
-                  size="sm"
-                  icon={<Save size={16} />}
-                  onClick={save}
-                  loading={saving}
-                >
-                  Save
-                </Button>
-              </>
-            ) : (
-              <Button
-                size="sm"
-                variant="secondary"
-                icon={<Edit2 size={16} />}
-                onClick={() => {
-                  setActiveTab('outline');
-                  setEditing(true);
-                }}
+        {!editing && (
+          <div
+            className="mt-6 grid gap-6 transition-[grid-template-columns] duration-300 lg:grid-cols-[var(--study-guide-sidebar-width)_minmax(0,1fr)]"
+            style={{ '--study-guide-sidebar-width': sidebarCollapsed ? '92px' : '296px' }}
+          >
+            <div className="space-y-4">
+              <button
+                type="button"
+                onClick={() => setMobileSidebarOpen((value) => !value)}
+                className="study-guide-fade-up flex w-full items-center justify-between rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-3 text-left shadow-[0_18px_60px_rgba(15,23,42,0.08)] lg:hidden"
               >
-                Edit
-              </Button>
-            )}
-          </div>
-        </div>
-      </section>
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">Contents</p>
+                  <p className="mt-1 text-sm font-bold text-[color:var(--color-text)]">
+                    {resolvedActiveSectionId ? sections.find((section) => section.id === resolvedActiveSectionId)?.title || 'Open headings' : 'Open headings'}
+                  </p>
+                </div>
+                {mobileSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+              </button>
 
-      <div className="mt-6">
-        {showContentsSidebar && (
-          <StudyGuideSidebar sections={sections} onJumpToSection={jumpToSection} />
+              <div className={`${mobileSidebarOpen ? 'block' : 'hidden'} lg:block`}>
+                <StudyGuideSidebar
+                  sections={sections}
+                  onJumpToSection={jumpToSection}
+                  activeSectionId={resolvedActiveSectionId}
+                  collapsed={sidebarCollapsed}
+                  onToggleCollapse={() => setSidebarCollapsed((value) => !value)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <section className="study-guide-fade-up rounded-[2.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-6">
+                <div className="flex flex-wrap items-center gap-2 rounded-full bg-[color:var(--color-surface-2)] p-1">
+                  {[
+                    { id: 'guide', label: 'Study guide' },
+                    { id: 'reference', label: 'Key references' },
+                  ].map((tab) => {
+                    const active = activeTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`rounded-full px-5 py-2 text-sm font-bold transition-all duration-200 ${
+                          active
+                            ? 'bg-[color:var(--color-surface)] text-[color:var(--color-text)] shadow-sm'
+                            : 'text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text)]'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-5">
+                  {activeTab === 'guide' ? (
+                    <div className="space-y-5">
+                      <div>
+                        <h2 className="text-2xl font-black text-[color:var(--color-text)]">Study guide</h2>
+                        <p className="mt-1 text-sm text-[color:var(--color-text-muted)]">
+                          The contents rail stays with you as you read deeper into the lesson.
+                        </p>
+                      </div>
+
+                      <div
+                        ref={contentRef}
+                        onMouseUp={showSelectionToolbar}
+                        onKeyUp={showSelectionToolbar}
+                        onBlur={() => {
+                          window.setTimeout(() => {
+                            if (!window.getSelection()?.toString()) {
+                              clearSelectionToolbar();
+                            }
+                          }, 120);
+                        }}
+                        className="study-guide-reader study-guide-fade-up rounded-[2.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-5 py-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:px-8 sm:py-8"
+                      >
+                        <article
+                          ref={articleRef}
+                          className="study-guide-content max-w-none text-[color:var(--color-text)]"
+                          dangerouslySetInnerHTML={{ __html: sanitizeHtml(renderedHtml) }}
+                        />
+                      </div>
+
+                      <DiscussionQuestions questions={discussionQuestions} />
+                    </div>
+                  ) : (
+                    <div className="space-y-5">
+                      <div>
+                        <h2 className="text-2xl font-black text-[color:var(--color-text)]">Key references</h2>
+                        <p className="mt-1 text-sm text-[color:var(--color-text-muted)]">
+                          These reference cards shift with the uploaded lesson instead of staying fixed.
+                        </p>
+                      </div>
+
+                      <div className="space-y-4">
+                        {quickReferenceGroups.map((group) => (
+                          <section
+                            key={group.id}
+                            className="study-guide-fade-up rounded-[1.6rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]/65 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm"
+                          >
+                            <div>
+                              <h3 className="text-lg font-black text-[color:var(--color-text)]">{group.label}</h3>
+                              <p className="mt-1 text-sm text-[color:var(--color-text-muted)]">
+                                Lesson-based notes for quick studying.
+                              </p>
+                            </div>
+
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                              {group.items.map((item) => (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveTab('guide');
+                                    window.setTimeout(() => jumpToSection(item.id), 50);
+                                  }}
+                                  className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm"
+                                >
+                                  <p className="text-sm font-bold text-[color:var(--color-text)]">{item.title}</p>
+                                  {item.entries?.length ? (
+                                    item.format === 'ordered' ? (
+                                      <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-[color:var(--color-text-muted)]">
+                                        {item.entries.map((entry, index) => (
+                                          <li key={`${item.id}-entry-${index}`}>{entry}</li>
+                                        ))}
+                                      </ol>
+                                    ) : (
+                                      <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-[color:var(--color-text-muted)]">
+                                        {item.entries.map((entry, index) => (
+                                          <li key={`${item.id}-entry-${index}`}>{entry}</li>
+                                        ))}
+                                      </ul>
+                                    )
+                                  ) : (
+                                    <p className="mt-2 text-sm leading-6 text-[color:var(--color-text-muted)]">{item.detail}</p>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+          </div>
         )}
 
-        <div className="space-y-6">
-          <section className="rounded-[2.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-6">
-            <div className="flex flex-wrap items-center gap-2 rounded-full bg-[color:var(--color-surface-2)] p-1">
-              {[
-                { id: 'outline', label: 'Outline' },
-                { id: 'reference', label: 'Quick reference' },
-              ].map((tab) => {
-                const active = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`rounded-full px-5 py-2 text-sm font-bold transition ${
-                      active
-                        ? 'bg-[color:var(--color-surface)] text-[color:var(--color-text)] shadow-sm'
-                        : 'text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text)]'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-5">
-              {activeTab === 'outline' ? (
-                <div className="space-y-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-2xl font-black text-[color:var(--color-text)]">Outline</h2>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('reference')}
-                      className="inline-flex items-center gap-2 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] px-4 py-2 text-sm font-bold text-[color:var(--color-text)] transition hover:-translate-y-0.5"
-                    >
-                      Quick reference
-                    </button>
-                  </div>
-
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {outlineCards.map((section) => (
-                      <button
-                        key={section.id}
-                        type="button"
-                        onClick={() => jumpToSection(section.id)}
-                        className="group flex min-h-[8rem] flex-col justify-between rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <h3 className="min-w-0 text-base font-bold leading-6 text-[color:var(--color-text)]">
-                            {section.title}
-                          </h3>
-                          <span className="rounded-full bg-[color:var(--color-surface)] px-3 py-1 text-xs font-bold text-[color:var(--color-text-muted)]">
-                            Jump
-                          </span>
-                        </div>
-                        <p className="mt-3 text-sm leading-6 text-[color:var(--color-text-muted)]">
-                          Tap to jump to this heading or subheading.
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-2xl font-black text-[color:var(--color-text)]">Quick reference</h2>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('outline')}
-                      className="inline-flex items-center gap-2 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] px-4 py-2 text-sm font-bold text-[color:var(--color-text)] transition hover:-translate-y-0.5"
-                    >
-                      Outline
-                    </button>
-                  </div>
-
-                  <div className="space-y-4">
-                    {quickReferenceGroups.map((group) => (
-                      <section
-                        key={group.id}
-                        className="rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <h3 className="text-lg font-black text-[color:var(--color-text)]">{group.label}</h3>
-                            <p className="mt-1 text-sm text-[color:var(--color-text-muted)]">
-                              Compact review notes for quick studying.
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            aria-label={`More actions for ${group.label}`}
-                            className="rounded-full p-2 text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface)] hover:text-[color:var(--color-text)]"
-                          >
-                            <MoreHorizontal size={18} />
-                          </button>
-                        </div>
-
-                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                          {group.items.map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              onClick={() => jumpToSection(item.id)}
-                              className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md"
-                            >
-                              <p className="text-sm font-bold text-[color:var(--color-text)]">{item.title}</p>
-                              <p className="mt-2 text-sm leading-6 text-[color:var(--color-text-muted)]">{item.detail}</p>
-                            </button>
-                          ))}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {activeTab === 'outline' && (
-            editing ? (
-              <div className="scroll-mt-24">
-                <StudyGuideEditor
-                  content={content}
-                  onChange={setContent}
-                  mode="edit"
-                />
+        {editing && (
+          <div className="mx-auto mt-6 max-w-6xl">
+            <section className="study-guide-fade-up rounded-[2.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-5">
+              <div className="mb-5">
+                <h2 className="text-2xl font-black text-[color:var(--color-text)]">Edit study guide</h2>
+                <p className="mt-1 text-sm text-[color:var(--color-text-muted)]">
+                  The reading toggle and contents rail are hidden while you edit so the guide stays centered.
+                </p>
               </div>
-            ) : (
-              <div
-                ref={contentRef}
-                onMouseUp={showSelectionToolbar}
-                onKeyUp={showSelectionToolbar}
-                onBlur={() => {
-                  window.setTimeout(() => {
-                    if (!window.getSelection()?.toString()) {
-                      clearSelectionToolbar();
-                    }
-                  }, 120);
-                }}
-                className="study-guide-reader rounded-[2.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-5 py-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:px-8 sm:py-8"
-              >
-                <article
-                  className="study-guide-content max-w-none text-[color:var(--color-text)] leading-8"
-                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(renderedHtml) }}
-                />
-              </div>
-            )
-          )}
 
-          {activeTab === 'outline' && !editing && (
-            <DiscussionQuestions questions={discussionQuestions} />
-          )}
+              <StudyGuideEditor
+                content={content}
+                onChange={handleEditorChange}
+                saveState={effectiveSaveState}
+                lastSyncLabel={lastSyncLabel}
+                onSave={() => save({ showToast: true, reason: 'toolbar-save' })}
+                onRead={handleReadAloud}
+                onPreview={switchToReadMode}
+                saving={saving}
+              />
+            </section>
+          </div>
+        )}
+
+        {!editing && (
+          <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
+            <div className="pointer-events-auto w-full max-w-md rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/94 p-3 shadow-[0_24px_64px_rgba(15,23,42,0.18)] backdrop-blur-xl">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleReadAloud}
+                  className={`inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl border px-4 text-sm font-bold transition-all duration-200 ${
+                    speaking
+                      ? 'border-rose-500/40 bg-rose-500/10 text-rose-500'
+                      : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text)] hover:bg-[color:var(--color-surface-2)]'
+                  }`}
+                >
+                  {speaking ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                  <span>{speaking ? 'Stop reading' : 'Read aloud'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('guide');
+                    setEditing(true);
+                  }}
+                  className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 text-sm font-bold text-[color:var(--color-accent-text)] transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95"
+                >
+                  <Edit2 size={18} />
+                  <span>Edit</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <SelectionToolbar
+          visible={!editing && selectionToolbar.visible}
+          position={selectionToolbar.position}
+          selectedText={selectionToolbar.selectedText}
+          onHighlight={highlightSelection}
+          highlightColors={HIGHLIGHT_COLORS}
+          onEdit={() => {
+            setActiveTab('guide');
+            setEditing(true);
+          }}
+          onClose={clearSelectionToolbar}
+        />
+      </main>
+
+      <Modal
+        isOpen={Boolean(pendingNavigation)}
+        onClose={handleStayEditing}
+        title="Save your progress?"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm leading-7 text-[var(--text-color)]">
+            You still have study guide changes in progress. Save before leaving, discard them, or stay in edit mode.
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={handleStayEditing}
+              className="inline-flex items-center justify-center rounded-xl border border-[var(--card-border)] px-4 py-2 text-sm font-bold text-[var(--text-color)] transition hover:bg-[var(--card-bg)]"
+            >
+              Keep editing
+            </button>
+            <button
+              type="button"
+              onClick={handleDiscardAndLeave}
+              className="inline-flex items-center justify-center rounded-xl border border-[var(--card-border)] px-4 py-2 text-sm font-bold text-[var(--muted)] transition hover:bg-[var(--card-bg)]"
+            >
+              Discard
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveAndLeave}
+              className="inline-flex items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--accent-hover)]"
+            >
+              Save and leave
+            </button>
+          </div>
         </div>
-      </div>
-
-      <SelectionToolbar
-        visible={selectionToolbar.visible}
-        position={selectionToolbar.position}
-        selectedText={selectionToolbar.selectedText}
-        onHighlight={highlightSelection}
-        highlightColors={HIGHLIGHT_COLORS}
-        onEdit={() => {
-          setActiveTab('outline');
-          setEditing(true);
-        }}
-        onClose={clearSelectionToolbar}
-      />
-    </main>
+      </Modal>
+    </>
   );
 }
 
 function StudyGuideSkeleton() {
-  const card = 'animate-pulse rounded-[1.5rem] bg-[color:var(--color-surface)]/80';
+  const card = 'study-guide-skeleton-shimmer animate-pulse rounded-[1.5rem] bg-[color:var(--color-surface)]/80';
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mb-4 h-4 w-48 rounded-full bg-[color:var(--color-surface-2)] animate-pulse" />
+      <div className="study-guide-skeleton-shimmer mb-4 h-4 w-48 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
       <section className="rounded-[2.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-6">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div className="space-y-4">
-            <div className="h-4 w-24 rounded-full bg-[color:var(--color-surface-2)] animate-pulse" />
-            <div className="h-10 w-[min(42rem,80vw)] rounded-2xl bg-[color:var(--color-surface-2)] animate-pulse" />
-            <div className="h-4 w-[min(36rem,70vw)] rounded-full bg-[color:var(--color-surface-2)] animate-pulse" />
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="h-11 w-32 rounded-full bg-[color:var(--color-surface-2)] animate-pulse" />
-            <div className="h-11 w-24 rounded-full bg-[color:var(--color-surface-2)] animate-pulse" />
-          </div>
+        <div className="space-y-4">
+          <div className="study-guide-skeleton-shimmer h-4 w-24 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
+          <div className="study-guide-skeleton-shimmer h-10 w-[min(42rem,80vw)] animate-pulse rounded-2xl bg-[color:var(--color-surface-2)]" />
+          <div className="study-guide-skeleton-shimmer h-4 w-[min(36rem,70vw)] animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
         </div>
       </section>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
-          <div className="h-4 w-24 rounded-full bg-[color:var(--color-surface-2)] animate-pulse" />
+          <div className="study-guide-skeleton-shimmer h-4 w-24 rounded-full bg-[color:var(--color-surface-2)] animate-pulse" />
           <div className="mt-4 space-y-3">
             {[1, 2, 3, 4].map((item) => (
-              <div key={item} className="h-14 rounded-2xl bg-[color:var(--color-surface-2)] animate-pulse" />
+              <div key={item} className="study-guide-skeleton-shimmer h-14 rounded-2xl bg-[color:var(--color-surface-2)] animate-pulse" />
             ))}
           </div>
         </aside>
 
         <div className="space-y-6">
           <section className={`${card} p-5 sm:p-6`}>
-            <div className="flex gap-2">
-              <div className="h-10 w-28 rounded-full bg-[color:var(--color-surface-2)] animate-pulse" />
-              <div className="h-10 w-40 rounded-full bg-[color:var(--color-surface-2)] animate-pulse" />
-            </div>
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
-              {[1, 2, 3, 4].map((item) => (
-                <div key={item} className="h-28 rounded-[1.5rem] bg-[color:var(--color-surface-2)] animate-pulse" />
-              ))}
-            </div>
-          </section>
-
-          <section className={`${card} p-5 sm:p-6`}>
-            <div className="h-6 w-44 rounded-full bg-[color:var(--color-surface-2)] animate-pulse" />
+            <div className="study-guide-skeleton-shimmer h-10 w-44 rounded-full bg-[color:var(--color-surface-2)] animate-pulse" />
             <div className="mt-5 space-y-4">
               {[1, 2, 3].map((item) => (
-                <div key={item} className="h-28 rounded-[1.5rem] bg-[color:var(--color-surface-2)] animate-pulse" />
+                <div key={item} className="study-guide-skeleton-shimmer h-36 rounded-[1.5rem] bg-[color:var(--color-surface-2)] animate-pulse" />
               ))}
             </div>
           </section>

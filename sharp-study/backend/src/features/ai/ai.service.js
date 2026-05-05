@@ -56,9 +56,15 @@ Output rules:
 - Use <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <table>, <thead>, <tbody>, <tr>, <th>, and <td> when useful.
 - Bold the most important terms and names.
 - Make Quick Reference a compact list or table of the most useful facts.
+- In Quick Reference, prefer real structured review notes:
+  - use <ul> for key terms, facts, definitions, examples, comparisons, people, and important details
+  - use <ol> for steps, methods, sequences, timelines, stages, cause-to-effect chains, and procedures
+  - avoid long paragraphs inside Quick Reference
+  - each quick-reference group should be easy to scan in a few seconds
 - Prefer quick reference groupings that match the lesson content, such as Key Terms/Concepts, Key People, Key Dates, Key Events, Cause and Effect, Formula/Steps, Comparisons, or Timeline.
 - If the lesson naturally fits a table, use a simple accessible table with short headers and short cells.
 - Do not force sections that do not fit the lesson. Only include the most useful quick-reference groups for this topic.
+- Make the main study guide read like a reviewer: clear overview, short explanations, strong organization, and study-friendly wording.
 - Put 5 to 7 discussion questions at the bottom.
 - Prefer factual, study-friendly phrasing over filler prose.
 - Keep the total output under 900 words.
