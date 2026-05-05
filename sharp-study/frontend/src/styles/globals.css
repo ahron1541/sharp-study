@@ -194,7 +194,7 @@ body {
 
 .study-guide-sidebar {
   transition: width 0.28s ease, transform 0.28s ease;
-  contain: layout paint;
+  scrollbar-gutter: stable;
 }
 
 .study-guide-reader {
@@ -526,8 +526,7 @@ body {
 }
 
 .study-guide-reference-card {
-  content-visibility: auto;
-  contain-intrinsic-size: 280px;
+  contain: paint;
 }
 
 .study-guide-content mark,

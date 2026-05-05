@@ -12,7 +12,7 @@ import versoLogo from '../../../assets/logo/verso_w_name.svg';
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Home',         icon: Home },
   { to: '/library',   label: 'Your Library', icon: BookMarked },
-  { to: '/notifications', label: 'Notification', icon: Bell },
+  { to: '/notifications', label: 'Notification', icon: Bell, disabled: true, badge: 'Coming soon' },
 ];
 
 const FOOTER_ITEMS = [
@@ -62,7 +62,7 @@ export default function Sidebar({
       {/* Nav items */}
       <ul className="flex flex-col gap-1 p-2 flex-1 mt-1" role="list">
         {NAV_ITEMS.map((navItem, i) => {
-          const { to, label } = navItem;
+          const { to, label, disabled, badge } = navItem;
           const isActive = location.pathname === to ||
             (to === '/dashboard' && location.pathname === '/');
             
@@ -72,6 +72,28 @@ export default function Sidebar({
               <li key={`skel-${i}`} className="flex items-center gap-3 px-3 py-2.5 rounded-lg">
                 <div className="w-5 h-5 rounded animate-pulse flex-shrink-0" style={{ background: 'var(--color-surface-2, #e2e8f0)' }} />
                 {!collapsed && <div className="h-4 w-24 rounded animate-pulse" style={{ background: 'var(--color-surface-2, #e2e8f0)' }} />}
+              </li>
+            );
+          }
+
+          if (disabled) {
+            return (
+              <li key={to}>
+                <div
+                  aria-label={`${label} coming soon`}
+                  aria-disabled="true"
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-text opacity-60"
+                >
+                  <navItem.icon size={18} aria-hidden="true" className="flex-shrink-0" />
+                  {!collapsed ? (
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                      <span className="truncate">{label}</span>
+                      <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.14em] text-text-muted">
+                        {badge}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
               </li>
             );
           }

@@ -9,11 +9,11 @@ export default function StudyGuideSidebar({
 }) {
   return (
     <aside
-      className={`study-guide-sidebar lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-4rem)] ${
+      className={`study-guide-sidebar lg:sticky lg:top-5 lg:self-start lg:max-h-[calc(100vh-2.5rem)] ${
         collapsed ? 'lg:w-[92px]' : 'lg:w-[296px]'
       }`}
     >
-      <nav className="flex h-full min-h-[20rem] flex-col rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/96 p-4 shadow-[0_20px_55px_rgba(15,23,42,0.12)] backdrop-blur-xl transition-[width,transform,box-shadow] duration-300">
+      <nav className="flex h-full flex-col rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/96 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.1)] transition-[width,transform,box-shadow] duration-300">
         <div className="flex items-center justify-between gap-3 border-b border-[color:var(--color-border)] pb-3">
           <div className={`flex min-w-0 items-center gap-2 ${collapsed ? 'justify-center' : ''}`}>
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-surface-2)] text-[color:var(--color-accent)]">

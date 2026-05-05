@@ -174,15 +174,19 @@ const generateMaterials = [
 
       const requestOptions = { signal: abortController.signal };
       const generators = [];
+      const createdRecords = {};
       if (generateOptions.includes('study_guide')) {
         generators.push(async () => {
           const content = await generateStudyGuide(extractedText, requestOptions);
-          await supabaseAdmin.from('study_guides').insert({
+          const { data: studyGuide, error: studyGuideError } = await supabaseAdmin.from('study_guides').insert({
             user_id: userId,
             document_id: doc.id,
             title: `Study Guide: ${docTitle}`,
             content,
-          });
+          }).select('id, title').single();
+
+          if (studyGuideError) throw studyGuideError;
+          createdRecords.study_guide = studyGuide;
         });
       }
 
@@ -200,6 +204,8 @@ const generateMaterials = [
               cards.map((c) => ({ set_id: set.id, front: c.front, back: c.back }))
             );
           }
+
+          createdRecords.flashcards = set ? { id: set.id, title: set.title } : null;
         });
       }
 
@@ -222,6 +228,8 @@ const generateMaterials = [
               }))
             );
           }
+
+          createdRecords.quiz = quiz ? { id: quiz.id, title: quiz.title } : null;
         });
       }
 
@@ -242,7 +250,7 @@ const generateMaterials = [
       }
 
       console.log('--- GENERATION COMPLETE ---');
-      res.json({ success: true, generated: generateOptions });
+      res.json({ success: true, generated: generateOptions, created: createdRecords });
     } catch (err) {
       console.error('AI generation error:', err);
 

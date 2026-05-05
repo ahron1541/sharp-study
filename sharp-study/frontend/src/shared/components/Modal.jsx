@@ -43,16 +43,16 @@ export default function Modal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/62"
         onClick={closeOnBackdrop ? onClose : undefined}
         aria-hidden="true"
       />
       {/* Modal panel */}
-      <div className={`relative w-full rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-2xl z-10
+      <div className={`relative z-10 flex max-h-[min(90vh,48rem)] w-full flex-col overflow-hidden rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-[0_18px_50px_rgba(15,23,42,0.22)]
                        ${sizes[size]}`}>
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[color:var(--color-border)] p-5">
@@ -74,7 +74,7 @@ export default function Modal({
           )}
         </div>
         {/* Content */}
-        <div className="p-5">{children}</div>
+        <div className="overflow-y-auto p-4 sm:p-5">{children}</div>
       </div>
     </div>
   );

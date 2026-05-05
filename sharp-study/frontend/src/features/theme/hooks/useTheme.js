@@ -139,7 +139,11 @@ export function useTheme() {
       } catch (error) {
         // Network error or timeout — cached/OS fallback stays in place
         // Don't log timeout errors as they're expected when server is slow
-        if (error.name !== 'AbortError' && error.message !== 'Timeout') {
+        if (
+          error.name !== 'AbortError' &&
+          error.message !== 'Timeout' &&
+          error.message !== 'Not authenticated. Please log in again.'
+        ) {
           console.warn('Failed to load preferences, using fallback:', error);
         }
       } finally {

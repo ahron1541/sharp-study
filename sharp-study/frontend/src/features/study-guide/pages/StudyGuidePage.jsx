@@ -580,10 +580,10 @@ export default function StudyGuidePage() {
 
         {!editing && (
           <div
-            className="mt-6 grid gap-6 transition-[grid-template-columns] duration-300 lg:grid-cols-[var(--study-guide-sidebar-width)_minmax(0,1fr)]"
+            className="mt-6 grid items-start gap-6 transition-[grid-template-columns] duration-300 lg:grid-cols-[var(--study-guide-sidebar-width)_minmax(0,1fr)]"
             style={{ '--study-guide-sidebar-width': sidebarCollapsed ? '92px' : '296px' }}
           >
-            <div className="space-y-4">
+            <div className="space-y-4 lg:self-start">
               <button
                 type="button"
                 onClick={() => setMobileSidebarOpen((value) => !value)}
@@ -688,7 +688,7 @@ export default function StudyGuidePage() {
                               </p>
                             </div>
 
-                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            <div className="mt-4 grid items-start gap-3 sm:grid-cols-2">
                               {group.items.map((item) => (
                                 <button
                                   key={item.id}
@@ -697,7 +697,7 @@ export default function StudyGuidePage() {
                                     setActiveTab('guide');
                                     window.setTimeout(() => jumpToSection(item.id), 50);
                                   }}
-                                  className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm"
+                                  className="h-auto self-start rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 text-left align-top transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm"
                                 >
                                   <p className="text-sm font-bold text-[color:var(--color-text)]">{item.title}</p>
                                   {item.entries?.length ? (

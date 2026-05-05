@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { applyPreferences } from '../../theme/hooks/useTheme';
 import { fetchPreferences, savePreferences } from '../../theme/services/preferences.service';
 import { DEFAULT_PREFERENCES } from '../../theme/constants/themes';
+import { useAuth } from '../../auth/context/AuthContext';
 import toast from 'react-hot-toast';
 
 const PENDING_SYNC_KEY = 'sharp-study-prefs-pending';
@@ -9,6 +10,7 @@ const PENDING_SYNC_AT_KEY = 'sharp-study-prefs-pending-at';
 const SYNC_DELAY_MS = 15000;
 
 export function useSettings() {
+  const { profile } = useAuth();
   const loadCurrent = () => {
     try {
       const raw = localStorage.getItem('sharp-study-prefs');
@@ -84,6 +86,24 @@ export function useSettings() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (loadPending()) return;
+
+    const profilePreferences = profile?.preferences
+      ? { ...DEFAULT_PREFERENCES, ...profile.preferences }
+      : null;
+
+    if (!profilePreferences) return;
+
+    const timer = window.setTimeout(() => {
+      setSaved(profilePreferences);
+      setDraft(profilePreferences);
+      applyPreferences(profilePreferences);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [profile?.preferences]);
 
   const updateDraft = useCallback((key, value) => {
     setDraft((prev) => {

@@ -344,11 +344,17 @@ export default function LibraryPage() {
         throw new Error(body.error || 'AI generation failed.');
       }
 
+      const body = await response.json().catch(() => ({}));
       setProgress(GENERATION_STEPS[3]);
       await invalidateDashboardCache();
       await loadPage({ nextType: activeType, nextPage: 1, nextSearch: deferredSearch });
       toast.success('Generated successfully.');
       closeWizard(true);
+
+      const createdStudyGuideId = body?.created?.study_guide?.id;
+      if (selectedType === 'study_guide' && createdStudyGuideId) {
+        navigate(`/study-guide/${createdStudyGuideId}`);
+      }
     } catch (generationError) {
       if (generationError.name !== 'AbortError') {
         setProgress({ value: 0, title: '', detail: '' });
