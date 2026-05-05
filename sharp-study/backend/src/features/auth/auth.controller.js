@@ -3,6 +3,8 @@ const nodemailer = require('nodemailer');
 const { Resend } = require('resend');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
+const dns = require('dns');
+const net = require('net');
 const { z } = require('zod');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -58,38 +60,74 @@ const resetSchema = z.object({
     .regex(/[^A-Za-z0-9]/, 'Password must include a special character'),
 });
 
-let smtpTransporter = null;
+let smtpTransporterPromise = null;
 
 const generateOTP = () => crypto.randomInt(100000, 999999).toString();
 
-function buildSmtpTransporter() {
-  if (smtpTransporter) return smtpTransporter;
+async function resolveSmtpHost(hostname) {
+  if (!hostname || net.isIP(hostname)) {
+    return {
+      host: hostname,
+      servername: hostname,
+    };
+  }
+
+  try {
+    const ipv4Addresses = await dns.promises.resolve4(hostname);
+    if (ipv4Addresses.length > 0) {
+      return {
+        host: ipv4Addresses[0],
+        servername: hostname,
+      };
+    }
+  } catch (error) {
+    console.warn(`SMTP IPv4 resolution failed for ${hostname}:`, error.message);
+  }
+
+  return {
+    host: hostname,
+    servername: hostname,
+  };
+}
+
+async function buildSmtpTransporter() {
+  if (smtpTransporterPromise) return smtpTransporterPromise;
   if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
     throw new Error('SMTP credentials are not configured');
   }
 
-  const port = Number(process.env.SMTP_PORT || 587);
-  smtpTransporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port,
-    secure: port === 465,
-    requireTLS: port !== 465,
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_APP_PASSWORD,
-    },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-    disableFileAccess: true,
-    disableUrlAccess: true,
-    tls: {
-      servername: process.env.SMTP_HOST || 'smtp.gmail.com',
-      minVersion: 'TLSv1.2',
-    },
-  });
+  smtpTransporterPromise = (async () => {
+    const port = Number(process.env.SMTP_PORT || 587);
+    const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const resolvedHost = await resolveSmtpHost(smtpHost);
 
-  return smtpTransporter;
+    return nodemailer.createTransport({
+      host: resolvedHost.host,
+      port,
+      secure: port === 465,
+      requireTLS: port !== 465,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_APP_PASSWORD,
+      },
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
+      socketTimeout: 8000,
+      disableFileAccess: true,
+      disableUrlAccess: true,
+      tls: {
+        servername: resolvedHost.servername,
+        minVersion: 'TLSv1.2',
+      },
+    });
+  })();
+
+  try {
+    return await smtpTransporterPromise;
+  } catch (error) {
+    smtpTransporterPromise = null;
+    throw error;
+  }
 }
 
 function getEmailFromAddress() {
@@ -114,14 +152,19 @@ async function sendAuthEmail({ to, subject, html, text }) {
     return;
   }
 
-  const transporter = buildSmtpTransporter();
-  await transporter.sendMail({
-    from: getEmailFromAddress(),
-    to,
-    subject,
-    html,
-    text,
-  });
+  try {
+    const transporter = await buildSmtpTransporter();
+    await transporter.sendMail({
+      from: getEmailFromAddress(),
+      to,
+      subject,
+      html,
+      text,
+    });
+  } catch (error) {
+    smtpTransporterPromise = null;
+    throw error;
+  }
 }
 
 function parseSchema(schema, payload) {

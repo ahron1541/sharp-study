@@ -9,7 +9,7 @@ import { requestSignupOTP, verifySignupOTP } from '../../shared/services/auth.se
 import { useOTP } from '../../otp/hooks/useOTP';
 import styles from './Step2OTPVerification.module.css';
 
-export default function Step2OTPVerification({ email, onBack, onVerified }) {
+export default function Step2OTPVerification({ email, onBack, onVerified, onBootComplete }) {
   const { t } = useTranslation('auth', { keyPrefix: 'signup.otpStep' });
   const autoSendRef = useRef(false);
 
@@ -28,8 +28,10 @@ export default function Step2OTPVerification({ email, onBack, onVerified }) {
   useEffect(() => {
     if (!email || autoSendRef.current) return;
     autoSendRef.current = true;
-    sendOTP();
-  }, [email, sendOTP]);
+    sendOTP().finally(() => {
+      onBootComplete?.();
+    });
+  }, [email, onBootComplete, sendOTP]);
 
   const handleVerify = async (event) => {
     event.preventDefault();
@@ -38,8 +40,6 @@ export default function Step2OTPVerification({ email, onBack, onVerified }) {
       onVerified(response.signup_token);
     }
   };
-
-  const isBooting = sending && !otpSent;
 
   return (
     <motion.div
@@ -55,70 +55,74 @@ export default function Step2OTPVerification({ email, onBack, onVerified }) {
         </p>
       </div>
 
-      {isBooting ? (
-        <div className={styles.skeletonCard} aria-live="polite">
-          <div className={styles.skeletonGlow} />
-          <div className={styles.skeletonHeader} />
-          <div className={styles.skeletonOtp} />
-          <div className={styles.skeletonOtp} />
-          <div className={styles.skeletonButton} />
-        </div>
-      ) : (
-        <form onSubmit={handleVerify} noValidate>
-          <div className={styles.fields}>
-            <div className={styles.lockedRow} aria-label={`Sending code to ${email}`}>
-              <MdOutlineMarkEmailRead size={18} className={styles.lockedIcon} aria-hidden="true" />
-              <span className={styles.lockedText}>{email}</span>
-              <span className={styles.lockedBadge}>{otpSent ? t('statusSent') : t('statusWaiting')}</span>
-            </div>
-
-            <div>
-              <p className={styles.otpLabel}>{t('otpLabel')}</p>
-              <OTPInput
-                value={otp}
-                onChange={setOtp}
-                error={!!error}
-                disabled={verifying || sending}
-              />
-              <AnimatePresence>
-                {error && (
-                  <motion.p
-                    role="alert"
-                    className={styles.otpError}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                  >
-                    <AiOutlineWarning size={13} aria-hidden="true" />
-                    {error}
-                  </motion.p>
-                )}
-              </AnimatePresence>
-              <p className={styles.otpMeta}>
-                Code expires in {import.meta.env.VITE_OTP_EXPIRY_MINUTES ?? 10} minutes
-              </p>
-            </div>
-
-            <div className={styles.actionRow}>
-              <button type="button" onClick={onBack} className={styles.backBtn}>
-                {t('changeEmail')}
-              </button>
-              <PillButton type="submit" loading={verifying} disabled={otp.replace(/\D/g, '').length < 6 || sending}>
-                {t('verifyButton')}
-              </PillButton>
-            </div>
-
-            <button
-              type="button"
-              onClick={sendOTP}
-              disabled={cooldown > 0 || sending}
-              className={styles.resendBtn}
-            >
-              {cooldown > 0 ? t('resendCooldown', { seconds: cooldown }) : t('resend')}
-            </button>
+      <form onSubmit={handleVerify} noValidate>
+        <div className={styles.fields}>
+          <div className={styles.lockedRow} aria-label={`Sending code to ${email}`}>
+            <MdOutlineMarkEmailRead size={18} className={styles.lockedIcon} aria-hidden="true" />
+            <span className={styles.lockedText}>{email}</span>
+            <span className={styles.lockedBadge}>{otpSent ? t('statusSent') : t('statusWaiting')}</span>
           </div>
-        </form>
-      )}
+
+          <AnimatePresence>
+            {sending && (
+              <motion.div
+                className={styles.inlineStatus}
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+              >
+                <span className={styles.inlineSpinner} aria-hidden="true" />
+                {t('sendingHint')}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div>
+            <p className={styles.otpLabel}>{t('otpLabel')}</p>
+            <OTPInput
+              value={otp}
+              onChange={setOtp}
+              error={!!error}
+              disabled={verifying}
+            />
+            <AnimatePresence>
+              {error && (
+                <motion.p
+                  role="alert"
+                  className={styles.otpError}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                >
+                  <AiOutlineWarning size={13} aria-hidden="true" />
+                  {error}
+                </motion.p>
+              )}
+            </AnimatePresence>
+            <p className={styles.otpMeta}>
+              Code expires in {import.meta.env.VITE_OTP_EXPIRY_MINUTES ?? 10} minutes
+            </p>
+          </div>
+
+          <div className={styles.actionRow}>
+            <button type="button" onClick={onBack} className={styles.backBtn}>
+              {t('changeEmail')}
+            </button>
+            <PillButton type="submit" loading={verifying} disabled={otp.replace(/\D/g, '').length < 6}>
+              {t('verifyButton')}
+            </PillButton>
+          </div>
+
+          <button
+            type="button"
+            onClick={sendOTP}
+            disabled={cooldown > 0 || sending}
+            className={styles.resendBtn}
+          >
+            {cooldown > 0 ? t('resendCooldown', { seconds: cooldown }) : t('resend')}
+          </button>
+        </div>
+      </form>
     </motion.div>
   );
 }

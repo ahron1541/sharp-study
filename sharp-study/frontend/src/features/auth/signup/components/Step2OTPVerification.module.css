@@ -46,6 +46,28 @@
   white-space: nowrap;
 }
 
+.inlineStatus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--card-border));
+  background: linear-gradient(135deg, rgba(67, 97, 238, 0.08), rgba(61, 61, 61, 0.04));
+  color: var(--text-color);
+  font-size: var(--font-size-xs);
+}
+
+.inlineSpinner {
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: spin 0.65s linear infinite;
+}
+
 .otpLabel {
   font-size: var(--font-size-sm);
   font-weight: 600;
@@ -108,38 +130,6 @@
   cursor: not-allowed;
 }
 
-.skeletonCard {
-  position: relative;
-  overflow: hidden;
-  border-radius: 1.5rem;
-  padding: 1.25rem;
-  border: 1px solid var(--card-border);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 247, 251, 0.98));
-  display: grid;
-  gap: 0.85rem;
-}
-
-.skeletonGlow {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
-  transform: translateX(-100%);
-  animation: shimmer 1.4s infinite;
-}
-
-.skeletonHeader,
-.skeletonOtp,
-.skeletonButton {
-  position: relative;
-  z-index: 1;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(214, 219, 229, 0.9), rgba(235, 238, 245, 0.95), rgba(214, 219, 229, 0.9));
-}
-
-.skeletonHeader { height: 3rem; }
-.skeletonOtp { height: 3.5rem; }
-.skeletonButton { height: 3rem; margin-top: 0.25rem; }
-
-@keyframes shimmer {
-  to { transform: translateX(100%); }
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }

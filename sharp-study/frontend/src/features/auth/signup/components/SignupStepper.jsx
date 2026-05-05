@@ -56,6 +56,7 @@ export default function SignupStepper() {
     <Step2OTPVerification
       key="step2"
       email={pendingEmail}
+      onBootComplete={() => setBootingStep2(false)}
       onBack={() => {
         setBootingStep2(false);
         goTo(1);
