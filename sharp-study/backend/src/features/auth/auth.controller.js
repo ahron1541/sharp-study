@@ -12,8 +12,11 @@ const supabaseAuth = createClient(process.env.SUPABASE_URL, process.env.SUPABASE
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const emailProvider = String(
-  process.env.EMAIL_PROVIDER
-  || (process.env.NODE_ENV === 'production' ? 'resend' : process.env.RESEND_API_KEY ? 'resend' : process.env.EMAIL_USER ? 'smtp' : 'log')
+  process.env.EMAIL_PROVIDER || (
+    process.env.NODE_ENV === 'production'
+      ? process.env.BREVO_API_KEY ? 'brevo' : 'resend'
+      : process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : process.env.EMAIL_USER ? 'smtp' : 'log'
+  )
 ).trim().toLowerCase();
 const otpExpiryMinutes = Number(process.env.OTP_EXPIRY_MINUTES || 10);
 const signupTokenTtlMinutes = Number(process.env.SIGNUP_TOKEN_TTL_MINUTES || 20);
@@ -24,10 +27,11 @@ const namePattern = /^[A-Za-z][A-Za-z' -]{0,48}$/;
 
 console.info('[Auth Email] Provider configuration', {
   provider: emailProvider,
+  hasBrevoKey: Boolean(process.env.BREVO_API_KEY),
   hasResendKey: Boolean(process.env.RESEND_API_KEY),
   hasSmtpUser: Boolean(process.env.EMAIL_USER),
   hasSmtpPassword: Boolean(process.env.EMAIL_APP_PASSWORD),
-  fromAddress: process.env.EMAIL_FROM || process.env.RESEND_FROM_EMAIL || null,
+  fromAddress: process.env.EMAIL_FROM || process.env.BREVO_FROM_EMAIL || process.env.RESEND_FROM_EMAIL || null,
 });
 
 const emailSchema = z.object({
@@ -276,12 +280,39 @@ async function buildSmtpTransporter() {
 
 function getEmailFromAddress() {
   if (process.env.EMAIL_FROM) return process.env.EMAIL_FROM;
+  if (emailProvider === 'brevo') return process.env.BREVO_FROM_EMAIL || process.env.EMAIL_USER;
   if (emailProvider === 'resend') return process.env.RESEND_FROM_EMAIL || 'Sharp Study <onboarding@resend.dev>';
   return `"Sharp Study" <${process.env.EMAIL_USER}>`;
 }
 
+function parseEmailAddress(value) {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(.*)<([^>]+)>$/);
+  if (!match) {
+    return {
+      name: process.env.BREVO_FROM_NAME || process.env.EMAIL_FROM_NAME || 'Sharp Study',
+      email: raw,
+    };
+  }
+
+  return {
+    name: match[1].trim().replace(/^"|"$/g, '') || 'Sharp Study',
+    email: match[2].trim(),
+  };
+}
+
 function mapEmailProviderError(error, provider) {
   const message = String(error?.message || error || '').toLowerCase();
+
+  if (provider === 'brevo') {
+    if (message.includes('api key') || message.includes('unauthorized') || message.includes('401')) {
+      return 'Brevo is not configured correctly. Check BREVO_API_KEY in Render.';
+    }
+    if (message.includes('sender') || message.includes('from')) {
+      return 'Brevo sender is not verified. Verify BREVO_FROM_EMAIL in Brevo, then redeploy.';
+    }
+    return 'Brevo could not send the email. Check your Brevo transactional sender and API key.';
+  }
 
   if (provider === 'resend') {
     if (message.includes('api key')) {
@@ -316,6 +347,40 @@ async function sendAuthEmail({ to, subject, html, text }) {
     return;
   }
 
+  if (emailProvider === 'brevo') {
+    if (!process.env.BREVO_API_KEY) {
+      throw new Error('BREVO_API_KEY is missing.');
+    }
+
+    const sender = parseEmailAddress(getEmailFromAddress());
+    if (!sender.email) {
+      throw new Error('BREVO_FROM_EMAIL is missing.');
+    }
+
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'api-key': process.env.BREVO_API_KEY,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        sender,
+        to: [{ email: to }],
+        subject,
+        htmlContent: html,
+        textContent: text,
+      }),
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.message || data.code || `Brevo email failed with status ${response.status}`);
+    }
+
+    return;
+  }
+
   if (emailProvider === 'resend') {
     if (!resend) {
       throw new Error('RESEND_API_KEY is missing.');
@@ -337,7 +402,7 @@ async function sendAuthEmail({ to, subject, html, text }) {
 
   if (emailProvider === 'smtp') {
     if (process.env.NODE_ENV === 'production') {
-      throw new Error('SMTP delivery is disabled in production. Configure RESEND_API_KEY and EMAIL_PROVIDER=resend.');
+      throw new Error('SMTP delivery is disabled in production. Configure BREVO_API_KEY and EMAIL_PROVIDER=brevo.');
     }
 
     try {
