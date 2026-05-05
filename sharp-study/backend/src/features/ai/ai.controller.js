@@ -153,6 +153,7 @@ const generateMaterials = [
     let requestAborted = false;
     let documentId = null;
     let userId = null;
+
     const handleAbort = () => {
       requestAborted = true;
       abortController.abort();
@@ -165,7 +166,7 @@ const generateMaterials = [
     };
 
     req.on('aborted', handleAbort);
-    req.on('close', handleClose);
+    res.on('close', handleClose);
 
     try {
       const file = req.file;
@@ -320,7 +321,7 @@ const generateMaterials = [
       res.status(500).json({ error: 'AI generation failed. Please try again.' });
     } finally {
       req.off('aborted', handleAbort);
-      req.off('close', handleClose);
+      res.off('close', handleClose);
     }
   },
 ];
