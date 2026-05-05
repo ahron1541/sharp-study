@@ -11,6 +11,10 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 const supabaseAuth = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const emailProvider = String(
+  process.env.EMAIL_PROVIDER
+  || (process.env.RESEND_API_KEY ? 'resend' : process.env.EMAIL_USER ? 'smtp' : 'log')
+).trim().toLowerCase();
 const otpExpiryMinutes = Number(process.env.OTP_EXPIRY_MINUTES || 10);
 const signupTokenTtlMinutes = Number(process.env.SIGNUP_TOKEN_TTL_MINUTES || 20);
 const resetTokenTtlMinutes = Number(process.env.RESET_TOKEN_TTL_MINUTES || 20);
@@ -64,107 +68,12 @@ let smtpTransporterPromise = null;
 
 const generateOTP = () => crypto.randomInt(100000, 999999).toString();
 
-async function resolveSmtpHost(hostname) {
-  if (!hostname || net.isIP(hostname)) {
-    return {
-      host: hostname,
-      servername: hostname,
-    };
-  }
-
-  try {
-    const ipv4Addresses = await dns.promises.resolve4(hostname);
-    if (ipv4Addresses.length > 0) {
-      return {
-        host: ipv4Addresses[0],
-        servername: hostname,
-      };
-    }
-  } catch (error) {
-    console.warn(`SMTP IPv4 resolution failed for ${hostname}:`, error.message);
-  }
-
-  return {
-    host: hostname,
-    servername: hostname,
-  };
+function getIsoDateToday() {
+  return new Date().toISOString().slice(0, 10);
 }
 
-async function buildSmtpTransporter() {
-  if (smtpTransporterPromise) return smtpTransporterPromise;
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
-    throw new Error('SMTP credentials are not configured');
-  }
-
-  smtpTransporterPromise = (async () => {
-    const port = Number(process.env.SMTP_PORT || 587);
-    const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-    const resolvedHost = await resolveSmtpHost(smtpHost);
-
-    return nodemailer.createTransport({
-      host: resolvedHost.host,
-      port,
-      secure: port === 465,
-      requireTLS: port !== 465,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_APP_PASSWORD,
-      },
-      connectionTimeout: 5000,
-      greetingTimeout: 5000,
-      socketTimeout: 8000,
-      disableFileAccess: true,
-      disableUrlAccess: true,
-      tls: {
-        servername: resolvedHost.servername,
-        minVersion: 'TLSv1.2',
-      },
-    });
-  })();
-
-  try {
-    return await smtpTransporterPromise;
-  } catch (error) {
-    smtpTransporterPromise = null;
-    throw error;
-  }
-}
-
-function getEmailFromAddress() {
-  if (process.env.EMAIL_FROM) return process.env.EMAIL_FROM;
-  if (resend) return 'Sharp Study <onboarding@resend.dev>';
-  return `"Sharp Study" <${process.env.EMAIL_USER}>`;
-}
-
-async function sendAuthEmail({ to, subject, html, text }) {
-  if (resend) {
-    const { error } = await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || getEmailFromAddress(),
-      to,
-      subject,
-      html,
-      text,
-    });
-
-    if (error) {
-      throw new Error(error.message || 'Failed to send email with Resend');
-    }
-    return;
-  }
-
-  try {
-    const transporter = await buildSmtpTransporter();
-    await transporter.sendMail({
-      from: getEmailFromAddress(),
-      to,
-      subject,
-      html,
-      text,
-    });
-  } catch (error) {
-    smtpTransporterPromise = null;
-    throw error;
-  }
+function normalizeIdentifier(value) {
+  return String(value || '').trim().toLowerCase();
 }
 
 function parseSchema(schema, payload) {
@@ -179,8 +88,82 @@ function parseSchema(schema, payload) {
   return { error: null, data: result.data };
 }
 
-function normalizeIdentifier(value) {
-  return String(value || '').trim().toLowerCase();
+function signProofToken(email, purpose, ttlMinutes) {
+  const payload = Buffer.from(JSON.stringify({
+    email,
+    purpose,
+    exp: Date.now() + ttlMinutes * 60 * 1000,
+  })).toString('base64url');
+
+  const signature = crypto
+    .createHmac('sha256', signupTokenSecret)
+    .update(payload)
+    .digest('base64url');
+
+  return `${payload}.${signature}`;
+}
+
+function verifyProofToken(token, expectedEmail, expectedPurpose) {
+  if (!token || typeof token !== 'string' || !token.includes('.')) return false;
+
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature) return false;
+
+  const expectedSignature = crypto
+    .createHmac('sha256', signupTokenSecret)
+    .update(payload)
+    .digest('base64url');
+
+  if (signature.length !== expectedSignature.length) return false;
+
+  const isValidSignature = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
+  if (!isValidSignature) return false;
+
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return parsed?.purpose === expectedPurpose
+      && parsed?.email === expectedEmail
+      && Number(parsed?.exp || 0) > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+function updateStreakPreferences(preferences = {}) {
+  const nextPreferences = { ...preferences };
+  const currentStreak = preferences?.streak || {};
+  const history = Array.isArray(currentStreak.history) ? currentStreak.history : [];
+  const today = getIsoDateToday();
+  const lastDate = currentStreak.last_date;
+
+  let current = Number(currentStreak.current || 0);
+  const longest = Number(currentStreak.longest || 0);
+
+  if (lastDate === today) {
+    nextPreferences.streak = {
+      ...currentStreak,
+      current,
+      longest: Math.max(longest, current),
+      last_date: today,
+      history: Array.from(new Set([...history, today])).sort(),
+    };
+    return nextPreferences;
+  }
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayIso = yesterday.toISOString().slice(0, 10);
+  current = lastDate === yesterdayIso ? current + 1 : 1;
+
+  nextPreferences.streak = {
+    ...currentStreak,
+    current,
+    longest: Math.max(longest, current),
+    last_date: today,
+    history: Array.from(new Set([...history, today])).sort(),
+  };
+
+  return nextPreferences;
 }
 
 async function getProfileByEmail(email, columns) {
@@ -226,91 +209,144 @@ async function replaceOtpCode({ email, code, purpose, expiresAt, ipAddress }) {
   if (insertResult.error) throw insertResult.error;
 }
 
-function signProofToken(email, purpose, ttlMinutes) {
-  const payload = Buffer.from(JSON.stringify({
-    email,
-    purpose,
-    exp: Date.now() + ttlMinutes * 60 * 1000,
-  })).toString('base64url');
-
-  const signature = crypto
-    .createHmac('sha256', signupTokenSecret)
-    .update(payload)
-    .digest('base64url');
-
-  return `${payload}.${signature}`;
-}
-
-function verifyProofToken(token, expectedEmail, expectedPurpose) {
-  if (!token || typeof token !== 'string' || !token.includes('.')) return false;
-
-  const [payload, signature] = token.split('.');
-  if (!payload || !signature) return false;
-
-  const expectedSignature = crypto
-    .createHmac('sha256', signupTokenSecret)
-    .update(payload)
-    .digest('base64url');
-
-  if (signature.length !== expectedSignature.length) return false;
-
-  const isValidSignature = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
-
-  if (!isValidSignature) return false;
+async function resolveSmtpHost(hostname) {
+  if (!hostname || net.isIP(hostname)) {
+    return { host: hostname, servername: hostname };
+  }
 
   try {
-    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    return parsed?.purpose === expectedPurpose
-      && parsed?.email === expectedEmail
-      && Number(parsed?.exp || 0) > Date.now();
-  } catch {
-    return false;
+    const ipv4Addresses = await dns.promises.resolve4(hostname);
+    if (ipv4Addresses.length > 0) {
+      return { host: ipv4Addresses[0], servername: hostname };
+    }
+  } catch (error) {
+    console.warn(`SMTP IPv4 resolution failed for ${hostname}:`, error.message);
+  }
+
+  return { host: hostname, servername: hostname };
+}
+
+async function buildSmtpTransporter() {
+  if (smtpTransporterPromise) return smtpTransporterPromise;
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
+    throw new Error('SMTP credentials are not configured');
+  }
+
+  smtpTransporterPromise = (async () => {
+    const port = Number(process.env.SMTP_PORT || 587);
+    const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const resolvedHost = await resolveSmtpHost(smtpHost);
+
+    return nodemailer.createTransport({
+      host: resolvedHost.host,
+      port,
+      secure: port === 465,
+      requireTLS: port !== 465,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_APP_PASSWORD,
+      },
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
+      socketTimeout: 8000,
+      disableFileAccess: true,
+      disableUrlAccess: true,
+      tls: {
+        servername: resolvedHost.servername,
+        minVersion: 'TLSv1.2',
+      },
+    });
+  })();
+
+  try {
+    return await smtpTransporterPromise;
+  } catch (error) {
+    smtpTransporterPromise = null;
+    throw error;
   }
 }
 
-function getIsoDateToday() {
-  return new Date().toISOString().slice(0, 10);
+function getEmailFromAddress() {
+  if (process.env.EMAIL_FROM) return process.env.EMAIL_FROM;
+  if (emailProvider === 'resend') return process.env.RESEND_FROM_EMAIL || 'Sharp Study <onboarding@resend.dev>';
+  return `"Sharp Study" <${process.env.EMAIL_USER}>`;
 }
 
-function updateStreakPreferences(preferences = {}) {
-  const nextPreferences = { ...preferences };
-  const currentStreak = preferences?.streak || {};
-  const history = Array.isArray(currentStreak.history) ? currentStreak.history : [];
-  const today = getIsoDateToday();
-  const lastDate = currentStreak.last_date;
+function mapEmailProviderError(error, provider) {
+  const message = String(error?.message || error || '').toLowerCase();
 
-  let current = Number(currentStreak.current || 0);
-  const longest = Number(currentStreak.longest || 0);
-
-  if (lastDate === today) {
-    nextPreferences.streak = {
-      ...currentStreak,
-      current,
-      longest: Math.max(longest, current),
-      last_date: today,
-      history: Array.from(new Set([...history, today])).sort(),
-    };
-    return nextPreferences;
+  if (provider === 'resend') {
+    if (message.includes('api key')) {
+      return 'Resend is not configured correctly. Check RESEND_API_KEY in Render.';
+    }
+    if (message.includes('verify a domain') || message.includes('verified domain') || message.includes('from address')) {
+      return 'Resend sender is not verified. Set RESEND_FROM_EMAIL to a verified sender or use onboarding@resend.dev for testing.';
+    }
+    if (message.includes('testing emails') || message.includes('test emails')) {
+      return 'Resend test mode can only send to your own Resend account email. Verify a sending domain to email other users.';
+    }
+    return 'Resend could not send the email. Check your Render RESEND_API_KEY and RESEND_FROM_EMAIL settings.';
   }
 
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayIso = yesterday.toISOString().slice(0, 10);
+  if (provider === 'smtp') {
+    if (message.includes('enetunreach') || message.includes('etimedout') || message.includes('timeout')) {
+      return 'SMTP is blocked or unreachable from Render. Use Resend for deployed OTP delivery.';
+    }
+    return 'SMTP could not send the email. Check your SMTP host, port, and app password.';
+  }
 
-  current = lastDate === yesterdayIso ? current + 1 : 1;
+  if (provider === 'log') {
+    return 'Email delivery is set to log mode. Configure a real email provider to send OTPs.';
+  }
 
-  nextPreferences.streak = {
-    ...currentStreak,
-    current,
-    longest: Math.max(longest, current),
-    last_date: today,
-    history: Array.from(new Set([...history, today])).sort(),
-  };
-
-  return nextPreferences;
+  return 'Email delivery is not configured.';
 }
 
-// --- 1. REQUEST OTP ---
+async function sendAuthEmail({ to, subject, html, text }) {
+  if (emailProvider === 'log') {
+    console.info(`[Auth Email] Email provider is set to log. OTP email to ${to} was not sent.`);
+    return;
+  }
+
+  if (emailProvider === 'resend') {
+    if (!resend) {
+      throw new Error('RESEND_API_KEY is missing.');
+    }
+
+    const { error } = await resend.emails.send({
+      from: getEmailFromAddress(),
+      to,
+      subject,
+      html,
+      text,
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Failed to send email with Resend');
+    }
+    return;
+  }
+
+  if (emailProvider === 'smtp') {
+    try {
+      const transporter = await buildSmtpTransporter();
+      await transporter.sendMail({
+        from: getEmailFromAddress(),
+        to,
+        subject,
+        html,
+        text,
+      });
+    } catch (error) {
+      smtpTransporterPromise = null;
+      throw error;
+    }
+    return;
+  }
+
+  throw new Error(`Unsupported EMAIL_PROVIDER value: ${emailProvider}`);
+}
+
 exports.requestSignupOtp = async (req, res) => {
   try {
     const parsed = parseSchema(emailSchema, req.body);
@@ -318,7 +354,6 @@ exports.requestSignupOtp = async (req, res) => {
     const { email } = parsed.data;
 
     const { data: existingUser, error: userError } = await getProfileByEmail(email, 'id');
-
     if (userError) throw userError;
     if (existingUser) return res.status(400).json({ error: 'Email is already registered' });
 
@@ -336,7 +371,7 @@ exports.requestSignupOtp = async (req, res) => {
 
     await sendAuthEmail({
       to: email,
-      subject: 'Your Verso Verification Code',
+      subject: 'Your Sharp Study Verification Code',
       html: `
         <div style="font-family: sans-serif; text-align: center; padding: 20px;">
           <h2>Verify your email</h2>
@@ -357,16 +392,16 @@ exports.requestSignupOtp = async (req, res) => {
     if (req.body?.email) {
       await supabase.from('otp_codes').delete().eq('email', normalizeIdentifier(req.body.email)).eq('purpose', 'signup');
     }
-    res.status(500).json({ error: 'Unable to send verification code right now. Please try again.' });
+    res.status(500).json({ error: mapEmailProviderError(error, emailProvider) });
   }
 };
 
-// --- 2. VERIFY OTP ONLY ---
 exports.verifySignupOtp = async (req, res) => {
   try {
     const parsed = parseSchema(otpVerificationSchema, req.body);
     if (parsed.error) return res.status(400).json({ error: parsed.error });
     const { email, otp } = parsed.data;
+
     const { data: otpRecord, error: otpError } = await supabase
       .from('otp_codes')
       .select('*')
@@ -395,7 +430,6 @@ exports.verifySignupOtp = async (req, res) => {
   }
 };
 
-// --- 3. CHECK USERNAME AVAILABILITY ---
 exports.checkUsername = async (req, res) => {
   try {
     const username = String(req.query.username || '').trim().toLowerCase();
@@ -405,8 +439,8 @@ exports.checkUsername = async (req, res) => {
     }
 
     const { data: existingUser, error } = await getProfileByUsername(username, 'id');
-
     if (error) throw error;
+
     res.status(200).json({ available: !existingUser });
   } catch (error) {
     console.error('Username Check Error:', error);
@@ -414,7 +448,6 @@ exports.checkUsername = async (req, res) => {
   }
 };
 
-// --- 4. COMPLETE SIGNUP ---
 exports.completeSignup = async (req, res) => {
   try {
     const parsed = parseSchema(completeSignupSchema, req.body);
@@ -436,24 +469,18 @@ exports.completeSignup = async (req, res) => {
 
     const { data: existingProfile, error: existingProfileError } = await getProfileByEmail(email, 'id');
     if (existingProfileError) throw existingProfileError;
-    if (existingProfile) {
-      return res.status(409).json({ error: 'Email is already registered' });
-    }
+    if (existingProfile) return res.status(409).json({ error: 'Email is already registered' });
 
     const { data: existingUsername, error: usernameError } = await getProfileByUsername(username, 'id');
     if (usernameError) throw usernameError;
-    if (existingUsername) {
-      return res.status(409).json({ error: 'This username is already taken.' });
-    }
+    if (existingUsername) return res.status(409).json({ error: 'This username is already taken.' });
 
-    // 1. Create the Auth Identity in Supabase
     const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
-      email, 
-      password, 
-      email_confirm: true
+      email,
+      password,
+      email_confirm: true,
     });
 
-    // Handle case where user might already be in Auth table but failed at profile step
     if (authError) {
       if (authError.message.toLowerCase().includes('already registered')) {
         console.log(`Auth user already exists for ${email}. Proceeding to fix profile.`);
@@ -463,19 +490,17 @@ exports.completeSignup = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
-    
-    // Get the ID (either from the new user or existing auth user)
     let userId = authUser?.user?.id;
+
     if (!userId) {
-       const { data: existingAuth } = await supabase.auth.admin.listUsers();
-       userId = existingAuth.users.find(u => u.email === email)?.id;
+      const { data: existingAuth } = await supabase.auth.admin.listUsers();
+      userId = existingAuth.users.find((user) => user.email === email)?.id;
     }
 
     if (!userId) {
       return res.status(409).json({ error: 'A matching auth account could not be recovered. Please try signing up again.' });
     }
 
-    // 2. Use .upsert() to overwrite any "ghost" profiles
     const { error: profileError } = await supabase
       .from('profiles')
       .upsert({
@@ -487,14 +512,12 @@ exports.completeSignup = async (req, res) => {
         last_name,
         full_name: `${first_name} ${last_name}`.trim(),
         password_hash: hashedPassword,
-        role: 'student'
+        role: 'student',
       }, { onConflict: 'id' });
 
     if (profileError) throw profileError;
 
-    // 3. Clean up OTP
     await supabase.from('otp_codes').delete().eq('email', email).eq('purpose', 'signup');
-    
     res.status(201).json({ message: 'Account created successfully!' });
   } catch (error) {
     console.error('Complete Signup Error:', error);
@@ -502,44 +525,31 @@ exports.completeSignup = async (req, res) => {
   }
 };
 
-// --- 5. LOGIN (FINAL SECURE VERSION) ---
 exports.login = async (req, res) => {
   try {
     const parsed = parseSchema(loginSchema, {
       identifier: req.body.identifier || req.body.email || req.body.username,
       password: req.body.password,
     });
+
     if (parsed.error) {
       return res.status(400).json({ error: 'Email/Username and Password are required' });
     }
 
     const { identifier, password } = parsed.data;
-
     const { data: user, error: userError } = await getProfileByIdentifier(
       identifier,
       'id, email, password_hash, is_blocked, username, preferences'
     );
 
     if (userError) throw userError;
-    
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
     if (user.is_blocked) return res.status(403).json({ error: 'Account is blocked' });
+    if (!user.password_hash) return res.status(401).json({ error: 'Profile incomplete. Please sign up again.' });
 
-    // 3. Verify Password Hash
-    if (!user.password_hash) {
-      return res.status(401).json({ error: 'Profile incomplete. Please sign up again.' });
-    }
-
-    // 4. Compare Password
     const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
+    if (!isMatch) return res.status(401).json({ error: 'Invalid credentials' });
 
-    // 5. Sign in the user through Supabase so the frontend can store a valid auth session.
     const { data: authData, error: authError } = await supabaseAuth.auth.signInWithPassword({
       email: user.email,
       password,
@@ -550,31 +560,27 @@ exports.login = async (req, res) => {
       return res.status(500).json({ error: 'Failed to create auth session. Please try again.' });
     }
 
-    await supabase.from('login_attempts').insert([{ 
-      email: user.email, 
-      ip_address: req.ip, 
-      succeeded: true 
+    await supabase.from('login_attempts').insert([{
+      email: user.email,
+      ip_address: req.ip,
+      succeeded: true,
     }]);
 
     const nextPreferences = updateStreakPreferences(user.preferences || {});
-    await supabase
-      .from('profiles')
-      .update({ preferences: nextPreferences })
-      .eq('id', user.id);
+    await supabase.from('profiles').update({ preferences: nextPreferences }).eq('id', user.id);
 
     res.status(200).json({
       message: 'Login successful',
       access_token: authData.session.access_token,
       refresh_token: authData.session.refresh_token,
-      user: { id: user.id, email: user.email, username: user.username }
+      user: { id: user.id, email: user.email, username: user.username },
     });
   } catch (error) {
-    console.error('Login Error:', error); // We keep this for debugging crashes
+    console.error('Login Error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
 
-// --- 6. REQUEST PASSWORD RESET OTP ---
 exports.requestPasswordReset = async (req, res) => {
   try {
     const parsed = parseSchema(resetRequestSchema, {
@@ -583,11 +589,9 @@ exports.requestPasswordReset = async (req, res) => {
     if (parsed.error) return res.status(400).json({ error: 'Email or username is required' });
 
     const { data: user, error: userError } = await getProfileByIdentifier(parsed.data.identifier, 'id, email');
-
     if (userError) throw userError;
     if (!user) return res.status(404).json({ error: 'No account found with those details.' });
 
-    // 3. Generate and save OTP using the user's ACTUAL email from the database
     const plainOtp = generateOTP();
     const hashedOtp = await bcrypt.hash(plainOtp, 10);
     const expiresAt = new Date(Date.now() + otpExpiryMinutes * 60000);
@@ -600,10 +604,9 @@ exports.requestPasswordReset = async (req, res) => {
       ipAddress: req.ip,
     });
 
-    // 4. Send Email
     await sendAuthEmail({
       to: user.email,
-      subject: 'Password Reset Code',
+      subject: 'Sharp Study Password Reset Code',
       html: `
         <div style="font-family: sans-serif; text-align: center; padding: 20px;">
           <h2>Reset Your Password</h2>
@@ -624,11 +627,10 @@ exports.requestPasswordReset = async (req, res) => {
         await supabase.from('otp_codes').delete().eq('email', user.email).eq('purpose', 'password_reset');
       }
     }
-    res.status(500).json({ error: 'Unable to send reset code right now. Please try again.' });
+    res.status(500).json({ error: mapEmailProviderError(error, emailProvider) });
   }
 };
 
-// --- 7. VERIFY RESET OTP ---
 exports.verifyResetOtp = async (req, res) => {
   try {
     const otp = String(req.body.otp || '').trim();
@@ -637,17 +639,13 @@ exports.verifyResetOtp = async (req, res) => {
     if (!/^\d{6}$/.test(otp)) return res.status(400).json({ error: 'OTP must be 6 digits' });
 
     const { data: user, error: userError } = await getProfileByIdentifier(identifier, 'email');
-
     if (userError) throw userError;
     if (!user) return res.status(400).json({ error: 'User not found' });
 
-    const realEmail = user.email;
-
-    // 2. Look for the OTP using the REAL email
     const { data: otpRecord, error: otpError } = await supabase
       .from('otp_codes')
       .select('*')
-      .eq('email', realEmail)
+      .eq('email', user.email)
       .eq('purpose', 'password_reset')
       .order('created_at', { ascending: false })
       .limit(1)
@@ -660,11 +658,11 @@ exports.verifyResetOtp = async (req, res) => {
     const isOtpValid = await bcrypt.compare(otp, otpRecord.code);
     if (!isOtpValid) return res.status(400).json({ error: 'Invalid code' });
 
-    await supabase.from('otp_codes').delete().eq('email', realEmail).eq('purpose', 'password_reset');
+    await supabase.from('otp_codes').delete().eq('email', user.email).eq('purpose', 'password_reset');
 
     res.status(200).json({
       message: 'OTP verified',
-      reset_token: signProofToken(realEmail, 'password-reset', resetTokenTtlMinutes),
+      reset_token: signProofToken(user.email, 'password-reset', resetTokenTtlMinutes),
     });
   } catch (error) {
     console.error('Verify Reset OTP Error:', error);
@@ -672,7 +670,6 @@ exports.verifyResetOtp = async (req, res) => {
   }
 };
 
-// --- 8. FINALIZE PASSWORD RESET ---
 exports.resetPassword = async (req, res) => {
   try {
     const parsed = parseSchema(resetSchema, {
@@ -683,36 +680,22 @@ exports.resetPassword = async (req, res) => {
     if (parsed.error) return res.status(400).json({ error: parsed.error });
 
     const { identifier, password: rawPassword, reset_token: resetToken } = parsed.data;
-
     const { data: profile, error: userError } = await getProfileByIdentifier(identifier, 'id, email');
-
     if (userError) throw userError;
     if (!profile) return res.status(404).json({ error: 'User not found' });
     if (!verifyProofToken(resetToken, profile.email, 'password-reset')) {
       return res.status(403).json({ error: 'Reset verification has expired. Please request a new code.' });
     }
 
-    // 3. Hash the new password
     const hashedPassword = await bcrypt.hash(rawPassword, 12);
 
-    // 4. Update Supabase Auth Vault
-    const { error: authError } = await supabase.auth.admin.updateUserById(
-      profile.id,
-      { password: rawPassword }
-    );
+    const { error: authError } = await supabase.auth.admin.updateUserById(profile.id, { password: rawPassword });
     if (authError) throw authError;
 
-    // 5. Update your profiles table
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({ password_hash: hashedPassword })
-      .eq('id', profile.id);
-
+    const { error: profileError } = await supabase.from('profiles').update({ password_hash: hashedPassword }).eq('id', profile.id);
     if (profileError) throw profileError;
 
-    // 6. Clean up old OTPs using the real email
     await supabase.from('otp_codes').delete().eq('email', profile.email).eq('purpose', 'password_reset');
-
     res.status(200).json({ message: 'Password reset successfully!' });
   } catch (error) {
     console.error('Reset Password Error:', error);
@@ -771,20 +754,16 @@ exports.changePassword = async (req, res) => {
 
     const nextHash = await bcrypt.hash(newPassword, 12);
 
-    const { error: authError } = await supabase.auth.admin.updateUserById(req.user.id, {
-      password: newPassword,
-    });
+    const { error: authError } = await supabase.auth.admin.updateUserById(req.user.id, { password: newPassword });
     if (authError) throw authError;
 
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({ password_hash: nextHash })
-      .eq('id', req.user.id);
+    const { error: updateError } = await supabase.from('profiles').update({ password_hash: nextHash }).eq('id', req.user.id);
     if (updateError) throw updateError;
 
-    const { error: historyInsertError } = await supabase
-      .from('password_history')
-      .insert({ user_id: req.user.id, password_hash: nextHash });
+    const { error: historyInsertError } = await supabase.from('password_history').insert({
+      user_id: req.user.id,
+      password_hash: nextHash,
+    });
     if (historyInsertError) throw historyInsertError;
 
     res.status(200).json({ success: true, message: 'Password updated successfully.' });
