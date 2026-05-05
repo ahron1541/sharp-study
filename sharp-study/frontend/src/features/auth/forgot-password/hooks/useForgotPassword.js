@@ -21,6 +21,7 @@ export function useForgotPassword() {
   const [stage,     setStage]     = useState('request');
   const [identifier, setIdentifier] = useState('');
   const [resolvedEmail, setResolvedEmail] = useState('');
+  const [resetToken, setResetToken] = useState('');
   const [password,  setPassword]  = useState('');
   const [confirm,   setConfirm]   = useState('');
   const [errors,    setErrors]    = useState({});
@@ -36,6 +37,7 @@ export function useForgotPassword() {
     try {
       const data = await requestPasswordResetOTP(sanitizePlainText(identifier));
       setResolvedEmail(data.email || identifier);
+      setResetToken('');
       setStage('verify');
       toast.success('Reset code sent! Check your email.');
     } catch {
@@ -52,7 +54,8 @@ export function useForgotPassword() {
     if (otp.replace(/\D/g, '').length < 6) return false;
     setLoading(true);
     try {
-      await verifyPasswordResetOTP(resolvedEmail, otp);
+      const response = await verifyPasswordResetOTP(resolvedEmail, otp);
+      setResetToken(response?.reset_token || '');
       setStage('reset');
       return true;
     } catch (err) {
@@ -72,7 +75,7 @@ export function useForgotPassword() {
     setLoading(true);
     setErrors({});
     try {
-      await resetPassword(resolvedEmail, password);
+      await resetPassword(resolvedEmail, password, resetToken);
       setStage('done');
     } catch (err) {
       if (err.message?.includes('reuse')) {
@@ -89,6 +92,7 @@ export function useForgotPassword() {
     stage,
     identifier, setIdentifier,
     resolvedEmail,
+    resetToken,
     password, setPassword,
     confirm, setConfirm,
     errors, setErrors, loading,

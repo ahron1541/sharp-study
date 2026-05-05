@@ -15,7 +15,7 @@ function isStrongPassword(pw) {
   return PASSWORD_CHECKS.every((check) => check(pw));
 }
 
-export function useSignupForm(email) {
+export function useSignupForm(email, signupToken) {
   const [form, setForm] = useState({
     first_name: '', middle_name: '', last_name: '',
     username: '', password: '', confirm_password: '',
@@ -68,9 +68,13 @@ export function useSignupForm(email) {
   const submit = async () => {
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return false; }
+    if (!email || !signupToken) {
+      toast.error('Your email verification has expired. Please request a new code.');
+      return false;
+    }
     setLoading(true);
     try {
-      await completeSignup({ ...form, email });
+      await completeSignup({ ...form, email, signup_token: signupToken });
       return true;
     } catch (err) {
       if (err.message?.toLowerCase().includes('username')) {

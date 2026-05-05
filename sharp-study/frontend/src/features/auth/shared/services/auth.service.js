@@ -48,10 +48,10 @@ export const verifyPasswordResetOTP = (email, otp) =>
     body: JSON.stringify({ email, otp }),
   });
 
-export const resetPassword = (email, password) =>
+export const resetPassword = (email, password, reset_token) =>
   request('/api/auth/forgot-password/reset', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, reset_token }),
   });
 
 export const changePassword = (payload) =>

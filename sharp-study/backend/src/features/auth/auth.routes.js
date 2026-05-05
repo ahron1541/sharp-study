@@ -1,21 +1,38 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const authController = require('./auth.controller');
 
 // 1. IMPORT THE MISSING MIDDLEWARE HERE
 const { requireAuth } = require('../../middleware/auth.middleware');
 
+const otpRequestLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: Number(process.env.OTP_MAX_REQUESTS_PER_WINDOW || 5),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many verification requests. Please wait a bit before trying again.' },
+});
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.MAX_LOGIN_ATTEMPTS || 8),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Please try again later.' },
+});
+
 // The 4-Step Signup Flow
-router.post('/signup/request-otp', authController.requestSignupOtp);
+router.post('/signup/request-otp', otpRequestLimiter, authController.requestSignupOtp);
 router.post('/signup/verify-otp', authController.verifySignupOtp);
 router.get('/signup/check-username', authController.checkUsername);
 router.post('/signup/complete', authController.completeSignup);
 
 // Login
-router.post('/login', authController.login);
+router.post('/login', loginLimiter, authController.login);
 
 // --- FORGOT PASSWORD FLOW (NEW) ---
-router.post('/forgot-password/request-otp', authController.requestPasswordReset);
+router.post('/forgot-password/request-otp', otpRequestLimiter, authController.requestPasswordReset);
 router.post('/forgot-password/verify-otp', authController.verifyResetOtp);
 router.post('/forgot-password/reset', authController.resetPassword);
 router.post('/change-password', requireAuth, authController.changePassword);

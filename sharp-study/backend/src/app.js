@@ -1,6 +1,7 @@
 require('dotenv').config(); // <-- THIS MUST BE LINE 1
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 
 // Currently active features
 const authRoutes = require('./features/auth/auth.routes');
@@ -14,12 +15,15 @@ const dashboardRoutes = require('./features/dashboard/dashboard.routes');
 // const quizRoutes = require('./features/quizzes/quizzes.routes');
 
 const app = express();
+app.set('trust proxy', 1);
 
 const allowedOrigins = new Set([
   'http://localhost:5173',
   'http://localhost:5174',
   'https://sharp-study.vercel.app',
-]);
+  process.env.FRONTEND_URL,
+  process.env.APP_URL,
+].filter(Boolean));
 
 const corsOptions = {
   origin(origin, callback) {
@@ -37,9 +41,13 @@ const corsOptions = {
 };
 
 // Middleware
+app.disable('x-powered-by');
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.set('etag', 'strong');
 
 // API Routes

@@ -10,9 +10,10 @@ const RESEND_COOLDOWN_SECONDS = 60;
  * @param {Function} verifyFn   - service function that verifies the OTP
  * @param {string}   email      - the email address OTP is sent to
  */
-export function useOTP(requestFn, verifyFn, email) {
+export function useOTP(requestFn, verifyFn, email, options = {}) {
+  const { initialOtpSent = false } = options;
   const [otp,         setOtp]         = useState('');
-  const [otpSent,     setOtpSent]     = useState(false);
+  const [otpSent,     setOtpSent]     = useState(initialOtpSent);
   const [otpVerified, setOtpVerified] = useState(false);
   const [sending,     setSending]     = useState(false);
   const [verifying,   setVerifying]   = useState(false);
@@ -41,9 +42,11 @@ export function useOTP(requestFn, verifyFn, email) {
       setOtpSent(true);
       setCooldown(RESEND_COOLDOWN_SECONDS);
       toast.success('Verification code sent! Check your email.');
+      return true;
     } catch (err) {
       setError(err.message);
       toast.error(err.message);
+      return false;
     } finally {
       setSending(false);
     }
@@ -57,12 +60,12 @@ export function useOTP(requestFn, verifyFn, email) {
     setVerifying(true);
     setError('');
     try {
-      await verifyFn(email, otp);
+      const response = await verifyFn(email, otp);
       setOtpVerified(true);
-      return true;
+      return response;
     } catch (err) {
       setError(err.message);
-      return false;
+      return null;
     } finally {
       setVerifying(false);
     }
@@ -70,7 +73,7 @@ export function useOTP(requestFn, verifyFn, email) {
 
   const reset = () => {
     setOtp('');
-    setOtpSent(false);
+    setOtpSent(initialOtpSent);
     setOtpVerified(false);
     setError('');
   };

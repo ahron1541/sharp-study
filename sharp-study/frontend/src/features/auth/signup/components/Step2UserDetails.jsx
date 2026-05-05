@@ -7,9 +7,9 @@ import PillButton           from '../../shared/components/PillButton';
 import { useSignupForm }    from '../hooks/useSignupForm';
 import styles               from './Step2UserDetails.module.css';
 
-export default function Step2UserDetails({ email, onSuccess }) {
+export default function Step2UserDetails({ email, signupToken, onSuccess }) {
   const { t } = useTranslation('auth', { keyPrefix: 'signup.step2' });
-  const { form, update, errors, loading, usernameStatus, submit } = useSignupForm(email);
+  const { form, update, errors, loading, usernameStatus, submit } = useSignupForm(email, signupToken);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
