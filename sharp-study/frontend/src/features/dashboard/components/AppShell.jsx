@@ -72,11 +72,6 @@ export default function AppShell() {
 
   return (
     <div className="flex h-screen bg-bg overflow-hidden">
-      {/* Skip link for keyboard users */}
-      <a href="#main-content" className="skip-link">
-        Skip to main content
-      </a>
-
       {/* Desktop sidebar */}
       {!isMobile && (
         <aside className="flex-shrink-0 h-full">

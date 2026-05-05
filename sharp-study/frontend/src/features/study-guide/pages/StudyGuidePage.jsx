@@ -10,9 +10,7 @@ import { sanitizeHtml } from '../../../shared/utils/sanitize';
 import StudyGuideEditor from '../components/StudyGuideEditor';
 import StudyGuideSidebar from '../components/StudyGuideSidebar';
 import SelectionToolbar from '../components/SelectionToolbar';
-import DiscussionQuestions from '../components/DiscussionQuestions';
 import {
-  buildDiscussionQuestions,
   buildQuickReferenceGroups,
   extractStudyGuideSections,
   normalizeStudyGuideHtml,
@@ -164,14 +162,9 @@ export default function StudyGuidePage() {
     [sections, activeSectionId]
   );
   const quickReferenceGroups = useMemo(
-    () => buildQuickReferenceGroups(sections, lessonText, guide?.document?.title || guide?.title),
-    [sections, lessonText, guide?.document?.title, guide?.title]
-  );
-  const discussionQuestions = useMemo(
-    () => buildDiscussionQuestions(sections, lessonText, guide?.document?.title || guide?.title, deferredContent),
+    () => buildQuickReferenceGroups(sections, lessonText, guide?.document?.title || guide?.title, deferredContent),
     [sections, lessonText, guide?.document?.title, guide?.title, deferredContent]
   );
-
   const renderedHtml = useMemo(() => {
     const html = normalizeStudyGuideHtml(deferredContent);
     if (!html) return '';
@@ -663,8 +656,6 @@ export default function StudyGuidePage() {
                           dangerouslySetInnerHTML={{ __html: sanitizedRenderedHtml }}
                         />
                       </div>
-
-                      <DiscussionQuestions questions={discussionQuestions} />
                     </div>
                   ) : (
                     <div className="space-y-5">

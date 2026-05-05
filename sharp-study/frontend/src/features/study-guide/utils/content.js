@@ -174,7 +174,7 @@ export function normalizeStudyGuideHtml(rawContent) {
   if (!rawContent) return '';
 
   const { html } = extractStudyGuidePayload(rawContent);
-  const content = String(html).trim();
+  const content = String(html).trim().replace(/^```html\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
   if (!content) return '';
 
   return looksLikeHtml(content) ? content : markdownToHtml(content);
@@ -551,6 +551,7 @@ function normalizeDiscussionQuestionItems(items = []) {
     .map((item, index) => {
       const question = String(item?.question || '').replace(/\s+/g, ' ').trim();
       const answer = String(item?.answer || '').replace(/\s+/g, ' ').trim();
+      const supportSnippet = String(item?.supportSnippet || item?.support_snippet || '').replace(/\s+/g, ' ').trim();
       if (!question || !answer || isQuestionLike(answer)) return null;
       if (/self-check|think about|test your understanding|review the lesson|important points/i.test(answer)) {
         return null;
@@ -560,13 +561,82 @@ function normalizeDiscussionQuestionItems(items = []) {
         id: item?.id || `dq-meta-${index + 1}`,
         question,
         answer: toAnswerSentence(answer),
+        supportSnippet,
       };
     })
     .filter(Boolean)
     .slice(0, 6);
 }
 
-export function buildQuickReferenceGroups(sections, sourceText = '', fallbackTitle = 'Study Guide') {
+function normalizeKeyReferenceMetadata(groups = []) {
+  return groups
+    .map((group, groupIndex) => {
+      const label = String(group?.label || '').replace(/\s+/g, ' ').trim();
+      const items = Array.isArray(group?.items) ? group.items : [];
+      if (!label || !items.length) return null;
+
+      const normalizedItems = items
+        .map((item, itemIndex) => {
+          const title = String(item?.title || '').replace(/\s+/g, ' ').trim();
+          const format = item?.format === 'ordered' ? 'ordered' : 'unordered';
+          const entries = Array.isArray(item?.entries)
+            ? item.entries
+              .map((entry) => String(entry || '').replace(/\s+/g, ' ').trim())
+              .filter(Boolean)
+              .slice(0, 6)
+            : [];
+
+          if (!title || !entries.length) return null;
+
+          return {
+            id: item?.id || `kr-meta-${groupIndex + 1}-${itemIndex + 1}`,
+            title,
+            format,
+            entries,
+          };
+        })
+        .filter(Boolean)
+        .slice(0, 3);
+
+      if (!normalizedItems.length) return null;
+
+      return {
+        id: group?.id || `kr-meta-group-${groupIndex + 1}`,
+        label,
+        items: normalizedItems,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
+function normalizeForMatch(text = '') {
+  return String(text)
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^a-z0-9\s]/g, '')
+    .trim();
+}
+
+function isSupportedByLesson(answer = '', supportSnippet = '', sourceText = '') {
+  const normalizedSource = normalizeForMatch(sourceText);
+  const normalizedSnippet = normalizeForMatch(supportSnippet);
+  const normalizedAnswer = normalizeForMatch(answer);
+
+  if (!normalizedSource || !normalizedAnswer) return false;
+  if (normalizedSnippet && !normalizedSource.includes(normalizedSnippet)) return false;
+
+  const tokens = Array.from(new Set(normalizedAnswer.split(' ').filter((token) => token.length >= 4)));
+  if (!tokens.length) return false;
+
+  const overlapCount = tokens.filter((token) => normalizedSource.includes(token)).length;
+  return overlapCount >= Math.min(3, tokens.length);
+}
+
+export function buildQuickReferenceGroups(sections, sourceText = '', fallbackTitle = 'Study Guide', rawContent = '') {
+  const embeddedGroups = normalizeKeyReferenceMetadata(extractStudyGuidePayload(rawContent).metadata?.keyReferenceGroups || []);
+  if (embeddedGroups.length) return embeddedGroups;
+
   const groups = QUICK_REFERENCE_GROUPS.map((group) => {
     const items = sections
       .filter((section) => group.pattern.test(section.title))
@@ -630,7 +700,8 @@ export function buildQuickReferenceGroups(sections, sourceText = '', fallbackTit
 
 export function buildDiscussionQuestions(sections, sourceText = '', fallbackTitle = 'this lesson', rawContent = '') {
   const payload = extractStudyGuidePayload(rawContent);
-  const embeddedQuestions = normalizeDiscussionQuestionItems(payload.metadata?.discussionQuestions || []);
+  const embeddedQuestions = normalizeDiscussionQuestionItems(payload.metadata?.discussionQuestions || [])
+    .filter((item) => isSupportedByLesson(item.answer, item.supportSnippet, sourceText));
   if (embeddedQuestions.length >= 3) {
     return embeddedQuestions;
   }

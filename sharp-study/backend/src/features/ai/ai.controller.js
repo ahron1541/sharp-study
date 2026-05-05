@@ -5,6 +5,7 @@ const AdmZip = require('adm-zip');
 const { supabaseAdmin } = require('../../config/supabase');
 const {
   generateStudyGuide,
+  generateKeyReferences,
   generateDiscussionQuestions,
   generateFlashcards,
   generateQuiz,
@@ -80,13 +81,48 @@ function resolveUploadKind(file) {
   return extension || 'unknown';
 }
 
-function normalizeGeneratedDiscussionQuestions(items = []) {
+function normalizeForMatch(text = '') {
+  return String(text)
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^a-z0-9\s]/g, '')
+    .trim();
+}
+
+function tokenizeContent(text = '') {
+  return normalizeForMatch(text)
+    .split(' ')
+    .filter((token) => token.length >= 4);
+}
+
+function hasEnoughSourceOverlap(answer, supportSnippet, sourceText) {
+  const normalizedSource = normalizeForMatch(sourceText);
+  const normalizedSnippet = normalizeForMatch(supportSnippet);
+
+  if (!normalizedSnippet || !normalizedSource.includes(normalizedSnippet)) {
+    return false;
+  }
+
+  const answerTokens = Array.from(new Set(tokenizeContent(answer)));
+  if (!answerTokens.length) {
+    return false;
+  }
+
+  const overlapCount = answerTokens.filter((token) => normalizedSource.includes(token)).length;
+  return overlapCount >= Math.min(3, answerTokens.length);
+}
+
+function normalizeGeneratedDiscussionQuestions(items = [], sourceText = '') {
   return items
     .map((item, index) => {
       const question = String(item?.question || '').replace(/\s+/g, ' ').trim();
       const answer = String(item?.answer || '').replace(/\s+/g, ' ').trim();
+      const supportSnippet = String(item?.support_snippet || '').replace(/\s+/g, ' ').trim();
       if (!question || !answer) return null;
       if (/self-check|think about|test your understanding|review the lesson|important points/i.test(answer)) {
+        return null;
+      }
+      if (!hasEnoughSourceOverlap(answer, supportSnippet, sourceText)) {
         return null;
       }
 
@@ -94,10 +130,53 @@ function normalizeGeneratedDiscussionQuestions(items = []) {
         id: item?.id || `dq-ai-${index + 1}`,
         question: question.endsWith('?') ? question : `${question}?`,
         answer,
+        supportSnippet,
       };
     })
     .filter(Boolean)
     .slice(0, 6);
+}
+
+function normalizeGeneratedKeyReferences(groups = []) {
+  return groups
+    .map((group, groupIndex) => {
+      const label = String(group?.label || '').replace(/\s+/g, ' ').trim();
+      const items = Array.isArray(group?.items) ? group.items : [];
+      if (!label || !items.length) return null;
+
+      const normalizedItems = items
+        .map((item, itemIndex) => {
+          const title = String(item?.title || '').replace(/\s+/g, ' ').trim();
+          const format = item?.format === 'ordered' ? 'ordered' : 'unordered';
+          const entries = Array.isArray(item?.entries)
+            ? item.entries
+              .map((entry) => String(entry || '').replace(/\s+/g, ' ').trim())
+              .filter(Boolean)
+              .slice(0, 6)
+            : [];
+
+          if (!title || !entries.length) return null;
+
+          return {
+            id: item?.id || `kr-${groupIndex + 1}-${itemIndex + 1}`,
+            title,
+            format,
+            entries,
+          };
+        })
+        .filter(Boolean)
+        .slice(0, 3);
+
+      if (!normalizedItems.length) return null;
+
+      return {
+        id: group?.id || `kr-group-${groupIndex + 1}`,
+        label,
+        items: normalizedItems,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 5);
 }
 
 function serializeStudyGuideContent(html, metadata = {}) {
@@ -229,11 +308,19 @@ async function processGenerationJob(job) {
       });
 
       const content = await generateStudyGuide(cleanedExtractedText, requestOptions);
+      let keyReferenceGroups = [];
       let discussionQuestions = [];
 
       try {
+        const generatedKeyReferences = await generateKeyReferences(cleanedExtractedText, requestOptions);
+        keyReferenceGroups = normalizeGeneratedKeyReferences(generatedKeyReferences);
+      } catch (keyReferenceError) {
+        console.warn('Key reference generation fell back to client builder:', keyReferenceError?.message || keyReferenceError);
+      }
+
+      try {
         const generatedQuestions = await generateDiscussionQuestions(cleanedExtractedText, requestOptions);
-        discussionQuestions = normalizeGeneratedDiscussionQuestions(generatedQuestions);
+        discussionQuestions = normalizeGeneratedDiscussionQuestions(generatedQuestions, cleanedExtractedText);
         if (discussionQuestions.length < 3) {
           discussionQuestions = [];
         }
@@ -242,6 +329,7 @@ async function processGenerationJob(job) {
       }
 
       const serializedContent = serializeStudyGuideContent(content, {
+        keyReferenceGroups,
         discussionQuestions,
       });
 

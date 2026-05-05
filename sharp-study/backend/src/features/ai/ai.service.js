@@ -321,9 +321,8 @@ Output rules:
   2. <h2>Overview</h2>
   3. <h2>Key Concepts</h2>
   4. <h2>Examples</h2>
-  5. <h2>Quick Reference</h2>
-  6. <h2>Self-Check</h2>
-  7. <h2>Discussion Questions</h2>
+  5. <h2>Self-Check</h2>
+  6. <h2>Discussion Questions</h2>
 - Use <h3> only for subheadings under a related <h2> section.
 - Every heading must have real content underneath it. Do not create empty headings, placeholder labels, or sections that say nothing.
 - Make the heading text specific, meaningful, and easy to jump to from a sidebar.
@@ -332,15 +331,7 @@ Output rules:
 - For key points, use a reviewer format such as:
   <li><strong>Important term or point:</strong> normal-text explanation or meaning.</li>
 - Keep the keyword or main idea bold, but keep the supporting explanation in normal text.
-- Make Quick Reference a compact list or table of the most useful facts.
-- In Quick Reference, prefer real structured review notes:
-  - use <ul> for key terms, facts, definitions, examples, comparisons, people, and important details
-  - use <ol> for steps, methods, sequences, timelines, stages, cause-to-effect chains, and procedures
-  - avoid long paragraphs inside Quick Reference
-  - each quick-reference group should be easy to scan in a few seconds
-- Prefer quick reference groupings that match the lesson content, such as Key Terms/Concepts, Key People, Key Dates, Key Events, Cause and Effect, Formula/Steps, Comparisons, or Timeline.
-- If the lesson naturally fits a table, use a simple accessible table with short headers and short cells.
-- Do not force sections that do not fit the lesson. Only include the most useful quick-reference groups for this topic.
+- Do not include a Quick Reference section in the HTML output. Key references are generated separately.
 - Make the main study guide read like a reviewer: clear overview, short explanations, strong organization, and study-friendly wording.
 - Cover the major lesson points instead of shrinking the lesson too aggressively.
 - If the lesson is long, include more subsection coverage under the existing section headings instead of reducing everything to a tiny summary.
@@ -361,6 +352,45 @@ ${extractedText.substring(0, 14000)}
   `;
 }
 
+function buildKeyReferencesPrompt(extractedText) {
+  return `
+Create structured key references for a study guide based only on the lesson text below.
+Respond ONLY with a valid JSON array. No markdown, no explanation.
+
+Format:
+[
+  {
+    "label": "Key Terms and Concepts",
+    "items": [
+      {
+        "title": "Important heading",
+        "format": "unordered",
+        "entries": [
+          "<strong>Key point:</strong> normal explanation",
+          "<strong>Another point:</strong> normal explanation"
+        ]
+      }
+    ]
+  }
+]
+
+Rules:
+- Create 3 to 5 groups only.
+- Use labels such as Key Terms and Concepts, Key People, Key Dates and Timeline, Processes and Events, Cause and Effect, Formulas and Methods, Comparisons, or Examples and Applications only when they fit the lesson.
+- Each group should contain 1 to 3 cards only.
+- Each card title must be specific to the lesson, not generic filler.
+- Each entry must be short, study-friendly, and directly supported by the lesson.
+- Make the important word or phrase bold using HTML strong tags, then follow it with a normal explanation.
+- Avoid repeating the same facts across different cards.
+- Do not include empty groups, placeholders, or advice text.
+
+Lesson text:
+"""
+${extractedText.substring(0, 10000)}
+"""
+  `;
+}
+
 function buildDiscussionPrompt(extractedText) {
   return `
 Create 5 to 6 discussion questions with direct short answers based only on the lesson text below.
@@ -369,7 +399,8 @@ Format:
 [
   {
     "question": "Question ending with a question mark?",
-    "answer": "A short direct answer grounded in the lesson."
+    "answer": "A short direct answer grounded in the lesson.",
+    "support_snippet": "A short exact phrase or sentence copied from the lesson that supports the answer."
   }
 ]
 
@@ -382,6 +413,8 @@ Rules:
 - Do not invent facts that are not supported by the lesson text.
 - Keep each answer to 1 to 3 sentences.
 - Prefer specific factual answers that include exact names, laws, titles, dates, roles, or examples when the lesson provides them.
+- The support_snippet field must be copied closely from the lesson text, not invented or paraphrased.
+- If the lesson does not clearly support an answer, do not include that question.
 
 Lesson text:
 """
@@ -422,7 +455,14 @@ ${extractedText.substring(0, 6000)}
 }
 
 async function generateStudyGuide(extractedText, requestOptions = {}) {
-  return generateWithFallback(buildStudyGuidePrompt(extractedText), requestOptions, 'study guide generation');
+  return stripCodeFences(
+    await generateWithFallback(buildStudyGuidePrompt(extractedText), requestOptions, 'study guide generation')
+  );
+}
+
+async function generateKeyReferences(extractedText, requestOptions = {}) {
+  const raw = await generateWithFallback(buildKeyReferencesPrompt(extractedText), requestOptions, 'key reference generation');
+  return parseJsonResponse(raw);
 }
 
 async function generateDiscussionQuestions(extractedText, requestOptions = {}) {
@@ -442,6 +482,7 @@ async function generateQuiz(extractedText, requestOptions = {}) {
 
 module.exports = {
   generateStudyGuide,
+  generateKeyReferences,
   generateDiscussionQuestions,
   generateFlashcards,
   generateQuiz,
