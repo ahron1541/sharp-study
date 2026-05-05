@@ -22,6 +22,14 @@ const signupTokenSecret = process.env.SESSION_SECRET || process.env.SUPABASE_SER
 const usernamePattern = /^[a-z0-9_.-]{3,20}$/;
 const namePattern = /^[A-Za-z][A-Za-z' -]{0,48}$/;
 
+console.info('[Auth Email] Provider configuration', {
+  provider: emailProvider,
+  hasResendKey: Boolean(process.env.RESEND_API_KEY),
+  hasSmtpUser: Boolean(process.env.EMAIL_USER),
+  hasSmtpPassword: Boolean(process.env.EMAIL_APP_PASSWORD),
+  fromAddress: process.env.EMAIL_FROM || process.env.RESEND_FROM_EMAIL || null,
+});
+
 const emailSchema = z.object({
   email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),
 });
