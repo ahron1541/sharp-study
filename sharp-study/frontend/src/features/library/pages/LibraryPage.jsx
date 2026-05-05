@@ -36,7 +36,7 @@ const GENERATION_STEPS = [
   { value: 76, title: 'Generating with Gemini AI', detail: 'Building the selected study material step by step.' },
   { value: 100, title: 'Finishing your library update', detail: 'Saving the result and refreshing your workspace.' },
 ];
-const GENERATION_CANCEL_DELAY_MS = 15000;
+const GENERATION_CANCEL_DELAY_MS = 60000;
 
 function createDefaultManualText(selectedType) {
   if (selectedType === 'flashcards') return 'Front | Back';
@@ -874,7 +874,7 @@ function CreateWizard({
                 : !creationMode
                   ? 'Manual study guide creation opens a full-page editor. Flashcards and quizzes stay lightweight here.'
                   : creationMode === 'automatic'
-                  ? 'If another request is ahead of you, your file will wait in line. If it takes too long, you can cancel the request.'
+                  ? 'If another request is ahead of you, your file will wait in line. Longer lessons, scanned files, or busy AI periods can make generation take more time.'
                   : 'Use the quick form below for smaller manual entries.'}
           </p>
         </section>
@@ -978,13 +978,16 @@ function CreateWizard({
                   <span className="text-text-muted">
                     {generationSeconds}s elapsed
                   </span>
+                  <span className="text-text-muted">
+                    Longer lessons, image-heavy slides, and busy AI periods can make this take a bit longer.
+                  </span>
                   {canCancelGeneration ? (
                     <span className="text-amber-400">
                       This is taking longer than usual. You can cancel this request now.
                     </span>
                   ) : (
                     <span className="text-text-muted">
-                      Cancel becomes available after 15 seconds.
+                      Cancel becomes available after 1 minute.
                     </span>
                   )}
                 </div>

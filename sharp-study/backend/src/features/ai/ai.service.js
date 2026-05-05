@@ -8,8 +8,8 @@ const REQUEST_TIMEOUT_MS = 45000;
 const model = genAI.getGenerativeModel({
   model: MODEL_NAME,
   generationConfig: {
-    temperature: 0.7,
-    maxOutputTokens: 2048,
+    temperature: 0.55,
+    maxOutputTokens: 4096,
   },
 });
 
@@ -86,7 +86,7 @@ The HTML will be rendered directly in a study-guide reader with a heading-based 
 Output rules:
 - Return semantic HTML only. No markdown, no code fences, no explanations.
 - Use short sentences and simple language.
-- Keep the guide concise, focused, and skimmable.
+- Keep the guide focused, skimmable, and genuinely useful for review.
 - Use these sections in this order:
   1. <h1>Title</h1>
   2. <h2>Overview</h2>
@@ -100,6 +100,9 @@ Output rules:
 - Make the heading text specific, meaningful, and easy to jump to from a sidebar.
 - Use <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <table>, <thead>, <tbody>, <tr>, <th>, and <td> when useful.
 - Bold the most important terms and names.
+- For key points, use a reviewer format such as:
+  <li><strong>Important term or point:</strong> normal-text explanation or meaning.</li>
+- Keep the keyword or main idea bold, but keep the supporting explanation in normal text.
 - Make Quick Reference a compact list or table of the most useful facts.
 - In Quick Reference, prefer real structured review notes:
   - use <ul> for key terms, facts, definitions, examples, comparisons, people, and important details
@@ -110,17 +113,21 @@ Output rules:
 - If the lesson naturally fits a table, use a simple accessible table with short headers and short cells.
 - Do not force sections that do not fit the lesson. Only include the most useful quick-reference groups for this topic.
 - Make the main study guide read like a reviewer: clear overview, short explanations, strong organization, and study-friendly wording.
+- Cover the major lesson points instead of shrinking the lesson too aggressively.
+- If the lesson is long, include more subsection coverage under the existing section headings instead of reducing everything to a tiny summary.
+- Include important names, dates, laws, steps, responsibilities, examples, and distinctions when they matter to the lesson.
+- Do not leave out key review points just to stay ultra-short.
 - In <h2>Discussion Questions</h2>, write 5 to 7 question-and-answer pairs based only on the lesson text.
 - Format each pair as:
   <h3>Question text ending in ?</h3>
   <p>Short direct answer grounded in the lesson.</p>
 - The answer must answer the question directly. Do not reply with another question, a prompt, or advice like "review the lesson."
 - Prefer factual, study-friendly phrasing over filler prose.
-- Keep the total output under 900 words.
+- Aim for a rich reviewer, usually around 1100 to 1800 words when the lesson is long enough to support it.
 
 Lesson text:
 """
-${extractedText.substring(0, 8000)}
+${extractedText.substring(0, 14000)}
 """
   `;
   const result = await withRetry(
