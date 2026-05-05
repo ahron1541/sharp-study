@@ -1,17 +1,13 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const MODEL_NAME = 'gemini-2.0-flash-lite';
 const REQUEST_TIMEOUT_MS = 45000;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-lite-001';
 
-// Keep a single shared model instance and pass per-request options later.
-const model = genAI.getGenerativeModel({
-  model: MODEL_NAME,
-  generationConfig: {
-    temperature: 0.55,
-    maxOutputTokens: 4096,
-  },
-});
+const geminiClient = process.env.GEMINI_API_KEY
+  ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+  : null;
 
 function sleep(delayMs, signal) {
   return new Promise((resolve, reject) => {
@@ -34,27 +30,38 @@ function sleep(delayMs, signal) {
   });
 }
 
-function isBusyError(error) {
-  return error?.status === 429 || error?.status === 500 || error?.status === 503;
-}
-
 function isAbortError(error) {
   return error?.name === 'AbortError' || /aborted/i.test(error?.message || '');
 }
 
-/**
- * Wraps an API call with automatic retries for transient demand spikes.
- */
+function isBusyError(error) {
+  return error?.status === 429 || error?.status === 500 || error?.status === 503;
+}
+
+function isQuotaError(error) {
+  return error?.status === 429 || /quota|rate limit|too many requests/i.test(error?.message || '');
+}
+
+function stripCodeFences(text = '') {
+  return String(text).trim().replace(/```json|```html|```/gi, '').trim();
+}
+
+function parseJsonResponse(text) {
+  return JSON.parse(stripCodeFences(text));
+}
+
 async function withRetry(apiCall, options = {}) {
   const {
     maxRetries = 5,
     initialDelayMs = 2500,
     signal,
     label = 'generation',
+    provider = 'provider',
   } = options;
+
   let delay = initialDelayMs;
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
     try {
       return await apiCall();
     } catch (error) {
@@ -66,7 +73,7 @@ async function withRetry(apiCall, options = {}) {
         const jitter = Math.round(delay * (0.15 + Math.random() * 0.2));
         const waitTime = delay + jitter;
         console.warn(
-          `[Attempt ${attempt}/${maxRetries}] Gemini busy during ${label} (${error.status}). Retrying in ${waitTime}ms...`
+          `[Attempt ${attempt}/${maxRetries}] ${provider} busy during ${label} (${error.status}). Retrying in ${waitTime}ms...`
         );
         await sleep(waitTime, signal);
         delay *= 2;
@@ -77,8 +84,192 @@ async function withRetry(apiCall, options = {}) {
   }
 }
 
-async function generateStudyGuide(extractedText, requestOptions = {}) {
-  const prompt = `
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, options);
+  const bodyText = await response.text();
+  let bodyJson = null;
+
+  try {
+    bodyJson = bodyText ? JSON.parse(bodyText) : null;
+  } catch {
+    bodyJson = null;
+  }
+
+  if (!response.ok) {
+    const error = new Error(
+      bodyJson?.error?.message ||
+      bodyJson?.error ||
+      bodyJson?.message ||
+      bodyText ||
+      `Request failed with status ${response.status}`
+    );
+    error.status = response.status;
+    error.statusText = response.statusText;
+    error.body = bodyJson || bodyText;
+    throw error;
+  }
+
+  return bodyJson;
+}
+
+async function geminiGenerate(prompt, requestOptions = {}) {
+  if (!geminiClient) {
+    const error = new Error('Gemini API key is not configured.');
+    error.status = 500;
+    throw error;
+  }
+
+  const model = geminiClient.getGenerativeModel({
+    model: GEMINI_MODEL,
+    generationConfig: {
+      temperature: 0.55,
+      maxOutputTokens: 4096,
+    },
+  });
+
+  const result = await withRetry(
+    () => model.generateContent(prompt, { ...requestOptions, timeout: REQUEST_TIMEOUT_MS }),
+    { ...requestOptions, label: 'generation', provider: 'Gemini' }
+  );
+
+  return result.response.text();
+}
+
+async function groqGenerate(prompt, requestOptions = {}) {
+  if (!process.env.GROQ_API_KEY) {
+    const error = new Error('Groq API key is not configured.');
+    error.status = 500;
+    throw error;
+  }
+
+  const body = {
+    model: GROQ_MODEL,
+    temperature: 0.55,
+    max_tokens: 4096,
+    messages: [
+      {
+        role: 'system',
+        content: 'Follow the user instructions exactly and return only the requested output format.',
+      },
+      { role: 'user', content: prompt },
+    ],
+  };
+
+  const data = await withRetry(
+    () => fetchJson('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify(body),
+      signal: requestOptions.signal,
+    }),
+    { ...requestOptions, label: 'generation', provider: 'Groq' }
+  );
+
+  return data?.choices?.[0]?.message?.content || '';
+}
+
+async function openRouterGenerate(prompt, requestOptions = {}) {
+  if (!process.env.OPENROUTER_API_KEY) {
+    const error = new Error('OpenRouter API key is not configured.');
+    error.status = 500;
+    throw error;
+  }
+
+  const body = {
+    model: OPENROUTER_MODEL,
+    temperature: 0.55,
+    max_tokens: 4096,
+    messages: [
+      {
+        role: 'system',
+        content: 'Follow the user instructions exactly and return only the requested output format.',
+      },
+      { role: 'user', content: prompt },
+    ],
+  };
+
+  const data = await withRetry(
+    () => fetchJson('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'HTTP-Referer': process.env.APP_URL || 'https://sharp-study.onrender.com',
+        'X-Title': 'Sharp Study',
+      },
+      body: JSON.stringify(body),
+      signal: requestOptions.signal,
+    }),
+    { ...requestOptions, label: 'generation', provider: 'OpenRouter' }
+  );
+
+  return data?.choices?.[0]?.message?.content || '';
+}
+
+function getProviders() {
+  return [
+    {
+      name: 'Gemini',
+      enabled: Boolean(process.env.GEMINI_API_KEY),
+      run: geminiGenerate,
+    },
+    {
+      name: 'Groq',
+      enabled: Boolean(process.env.GROQ_API_KEY),
+      run: groqGenerate,
+    },
+    {
+      name: 'OpenRouter',
+      enabled: Boolean(process.env.OPENROUTER_API_KEY),
+      run: openRouterGenerate,
+    },
+  ].filter((provider) => provider.enabled);
+}
+
+async function generateWithFallback(prompt, requestOptions = {}, label = 'generation') {
+  const providers = getProviders();
+  if (!providers.length) {
+    throw new Error('No AI providers are configured. Add at least one API key.');
+  }
+
+  let lastError = null;
+
+  for (const provider of providers) {
+    try {
+      console.info(`[AI Provider] Trying ${provider.name} for ${label}`);
+      const content = await provider.run(prompt, requestOptions);
+      if (!content || !String(content).trim()) {
+        throw new Error(`${provider.name} returned an empty response.`);
+      }
+      console.info(`[AI Provider] ${provider.name} succeeded for ${label}`);
+      return content;
+    } catch (error) {
+      lastError = error;
+      console.warn(`[AI Provider] ${provider.name} failed for ${label}: ${error.message}`);
+
+      if (isAbortError(error) || requestOptions.signal?.aborted) {
+        throw error;
+      }
+
+      const hasMoreProviders = providers[providers.length - 1] !== provider;
+      if (!hasMoreProviders) {
+        throw error;
+      }
+
+      if (!isQuotaError(error) && !isBusyError(error)) {
+        console.warn(`[AI Provider] Falling through to next provider after non-quota failure from ${provider.name}.`);
+      }
+    }
+  }
+
+  throw lastError || new Error('All AI providers failed.');
+}
+
+function buildStudyGuidePrompt(extractedText) {
+  return `
 You are an accessibility-focused study coach for students with ADHD and Dyslexia.
 Turn the lesson text into a clean, fast study guide that feels easy to review.
 The HTML will be rendered directly in a study-guide reader with a heading-based sidebar, so the structure must be accurate and useful for navigation.
@@ -130,15 +321,10 @@ Lesson text:
 ${extractedText.substring(0, 14000)}
 """
   `;
-  const result = await withRetry(
-    () => model.generateContent(prompt, { ...requestOptions, timeout: REQUEST_TIMEOUT_MS }),
-    { ...requestOptions, label: 'study guide generation' }
-  );
-  return result.response.text();
 }
 
-async function generateDiscussionQuestions(extractedText, requestOptions = {}) {
-  const prompt = `
+function buildDiscussionPrompt(extractedText) {
+  return `
 Create 5 to 6 discussion questions with direct short answers based only on the lesson text below.
 Respond ONLY with a valid JSON array. No markdown, no explanation.
 Format:
@@ -162,16 +348,10 @@ Lesson text:
 ${extractedText.substring(0, 7000)}
 """
   `;
-  const result = await withRetry(
-    () => model.generateContent(prompt, { ...requestOptions, timeout: REQUEST_TIMEOUT_MS }),
-    { ...requestOptions, label: 'discussion question generation' }
-  );
-  const raw = result.response.text().trim().replace(/```json|```/g, '').trim();
-  return JSON.parse(raw);
 }
 
-async function generateFlashcards(extractedText, requestOptions = {}) {
-  const prompt = `
+function buildFlashcardsPrompt(extractedText) {
+  return `
 Create 10 flashcards from the text below.
 Respond ONLY with a valid JSON array, no markdown, no explanation.
 Format: [{ "front": "Question?", "back": "Short answer" }]
@@ -181,16 +361,10 @@ Text:
 ${extractedText.substring(0, 6000)}
 """
   `;
-  const result = await withRetry(
-    () => model.generateContent(prompt, { ...requestOptions, timeout: REQUEST_TIMEOUT_MS }),
-    { ...requestOptions, label: 'flashcard generation' }
-  );
-  const raw = result.response.text().trim().replace(/```json|```/g, '').trim();
-  return JSON.parse(raw);
 }
 
-async function generateQuiz(extractedText, requestOptions = {}) {
-  const prompt = `
+function buildQuizPrompt(extractedText) {
+  return `
 Create 10 multiple-choice quiz questions from the text.
 Respond ONLY with a valid JSON array. No markdown, no explanation.
 Format:
@@ -205,12 +379,30 @@ Text:
 ${extractedText.substring(0, 6000)}
 """
   `;
-  const result = await withRetry(
-    () => model.generateContent(prompt, { ...requestOptions, timeout: REQUEST_TIMEOUT_MS }),
-    { ...requestOptions, label: 'quiz generation' }
-  );
-  const raw = result.response.text().trim().replace(/```json|```/g, '').trim();
-  return JSON.parse(raw);
 }
 
-module.exports = { generateStudyGuide, generateDiscussionQuestions, generateFlashcards, generateQuiz };
+async function generateStudyGuide(extractedText, requestOptions = {}) {
+  return generateWithFallback(buildStudyGuidePrompt(extractedText), requestOptions, 'study guide generation');
+}
+
+async function generateDiscussionQuestions(extractedText, requestOptions = {}) {
+  const raw = await generateWithFallback(buildDiscussionPrompt(extractedText), requestOptions, 'discussion question generation');
+  return parseJsonResponse(raw);
+}
+
+async function generateFlashcards(extractedText, requestOptions = {}) {
+  const raw = await generateWithFallback(buildFlashcardsPrompt(extractedText), requestOptions, 'flashcard generation');
+  return parseJsonResponse(raw);
+}
+
+async function generateQuiz(extractedText, requestOptions = {}) {
+  const raw = await generateWithFallback(buildQuizPrompt(extractedText), requestOptions, 'quiz generation');
+  return parseJsonResponse(raw);
+}
+
+module.exports = {
+  generateStudyGuide,
+  generateDiscussionQuestions,
+  generateFlashcards,
+  generateQuiz,
+};
