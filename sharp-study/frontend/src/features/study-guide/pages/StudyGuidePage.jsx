@@ -168,8 +168,8 @@ export default function StudyGuidePage() {
     [sections, lessonText, guide?.document?.title, guide?.title]
   );
   const discussionQuestions = useMemo(
-    () => buildDiscussionQuestions(sections, lessonText, guide?.document?.title || guide?.title),
-    [sections, lessonText, guide?.document?.title, guide?.title]
+    () => buildDiscussionQuestions(sections, lessonText, guide?.document?.title || guide?.title, deferredContent),
+    [sections, lessonText, guide?.document?.title, guide?.title, deferredContent]
   );
 
   const renderedHtml = useMemo(() => {

@@ -3,7 +3,7 @@ const { PDFParse } = require('pdf-parse'); // Correctly import the v2 class
 const mammoth = require('mammoth');
 const AdmZip = require('adm-zip');
 const { supabaseAdmin } = require('../../config/supabase');
-const { generateStudyGuide, generateFlashcards, generateQuiz } = require('./ai.service');
+const { generateStudyGuide, generateDiscussionQuestions, generateFlashcards, generateQuiz } = require('./ai.service');
 const { invalidateDashboardCache } = require('../dashboard/dashboard.cache');
 
 // Multer - store file in memory (not disk), max 150MB, whitelist types
@@ -66,6 +66,28 @@ function resolveUploadKind(file) {
   }
 
   return extension || 'unknown';
+}
+
+function normalizeGeneratedDiscussionQuestions(items = []) {
+  return items
+    .map((item, index) => {
+      const question = String(item?.question || '').replace(/\s+/g, ' ').trim();
+      const answer = String(item?.answer || '').replace(/\s+/g, ' ').trim();
+      if (!question || !answer) return null;
+
+      return {
+        id: item?.id || `dq-ai-${index + 1}`,
+        question: question.endsWith('?') ? question : `${question}?`,
+        answer,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
+function serializeStudyGuideContent(html, metadata = {}) {
+  const compactMetadata = JSON.stringify(metadata);
+  return `<!--SHARP_STUDY_META:${compactMetadata}-->\n${String(html || '').trim()}`.trim();
 }
 
 function extractPptxText(buffer) {
@@ -223,11 +245,23 @@ const generateMaterials = [
       if (generateOptions.includes('study_guide')) {
         generators.push(async () => {
           const content = await generateStudyGuide(cleanedExtractedText, requestOptions);
+          let discussionQuestions = [];
+
+          try {
+            const generatedQuestions = await generateDiscussionQuestions(cleanedExtractedText, requestOptions);
+            discussionQuestions = normalizeGeneratedDiscussionQuestions(generatedQuestions);
+          } catch (discussionError) {
+            console.warn('Discussion question generation fell back to client builder:', discussionError?.message || discussionError);
+          }
+
+          const serializedContent = serializeStudyGuideContent(content, {
+            discussionQuestions,
+          });
           const { data: studyGuide, error: studyGuideError } = await supabaseAdmin.from('study_guides').insert({
             user_id: userId,
             document_id: doc.id,
             title: `Study Guide: ${docTitle}`,
-            content,
+            content: serializedContent,
           }).select('id, title').single();
 
           if (studyGuideError) throw studyGuideError;

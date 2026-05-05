@@ -1,4 +1,5 @@
 const HEADING_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
+const STUDY_GUIDE_META_PATTERN = /^\s*<!--SHARP_STUDY_META:([\s\S]*?)-->\s*/i;
 
 const QUICK_REFERENCE_GROUPS = [
   { id: 'key-terms', label: 'Key Terms and Concepts', pattern: /term|concept|definition|vocabulary|glossary|idea/i },
@@ -145,10 +146,35 @@ function looksLikeHtml(content) {
   return /<\/?[a-z][\s\S]*>/i.test(content);
 }
 
+export function extractStudyGuidePayload(rawContent) {
+  const raw = String(rawContent || '');
+  const match = raw.match(STUDY_GUIDE_META_PATTERN);
+
+  if (!match) {
+    return {
+      html: raw.trim(),
+      metadata: {},
+    };
+  }
+
+  let metadata = {};
+  try {
+    metadata = JSON.parse(match[1]);
+  } catch {
+    metadata = {};
+  }
+
+  return {
+    html: raw.replace(STUDY_GUIDE_META_PATTERN, '').trim(),
+    metadata,
+  };
+}
+
 export function normalizeStudyGuideHtml(rawContent) {
   if (!rawContent) return '';
 
-  const content = String(rawContent).trim();
+  const { html } = extractStudyGuidePayload(rawContent);
+  const content = String(html).trim();
   if (!content) return '';
 
   return looksLikeHtml(content) ? content : markdownToHtml(content);
@@ -450,6 +476,93 @@ function buildFallbackSectionTitle(section, sourceText = '') {
   return '';
 }
 
+function cleanSectionTitle(title = '') {
+  return String(title).replace(/\s+/g, ' ').trim();
+}
+
+function isUtilitySection(title = '') {
+  return /discussion questions|self[- ]?check|reflection|review questions?|quick reference/i.test(title);
+}
+
+function pickBestSectionDetail(section, sourceText = '') {
+  const structured = extractReferenceEntries(section);
+  const inferredEntries = inferEntriesFromSource(section, sourceText);
+  const entries = [
+    ...(structured.entries || []),
+    ...(section.snippets || []),
+    ...inferredEntries,
+  ]
+    .map((entry) => entry?.replace(/\s+/g, ' ').trim())
+    .filter((entry) => entry && !isQuestionLike(entry) && entry.toLowerCase() !== (section.title || '').toLowerCase());
+
+  const uniqueEntries = Array.from(new Set(entries)).slice(0, 2);
+  if (uniqueEntries.length >= 2) {
+    return `${toAnswerSentence(uniqueEntries[0])} ${toAnswerSentence(uniqueEntries[1])}`;
+  }
+
+  if (uniqueEntries.length === 1) {
+    return toAnswerSentence(uniqueEntries[0]);
+  }
+
+  if (section.summary && !isQuestionLike(section.summary)) {
+    return toAnswerSentence(section.summary);
+  }
+
+  const fallbackSentence =
+    sentenceSplit(section.text).find((sentence) => !isQuestionLike(sentence)) ||
+    sentenceSplit(sourceText).find((sentence) => !isQuestionLike(sentence));
+
+  return fallbackSentence ? toAnswerSentence(fallbackSentence) : '';
+}
+
+function buildQuestionFromSection(section, lessonTopic = '') {
+  const title = cleanSectionTitle(section.title);
+  const topic = cleanSectionTitle(lessonTopic) || title;
+
+  if (/overview/i.test(title)) {
+    return `According to the lesson, what is ${topic} mainly about?`;
+  }
+
+  if (/key concepts?|terms?|concepts?/i.test(title)) {
+    return `According to the lesson, what key ideas are explained in ${topic}?`;
+  }
+
+  if (/example|application|case/i.test(title)) {
+    return `What example or application does the lesson give for ${topic}?`;
+  }
+
+  if (/process|steps|sequence|method|procedure|stages/i.test(title)) {
+    return `According to the lesson, what are the main steps or stages in ${title}?`;
+  }
+
+  if (/compare|comparison|contrast|difference/i.test(title)) {
+    return `According to the lesson, what comparison is made in ${title}?`;
+  }
+
+  if (/timeline|history|dates?|events?/i.test(title)) {
+    return `According to the lesson, what important dates or events appear in ${title}?`;
+  }
+
+  return `According to the lesson, what does ${title} explain?`;
+}
+
+function normalizeDiscussionQuestionItems(items = []) {
+  return items
+    .map((item, index) => {
+      const question = String(item?.question || '').replace(/\s+/g, ' ').trim();
+      const answer = String(item?.answer || '').replace(/\s+/g, ' ').trim();
+      if (!question || !answer || isQuestionLike(answer)) return null;
+
+      return {
+        id: item?.id || `dq-meta-${index + 1}`,
+        question,
+        answer: toAnswerSentence(answer),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
 export function buildQuickReferenceGroups(sections, sourceText = '', fallbackTitle = 'Study Guide') {
   const groups = QUICK_REFERENCE_GROUPS.map((group) => {
     const items = sections
@@ -512,7 +625,13 @@ export function buildQuickReferenceGroups(sections, sourceText = '', fallbackTit
   }];
 }
 
-export function buildDiscussionQuestions(sections, sourceText = '', fallbackTitle = 'this lesson') {
+export function buildDiscussionQuestions(sections, sourceText = '', fallbackTitle = 'this lesson', rawContent = '') {
+  const payload = extractStudyGuidePayload(rawContent);
+  const embeddedQuestions = normalizeDiscussionQuestionItems(payload.metadata?.discussionQuestions || []);
+  if (embeddedQuestions.length) {
+    return embeddedQuestions;
+  }
+
   const questionSection = sections.find((section) => /discussion questions|self[- ]?check|reflection|review questions?/i.test(section.title));
 
   if (questionSection) {
@@ -551,68 +670,38 @@ export function buildDiscussionQuestions(sections, sourceText = '', fallbackTitl
   }
 
   const topic = inferTopic(sections, fallbackTitle);
-  const focusSections = sections.filter((section) => section.title !== 'Overview').slice(0, 4);
-  const keywords = extractKeywords(sourceText, 3);
-  const keywordPhrase = keywords.length ? keywords.join(', ') : topic;
-  const firstSection = focusSections[0]?.title || topic;
-  const secondSection = focusSections[1]?.title || 'the next main section';
+  const focusSections = sections.filter((section) => !isUtilitySection(section.title));
+  const orderedSections = [
+    ...focusSections.filter((section) => /overview/i.test(section.title)),
+    ...focusSections.filter((section) => !/overview/i.test(section.title)),
+  ]
+    .filter((section, index, array) => array.findIndex((item) => item.id === section.id) === index)
+    .slice(0, 6);
 
-  return [
-    {
-      id: 'dq-1',
-      question: `How would you explain ${topic} to a classmate using ideas from ${firstSection}?`,
-      answer: buildActualAnswer(
-        `How would you explain ${topic} to a classmate using ideas from ${firstSection}?`,
-        selectBestSectionForQuestion(firstSection, focusSections) || focusSections[0],
-        sourceText
-      ),
-    },
-    {
-      id: 'dq-2',
-      question: `Which lesson details about ${keywordPhrase} feel most important to remember later?`,
-      answer: buildActualAnswer(
-        `Which lesson details about ${keywordPhrase} feel most important to remember later?`,
-        selectBestSectionForQuestion(keywordPhrase, focusSections) || focusSections[0],
-        sourceText
-      ),
-    },
-    {
-      id: 'dq-3',
-      question: `What example from real life would make ${topic} easier to understand?`,
-      answer: buildActualAnswer(
-        `What example from real life would make ${topic} easier to understand?`,
-        selectBestSectionForQuestion('example application case', focusSections) || focusSections[0],
-        sourceText
-      ),
-    },
-    {
-      id: 'dq-4',
-      question: `How does ${firstSection} connect with ${secondSection}?`,
-      answer: buildActualAnswer(
-        `How does ${firstSection} connect with ${secondSection}?`,
-        selectBestSectionForQuestion(`${firstSection} ${secondSection}`, focusSections) || focusSections[0],
-        sourceText
-      ),
-    },
-    {
-      id: 'dq-5',
-      question: `What is one question you would still ask after reading this lesson?`,
-      answer: buildActualAnswer(
-        `What is one question you would still ask after reading this lesson?`,
-        focusSections[focusSections.length - 1] || focusSections[0],
-        sourceText
-      ),
-    },
-    {
-      id: 'dq-6',
-      question: `Which details would you place in a quick review sheet before a quiz on ${topic}?`,
-      answer: buildActualAnswer(
-        `Which details would you place in a quick review sheet before a quiz on ${topic}?`,
-        selectBestSectionForQuestion(topic, focusSections) || focusSections[0],
-        sourceText
-      ),
-    },
-  ];
+  const generatedQuestions = orderedSections
+    .map((section, index) => {
+      const answer = pickBestSectionDetail(section, sourceText);
+      if (!answer) return null;
+
+      return {
+        id: `dq-fallback-${index}`,
+        question: buildQuestionFromSection(section, topic),
+        answer,
+      };
+    })
+    .filter(Boolean);
+
+  if (generatedQuestions.length) {
+    return generatedQuestions;
+  }
+
+  return [{
+    id: 'dq-fallback-0',
+    question: `According to the lesson, what is the main idea of ${topic}?`,
+    answer: sentenceSplit(sourceText).find((sentence) => !isQuestionLike(sentence))
+      ? toAnswerSentence(sentenceSplit(sourceText).find((sentence) => !isQuestionLike(sentence)))
+      : 'Review the main lesson text for the clearest explanation.',
+  }];
 }
 
 export function createInstructionalStudyGuideTemplate() {

@@ -3,21 +3,23 @@ import { ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
 
 export default function DiscussionQuestions({ questions = [] }) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [showAnswer, setShowAnswer] = useState(false);
+  const [revealedQuestionId, setRevealedQuestionId] = useState(null);
 
   const safeQuestions = useMemo(() => questions.filter(Boolean), [questions]);
 
   if (!safeQuestions.length) return null;
 
-  const question = safeQuestions[currentIndex];
+  const normalizedIndex = Math.min(currentIndex, safeQuestions.length - 1);
+  const question = safeQuestions[normalizedIndex];
+  const showAnswer = revealedQuestionId === (question.id || normalizedIndex);
 
   const prev = () => {
-    setShowAnswer(false);
+    setRevealedQuestionId(null);
     setCurrentIndex((index) => (index - 1 + safeQuestions.length) % safeQuestions.length);
   };
 
   const next = () => {
-    setShowAnswer(false);
+    setRevealedQuestionId(null);
     setCurrentIndex((index) => (index + 1) % safeQuestions.length);
   };
 
@@ -27,9 +29,12 @@ export default function DiscussionQuestions({ questions = [] }) {
         <div>
           <p className="text-xs font-black uppercase tracking-[0.25em] text-[color:var(--color-text-muted)]">Study support</p>
           <h2 className="mt-2 text-2xl font-black text-[color:var(--color-text)]">Discussion questions</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--color-text-muted)]">
+            AI helped draft this study guide. Double-check important answers with the lesson because AI can still make mistakes sometimes.
+          </p>
         </div>
         <div className="flex items-center gap-2 text-sm font-bold text-[color:var(--color-text-muted)]">
-          <span>{currentIndex + 1} of {safeQuestions.length}</span>
+          <span>{normalizedIndex + 1} of {safeQuestions.length}</span>
         </div>
       </div>
 
@@ -37,7 +42,7 @@ export default function DiscussionQuestions({ questions = [] }) {
         <p className="text-xl font-medium leading-relaxed text-[color:var(--color-text)]">
           {question.question}
         </p>
-        <div className="relative overflow-hidden rounded-[1.75rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-5 pb-20">
+        <div key={question.id || currentIndex} className="relative overflow-hidden rounded-[1.75rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-5 pb-20">
           <div className={`transition-all duration-300 ${showAnswer ? 'blur-0 opacity-100' : 'blur-md opacity-85 select-none'}`}>
             <p className="leading-7 text-[color:var(--color-text)]">
               {question.answer}
@@ -46,7 +51,9 @@ export default function DiscussionQuestions({ questions = [] }) {
 
           <button
             type="button"
-            onClick={() => setShowAnswer((value) => !value)}
+            onClick={() => setRevealedQuestionId((current) => (
+              current === (question.id || normalizedIndex) ? null : (question.id || normalizedIndex)
+            ))}
             className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-[color:var(--color-surface)] px-4 py-2 text-sm font-bold text-[color:var(--color-text)] shadow-sm transition hover:-translate-y-0.5"
           >
             {showAnswer ? <EyeOff size={16} /> : <Eye size={16} />}

@@ -130,6 +130,39 @@ ${extractedText.substring(0, 8000)}
   return result.response.text();
 }
 
+async function generateDiscussionQuestions(extractedText, requestOptions = {}) {
+  const prompt = `
+Create 5 to 6 discussion questions with direct short answers based only on the lesson text below.
+Respond ONLY with a valid JSON array. No markdown, no explanation.
+Format:
+[
+  {
+    "question": "Question ending with a question mark?",
+    "answer": "A short direct answer grounded in the lesson."
+  }
+]
+
+Rules:
+- Every question must clearly come from the lesson content, not from generic studying advice.
+- Every answer must directly answer the question.
+- Do not repeat the question inside the answer.
+- Do not use placeholders like "review the lesson" or "explain in your own words".
+- Do not invent facts that are not supported by the lesson text.
+- Keep each answer to 1 to 3 sentences.
+
+Lesson text:
+"""
+${extractedText.substring(0, 7000)}
+"""
+  `;
+  const result = await withRetry(
+    () => model.generateContent(prompt, { ...requestOptions, timeout: REQUEST_TIMEOUT_MS }),
+    { ...requestOptions, label: 'discussion question generation' }
+  );
+  const raw = result.response.text().trim().replace(/```json|```/g, '').trim();
+  return JSON.parse(raw);
+}
+
 async function generateFlashcards(extractedText, requestOptions = {}) {
   const prompt = `
 Create 10 flashcards from the text below.
@@ -173,4 +206,4 @@ ${extractedText.substring(0, 6000)}
   return JSON.parse(raw);
 }
 
-module.exports = { generateStudyGuide, generateFlashcards, generateQuiz };
+module.exports = { generateStudyGuide, generateDiscussionQuestions, generateFlashcards, generateQuiz };
