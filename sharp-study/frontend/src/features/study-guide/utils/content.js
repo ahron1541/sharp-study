@@ -334,6 +334,13 @@ function sentenceSplit(sourceText = '') {
     .filter((sentence) => sentence.length >= 24);
 }
 
+function isQuestionLike(text = '') {
+  const clean = String(text).replace(/\s+/g, ' ').trim();
+  if (!clean) return false;
+  if (clean.includes('?')) return true;
+  return /^(how|what|why|when|where|which|who|is|are|can|could|should|would|do|does|did)\b/i.test(clean);
+}
+
 function titleKeywords(title = '') {
   return String(title)
     .toLowerCase()
@@ -342,7 +349,7 @@ function titleKeywords(title = '') {
 
 function inferEntriesFromSource(section, sourceText = '') {
   const keywords = titleKeywords(section.title);
-  const sentences = sentenceSplit(sourceText);
+  const sentences = sentenceSplit(sourceText).filter((sentence) => !isQuestionLike(sentence));
 
   if (!sentences.length) return [];
 
@@ -358,6 +365,74 @@ function inferEntriesFromSource(section, sourceText = '') {
     .map((item) => item.sentence);
 
   return ranked;
+}
+
+function keywordList(text = '') {
+  return String(text)
+    .toLowerCase()
+    .match(/[a-z][a-z-]{2,}/g)?.filter((word) => !STOP_WORDS.has(word)) || [];
+}
+
+function selectBestSectionForQuestion(question, sections) {
+  const questionKeywords = keywordList(question);
+  const candidates = sections.filter((section) => section.title && section.text);
+
+  if (!candidates.length) return null;
+
+  const ranked = candidates
+    .map((section) => {
+      const haystack = `${section.title} ${section.text}`.toLowerCase();
+      const score = questionKeywords.reduce((sum, keyword) => sum + (haystack.includes(keyword) ? 1 : 0), 0);
+      return { section, score };
+    })
+    .sort((a, b) => b.score - a.score || (b.section.text?.length || 0) - (a.section.text?.length || 0));
+
+  return ranked[0]?.section || candidates[0];
+}
+
+function toAnswerSentence(text = '') {
+  const clean = String(text).replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  return /[.!?]$/.test(clean) ? clean : `${clean}.`;
+}
+
+function buildActualAnswer(question, section, sourceText = '') {
+  if (!section) {
+    const fallbackSentence = sentenceSplit(sourceText).find((sentence) => !isQuestionLike(sentence));
+    return fallbackSentence ? toAnswerSentence(fallbackSentence) : 'No direct answer could be inferred from the lesson.';
+  }
+
+  const supportingEntries = [
+    ...(section.snippets || []),
+    ...inferEntriesFromSource(section, sourceText),
+  ]
+    .map((entry) => entry?.replace(/\s+/g, ' ').trim())
+    .filter((entry) => entry && !isQuestionLike(entry));
+
+  const uniqueEntries = Array.from(new Set(supportingEntries))
+    .filter((entry) => entry.toLowerCase() !== section.title.toLowerCase())
+    .slice(0, 2);
+
+  if (uniqueEntries.length >= 2) {
+    return `${toAnswerSentence(uniqueEntries[0])} ${toAnswerSentence(uniqueEntries[1])}`;
+  }
+
+  if (uniqueEntries.length === 1) {
+    const detail = uniqueEntries[0];
+    if (section.title && !detail.toLowerCase().includes(section.title.toLowerCase())) {
+      return `${section.title}: ${toAnswerSentence(detail)}`;
+    }
+    return toAnswerSentence(detail);
+  }
+
+  if (section.summary) {
+    return toAnswerSentence(section.summary);
+  }
+
+  const fallbackSentence =
+    sentenceSplit(section.text).find((sentence) => !isQuestionLike(sentence)) ||
+    sentenceSplit(sourceText).find((sentence) => !isQuestionLike(sentence));
+  return fallbackSentence ? toAnswerSentence(fallbackSentence) : `Review ${section.title} for the direct explanation.`;
 }
 
 function buildFallbackSectionTitle(section, sourceText = '') {
@@ -449,14 +524,13 @@ export function buildDiscussionQuestions(sections, sourceText = '', fallbackTitl
       return questionMatches.slice(0, 6).map((question, index) => ({
         id: `dq-${index}`,
         question,
-        answer: `Revisit the related section and explain the idea in your own words.`,
+        answer: buildActualAnswer(question, selectBestSectionForQuestion(question, sections), sourceText),
       }));
     }
   }
 
   const topic = inferTopic(sections, fallbackTitle);
   const focusSections = sections.filter((section) => section.title !== 'Overview').slice(0, 4);
-  const summary = focusSections[0]?.summary || 'the main ideas from the guide';
   const keywords = extractKeywords(sourceText, 3);
   const keywordPhrase = keywords.length ? keywords.join(', ') : topic;
   const firstSection = focusSections[0]?.title || topic;
@@ -466,32 +540,56 @@ export function buildDiscussionQuestions(sections, sourceText = '', fallbackTitl
     {
       id: 'dq-1',
       question: `How would you explain ${topic} to a classmate using ideas from ${firstSection}?`,
-      answer: `Start with the main idea, then connect it to one concrete detail from ${summary}.`,
+      answer: buildActualAnswer(
+        `How would you explain ${topic} to a classmate using ideas from ${firstSection}?`,
+        selectBestSectionForQuestion(firstSection, focusSections) || focusSections[0],
+        sourceText
+      ),
     },
     {
       id: 'dq-2',
       question: `Which lesson details about ${keywordPhrase} feel most important to remember later?`,
-      answer: `Choose the terms, facts, or examples that appear most often and explain why they matter.`,
+      answer: buildActualAnswer(
+        `Which lesson details about ${keywordPhrase} feel most important to remember later?`,
+        selectBestSectionForQuestion(keywordPhrase, focusSections) || focusSections[0],
+        sourceText
+      ),
     },
     {
       id: 'dq-3',
       question: `What example from real life would make ${topic} easier to understand?`,
-      answer: `Use a school, community, work, or daily-life situation that matches the lesson.`,
+      answer: buildActualAnswer(
+        `What example from real life would make ${topic} easier to understand?`,
+        selectBestSectionForQuestion('example application case', focusSections) || focusSections[0],
+        sourceText
+      ),
     },
     {
       id: 'dq-4',
       question: `How does ${firstSection} connect with ${secondSection}?`,
-      answer: `Look for cause-and-effect, comparison, sequence, or shared vocabulary between both sections.`,
+      answer: buildActualAnswer(
+        `How does ${firstSection} connect with ${secondSection}?`,
+        selectBestSectionForQuestion(`${firstSection} ${secondSection}`, focusSections) || focusSections[0],
+        sourceText
+      ),
     },
     {
       id: 'dq-5',
       question: `What is one question you would still ask after reading this lesson?`,
-      answer: `Turn one confusing point into a short study question, then revisit the heading where it appears.`,
+      answer: buildActualAnswer(
+        `What is one question you would still ask after reading this lesson?`,
+        focusSections[focusSections.length - 1] || focusSections[0],
+        sourceText
+      ),
     },
     {
       id: 'dq-6',
       question: `Which details would you place in a quick review sheet before a quiz on ${topic}?`,
-      answer: `Keep only the shortest definitions, repeated ideas, and high-value facts from the lesson.`,
+      answer: buildActualAnswer(
+        `Which details would you place in a quick review sheet before a quiz on ${topic}?`,
+        selectBestSectionForQuestion(topic, focusSections) || focusSections[0],
+        sourceText
+      ),
     },
   ];
 }
