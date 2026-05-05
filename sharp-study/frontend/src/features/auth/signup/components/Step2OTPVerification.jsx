@@ -21,6 +21,8 @@ export default function Step2OTPVerification({ email, onBack, onVerified, onBoot
     verifying,
     cooldown,
     error,
+    previewOtp,
+    deliveryMode,
     sendOTP,
     verifyOTP,
   } = useOTP(requestSignupOTP, verifySignupOTP, email);
@@ -73,6 +75,21 @@ export default function Step2OTPVerification({ email, onBack, onVerified, onBoot
               >
                 <span className={styles.inlineSpinner} aria-hidden="true" />
                 {t('sendingHint')}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {previewOtp && deliveryMode === 'preview' && (
+              <motion.div
+                className={styles.previewCard}
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+              >
+                <span className={styles.previewLabel}>{t('previewLabel')}</span>
+                <strong className={styles.previewCode}>{previewOtp}</strong>
+                <span className={styles.previewHint}>{t('previewHint')}</span>
               </motion.div>
             )}
           </AnimatePresence>

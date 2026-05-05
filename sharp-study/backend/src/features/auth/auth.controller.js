@@ -18,6 +18,7 @@ const emailProvider = String(
 const otpExpiryMinutes = Number(process.env.OTP_EXPIRY_MINUTES || 10);
 const signupTokenTtlMinutes = Number(process.env.SIGNUP_TOKEN_TTL_MINUTES || 20);
 const resetTokenTtlMinutes = Number(process.env.RESET_TOKEN_TTL_MINUTES || 20);
+const allowOtpPreview = String(process.env.ALLOW_OTP_PREVIEW || 'false').toLowerCase() === 'true';
 const signupTokenSecret = process.env.SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const usernamePattern = /^[a-z0-9_.-]{3,20}$/;
 const namePattern = /^[A-Za-z][A-Za-z' -]{0,48}$/;
@@ -310,6 +311,13 @@ function mapEmailProviderError(error, provider) {
   return 'Email delivery is not configured.';
 }
 
+function canUseOtpPreview(req) {
+  if (!allowOtpPreview) return false;
+  const origin = String(req.headers.origin || '');
+  const referer = String(req.headers.referer || '');
+  return origin.startsWith('http://localhost:') || referer.startsWith('http://localhost:');
+}
+
 async function sendAuthEmail({ to, subject, html, text }) {
   if (emailProvider === 'log') {
     console.info(`[Auth Email] Email provider is set to log. OTP email to ${to} was not sent.`);
@@ -394,9 +402,32 @@ exports.requestSignupOtp = async (req, res) => {
     res.status(200).json({
       message: 'OTP sent successfully',
       expires_in_seconds: otpExpiryMinutes * 60,
+      delivery: 'email',
     });
   } catch (error) {
     console.error('OTP Request Error:', error);
+    if (canUseOtpPreview(req) && req.body?.email) {
+      const fallbackEmail = normalizeIdentifier(req.body.email);
+      const plainOtp = generateOTP();
+      const hashedOtp = await bcrypt.hash(plainOtp, 10);
+      const expiresAt = new Date(Date.now() + otpExpiryMinutes * 60000);
+
+      await replaceOtpCode({
+        email: fallbackEmail,
+        code: hashedOtp,
+        purpose: 'signup',
+        expiresAt,
+        ipAddress: req.ip,
+      });
+
+      return res.status(200).json({
+        message: 'OTP preview generated for local demo mode.',
+        expires_in_seconds: otpExpiryMinutes * 60,
+        delivery: 'preview',
+        preview_otp: plainOtp,
+      });
+    }
+
     if (req.body?.email) {
       await supabase.from('otp_codes').delete().eq('email', normalizeIdentifier(req.body.email)).eq('purpose', 'signup');
     }
@@ -626,9 +657,32 @@ exports.requestPasswordReset = async (req, res) => {
       text: `Your Sharp Study password reset code is ${plainOtp}. It expires in ${otpExpiryMinutes} minutes.`,
     });
 
-    res.status(200).json({ message: 'Reset OTP sent successfully' });
+    res.status(200).json({ message: 'Reset OTP sent successfully', delivery: 'email' });
   } catch (error) {
     console.error('Password Reset OTP Error:', error);
+    if (canUseOtpPreview(req) && (req.body?.identifier || req.body?.email)) {
+      const { data: user } = await getProfileByIdentifier(req.body.identifier || req.body.email, 'email');
+      if (user?.email) {
+        const plainOtp = generateOTP();
+        const hashedOtp = await bcrypt.hash(plainOtp, 10);
+        const expiresAt = new Date(Date.now() + otpExpiryMinutes * 60000);
+
+        await replaceOtpCode({
+          email: user.email,
+          code: hashedOtp,
+          purpose: 'password_reset',
+          expiresAt,
+          ipAddress: req.ip,
+        });
+
+        return res.status(200).json({
+          message: 'OTP preview generated for local demo mode.',
+          delivery: 'preview',
+          preview_otp: plainOtp,
+        });
+      }
+    }
+
     if (req.body?.identifier || req.body?.email) {
       const { data: user } = await getProfileByIdentifier(req.body.identifier || req.body.email, 'email');
       if (user?.email) {

@@ -19,6 +19,8 @@ export function useOTP(requestFn, verifyFn, email, options = {}) {
   const [verifying,   setVerifying]   = useState(false);
   const [cooldown,    setCooldown]    = useState(0);
   const [error,       setError]       = useState('');
+  const [previewOtp,  setPreviewOtp]  = useState('');
+  const [deliveryMode, setDeliveryMode] = useState('email');
   const timerRef = useRef(null);
 
   // Countdown timer
@@ -38,13 +40,23 @@ export function useOTP(requestFn, verifyFn, email, options = {}) {
     setSending(true);
     setError('');
     try {
-      await requestFn(email);
+      const response = await requestFn(email);
       setOtpSent(true);
+      setPreviewOtp(response?.preview_otp || '');
+      setDeliveryMode(response?.delivery || 'email');
+      if (response?.preview_otp) {
+        setOtp(response.preview_otp);
+        toast.success(`Demo OTP ready: ${response.preview_otp}`);
+      }
       setCooldown(RESEND_COOLDOWN_SECONDS);
-      toast.success('Verification code sent! Check your email.');
-      return true;
+      if (!response?.preview_otp) {
+        toast.success('Verification code sent! Check your email.');
+      }
+      return response;
     } catch (err) {
       setError(err.message);
+      setPreviewOtp('');
+      setDeliveryMode('email');
       toast.error(err.message);
       return false;
     } finally {
@@ -76,6 +88,8 @@ export function useOTP(requestFn, verifyFn, email, options = {}) {
     setOtpSent(initialOtpSent);
     setOtpVerified(false);
     setError('');
+    setPreviewOtp('');
+    setDeliveryMode('email');
   };
 
   return {
@@ -83,6 +97,7 @@ export function useOTP(requestFn, verifyFn, email, options = {}) {
     otpSent, otpVerified,
     sending, verifying,
     cooldown, error, setError,
+    previewOtp, deliveryMode,
     sendOTP, verifyOTP, reset,
   };
 }

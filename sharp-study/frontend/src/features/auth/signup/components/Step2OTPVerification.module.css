@@ -68,6 +68,34 @@
   animation: spin 0.65s linear infinite;
 }
 
+.previewCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.10), rgba(67, 97, 238, 0.10));
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  text-align: center;
+}
+
+.previewLabel {
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+}
+
+.previewCode {
+  font-size: 1.35rem;
+  letter-spacing: 0.25rem;
+  color: #15803D;
+}
+
+.previewHint {
+  font-size: var(--font-size-xs);
+  color: var(--text-color);
+}
+
 .otpLabel {
   font-size: var(--font-size-sm);
   font-weight: 600;
