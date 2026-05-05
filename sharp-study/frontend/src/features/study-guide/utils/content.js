@@ -516,6 +516,27 @@ export function buildDiscussionQuestions(sections, sourceText = '', fallbackTitl
   const questionSection = sections.find((section) => /discussion questions|self[- ]?check|reflection|review questions?/i.test(section.title));
 
   if (questionSection) {
+    const doc = new DOMParser().parseFromString(`<div>${questionSection.html || ''}</div>`, 'text/html');
+    const headingPairs = Array.from(doc.querySelectorAll('h3')).map((heading, index) => {
+      const question = heading.textContent?.replace(/\s+/g, ' ').trim();
+      const answerNode = heading.nextElementSibling;
+      const answer = answerNode?.textContent?.replace(/\s+/g, ' ').trim() || '';
+
+      if (!question || !/\?$/.test(question) || !answer || isQuestionLike(answer)) {
+        return null;
+      }
+
+      return {
+        id: `dq-pair-${index}`,
+        question,
+        answer: toAnswerSentence(answer),
+      };
+    }).filter(Boolean);
+
+    if (headingPairs.length) {
+      return headingPairs.slice(0, 6);
+    }
+
     const questionMatches = questionSection.snippets
       .filter((item) => /\?/.test(item) || /^[A-Z]/.test(item))
       .map((item) => item.replace(/\s+/g, ' ').trim());

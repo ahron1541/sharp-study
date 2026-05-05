@@ -358,7 +358,19 @@ export default function LibraryPage() {
     } catch (generationError) {
       if (generationError.name !== 'AbortError') {
         setProgress({ value: 0, title: '', detail: '' });
-        toast.error(generationError.message || 'Generation failed.');
+        const message = generationError.message || 'Generation failed.';
+        toast.error(message);
+
+        if (/no readable text|small amount of readable text|legacy ppt|unsupported document format/i.test(message)) {
+          toast(() => (
+            <div className="space-y-1">
+              <p className="font-bold">We could not read enough text from that file.</p>
+              <p className="text-sm leading-6 text-text-muted">
+                Try exporting the slides again as a text-based PPTX or PDF, then re-upload the clearer version.
+              </p>
+            </div>
+          ), { id: 'file-readability-help', duration: 5200 });
+        }
       }
     } finally {
       timers.forEach((timer) => window.clearTimeout(timer));

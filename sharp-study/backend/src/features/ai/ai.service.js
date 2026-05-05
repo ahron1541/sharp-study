@@ -110,7 +110,11 @@ Output rules:
 - If the lesson naturally fits a table, use a simple accessible table with short headers and short cells.
 - Do not force sections that do not fit the lesson. Only include the most useful quick-reference groups for this topic.
 - Make the main study guide read like a reviewer: clear overview, short explanations, strong organization, and study-friendly wording.
-- Put 5 to 7 discussion questions at the bottom.
+- In <h2>Discussion Questions</h2>, write 5 to 7 question-and-answer pairs based only on the lesson text.
+- Format each pair as:
+  <h3>Question text ending in ?</h3>
+  <p>Short direct answer grounded in the lesson.</p>
+- The answer must answer the question directly. Do not reply with another question, a prompt, or advice like "review the lesson."
 - Prefer factual, study-friendly phrasing over filler prose.
 - Keep the total output under 900 words.
 

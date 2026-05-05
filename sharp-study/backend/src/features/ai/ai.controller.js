@@ -37,6 +37,37 @@ function decodeXmlEntities(text) {
     .replace(/&#10;/g, '\n');
 }
 
+function getFileExtension(fileName = '') {
+  const cleanName = String(fileName).trim().toLowerCase();
+  const match = cleanName.match(/\.([a-z0-9]+)$/i);
+  return match ? match[1] : '';
+}
+
+function looksLikeZipBuffer(buffer) {
+  return Buffer.isBuffer(buffer)
+    && buffer.length >= 4
+    && buffer[0] === 0x50
+    && buffer[1] === 0x4b
+    && buffer[2] === 0x03
+    && buffer[3] === 0x04;
+}
+
+function resolveUploadKind(file) {
+  const mime = String(file?.mimetype || '').toLowerCase();
+  const extension = getFileExtension(file?.originalname);
+
+  if (mime === 'application/pdf' || extension === 'pdf') return 'pdf';
+  if (mime === 'text/plain' || extension === 'txt') return 'txt';
+  if (mime.includes('wordprocessingml') || extension === 'docx') return 'docx';
+  if (mime.includes('presentationml') || extension === 'pptx') return 'pptx';
+
+  if (mime === 'application/vnd.ms-powerpoint') {
+    return looksLikeZipBuffer(file?.buffer) || extension === 'pptx' ? 'pptx' : 'ppt';
+  }
+
+  return extension || 'unknown';
+}
+
 function extractPptxText(buffer) {
   const zip = new AdmZip(buffer);
   const slideEntries = zip
@@ -64,7 +95,9 @@ function extractPptxText(buffer) {
 }
 
 async function extractText(file) {
-  if (file.mimetype === 'application/pdf') {
+  const uploadKind = resolveUploadKind(file);
+
+  if (uploadKind === 'pdf') {
     try {
       // Use the new v2 API structure
       const parser = new PDFParse({ data: file.buffer });
@@ -82,16 +115,16 @@ async function extractText(file) {
     }
   }
   
-  if (file.mimetype.includes('wordprocessingml')) {
+  if (uploadKind === 'docx') {
     const { value } = await mammoth.extractRawText({ buffer: file.buffer });
     return value;
   }
   
-  if (file.mimetype === 'text/plain') {
+  if (uploadKind === 'txt') {
     return file.buffer.toString('utf8');
   }
 
-  if (file.mimetype.includes('presentationml')) {
+  if (uploadKind === 'pptx') {
     try {
       return extractPptxText(file.buffer);
     } catch (err) {
@@ -100,7 +133,11 @@ async function extractText(file) {
     }
   }
 
-  throw new Error('Legacy PPT files are not supported yet. Please upload PPTX instead.');
+  if (uploadKind === 'ppt') {
+    throw new Error('Legacy PPT files are not supported yet. Please export or re-save the file as PPTX first.');
+  }
+
+  throw new Error('Unsupported document format. Please upload TXT, PDF, DOCX, or PPTX.');
 }
 
 const generateMaterials = [
@@ -142,19 +179,26 @@ const generateMaterials = [
       console.log('--- STARTING GENERATION PROCESS ---');
 
       const extractedText = await extractText(file);
-      if (!extractedText || extractedText.trim().length < 100) {
-        return res.status(422).json({ error: 'Could not extract enough text from this file.' });
+      const cleanedExtractedText = String(extractedText || '').replace(/\s+/g, ' ').trim();
+
+      if (!cleanedExtractedText) {
+        return res.status(422).json({
+          error: 'No readable text was found in this file. Please upload a text-based TXT, PDF, DOCX, or PPTX file with selectable text.',
+        });
+      }
+
+      if (cleanedExtractedText.length < 30) {
+        return res.status(422).json({
+          error: 'Only a very small amount of readable text was found in this file. Please upload a clearer file with more selectable text.',
+        });
       }
 
       userId = req.user.id;
       const docTitle = file.originalname.replace(/\.[^.]+$/, '');
-      const fileType = file.mimetype.includes('pdf') 
-        ? 'pdf' 
-        : file.mimetype.includes('word') 
-          ? 'docx' 
-          : file.mimetype.includes('presentationml') 
-            ? 'pptx' 
-            : null;
+      const resolvedType = resolveUploadKind(file);
+      const fileType = resolvedType === 'pdf' || resolvedType === 'docx' || resolvedType === 'pptx'
+        ? resolvedType
+        : null;
 
       const { data: doc, error: docError } = await supabaseAdmin
         .from('documents')
@@ -163,7 +207,7 @@ const generateMaterials = [
           title: docTitle,
           file_type: fileType,
           file_size_bytes: file.size,
-          extracted_text: extractedText.substring(0, 50000), 
+          extracted_text: cleanedExtractedText.substring(0, 50000),
           status: 'processing',
         })
         .select()
@@ -177,7 +221,7 @@ const generateMaterials = [
       const createdRecords = {};
       if (generateOptions.includes('study_guide')) {
         generators.push(async () => {
-          const content = await generateStudyGuide(extractedText, requestOptions);
+          const content = await generateStudyGuide(cleanedExtractedText, requestOptions);
           const { data: studyGuide, error: studyGuideError } = await supabaseAdmin.from('study_guides').insert({
             user_id: userId,
             document_id: doc.id,
@@ -192,7 +236,7 @@ const generateMaterials = [
 
       if (generateOptions.includes('flashcards')) {
         generators.push(async () => {
-          const cards = await generateFlashcards(extractedText, requestOptions);
+          const cards = await generateFlashcards(cleanedExtractedText, requestOptions);
           const { data: set } = await supabaseAdmin
             .from('flashcard_sets')
             .insert({ user_id: userId, document_id: doc.id, title: `Flashcards: ${docTitle}` })
@@ -211,7 +255,7 @@ const generateMaterials = [
 
       if (generateOptions.includes('quiz')) {
         generators.push(async () => {
-          const questions = await generateQuiz(extractedText, requestOptions);
+          const questions = await generateQuiz(cleanedExtractedText, requestOptions);
           const { data: quiz } = await supabaseAdmin
             .from('quizzes')
             .insert({ user_id: userId, document_id: doc.id, title: `Quiz: ${docTitle}` })
