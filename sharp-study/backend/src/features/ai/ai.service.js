@@ -1,30 +1,75 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-// Use v1 API and gemini-2.5-flash (the current free tier model)
-const model = genAI.getGenerativeModel({ 
-  model: 'gemini-2.5-flash',
+const MODEL_NAME = 'gemini-2.5-flash';
+const REQUEST_TIMEOUT_MS = 45000;
+
+// Keep a single shared model instance and pass per-request options later.
+const model = genAI.getGenerativeModel({
+  model: MODEL_NAME,
   generationConfig: {
     temperature: 0.7,
     maxOutputTokens: 2048,
-  }
+  },
 });
 
+function sleep(delayMs, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('Generation aborted.'));
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      signal?.removeEventListener?.('abort', onAbort);
+      resolve();
+    }, delayMs);
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Error('Generation aborted.'));
+    };
+
+    signal?.addEventListener?.('abort', onAbort, { once: true });
+  });
+}
+
+function isBusyError(error) {
+  return error?.status === 429 || error?.status === 500 || error?.status === 503;
+}
+
+function isAbortError(error) {
+  return error?.name === 'AbortError' || /aborted/i.test(error?.message || '');
+}
+
 /**
- * Wraps an API call with automatic retries for 503 errors.
+ * Wraps an API call with automatic retries for transient demand spikes.
  */
-async function withRetry(apiCall, maxRetries = 3, initialDelayMs = 2000) {
+async function withRetry(apiCall, options = {}) {
+  const {
+    maxRetries = 5,
+    initialDelayMs = 2500,
+    signal,
+    label = 'generation',
+  } = options;
   let delay = initialDelayMs;
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await apiCall();
     } catch (error) {
-      // If it's a 503 error AND we haven't run out of retries
-      if (error.status === 503 && attempt < maxRetries) {
-        console.warn(`[Attempt ${attempt}/${maxRetries}] Gemini API busy (503). Retrying in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        delay *= 2; // Double the delay for the next attempt
+      if (isAbortError(error) || signal?.aborted) {
+        throw error;
+      }
+
+      if (isBusyError(error) && attempt < maxRetries) {
+        const jitter = Math.round(delay * (0.15 + Math.random() * 0.2));
+        const waitTime = delay + jitter;
+        console.warn(
+          `[Attempt ${attempt}/${maxRetries}] Gemini busy during ${label} (${error.status}). Retrying in ${waitTime}ms...`
+        );
+        await sleep(waitTime, signal);
+        delay *= 2;
       } else {
         throw error;
       }
@@ -32,7 +77,7 @@ async function withRetry(apiCall, maxRetries = 3, initialDelayMs = 2000) {
   }
 }
 
-async function generateStudyGuide(extractedText) {
+async function generateStudyGuide(extractedText, requestOptions = {}) {
   const prompt = `
 You are an accessibility-focused study coach for students with ADHD and Dyslexia.
 Turn the lesson text into a clean, fast study guide that feels easy to review.
@@ -74,12 +119,14 @@ Lesson text:
 ${extractedText.substring(0, 8000)}
 """
   `;
-  // Wrapped in withRetry
-  const result = await withRetry(() => model.generateContent(prompt));
+  const result = await withRetry(
+    () => model.generateContent(prompt, { ...requestOptions, timeout: REQUEST_TIMEOUT_MS }),
+    { ...requestOptions, label: 'study guide generation' }
+  );
   return result.response.text();
 }
 
-async function generateFlashcards(extractedText) {
+async function generateFlashcards(extractedText, requestOptions = {}) {
   const prompt = `
 Create 10 flashcards from the text below.
 Respond ONLY with a valid JSON array, no markdown, no explanation.
@@ -90,13 +137,15 @@ Text:
 ${extractedText.substring(0, 6000)}
 """
   `;
-  // Wrapped in withRetry
-  const result = await withRetry(() => model.generateContent(prompt));
+  const result = await withRetry(
+    () => model.generateContent(prompt, { ...requestOptions, timeout: REQUEST_TIMEOUT_MS }),
+    { ...requestOptions, label: 'flashcard generation' }
+  );
   const raw = result.response.text().trim().replace(/```json|```/g, '').trim();
   return JSON.parse(raw);
 }
 
-async function generateQuiz(extractedText) {
+async function generateQuiz(extractedText, requestOptions = {}) {
   const prompt = `
 Create 10 multiple-choice quiz questions from the text.
 Respond ONLY with a valid JSON array. No markdown, no explanation.
@@ -112,8 +161,10 @@ Text:
 ${extractedText.substring(0, 6000)}
 """
   `;
-  // Wrapped in withRetry
-  const result = await withRetry(() => model.generateContent(prompt));
+  const result = await withRetry(
+    () => model.generateContent(prompt, { ...requestOptions, timeout: REQUEST_TIMEOUT_MS }),
+    { ...requestOptions, label: 'quiz generation' }
+  );
   const raw = result.response.text().trim().replace(/```json|```/g, '').trim();
   return JSON.parse(raw);
 }

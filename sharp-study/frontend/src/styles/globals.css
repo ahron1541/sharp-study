@@ -162,6 +162,7 @@ body {
 /* Study guide content styles */
 .study-guide-fade-up {
   animation: study-guide-fade-up 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
 }
 
 .study-guide-skeleton-shimmer {
@@ -188,7 +189,7 @@ body {
 
 .study-guide-reader:hover {
   transform: translateY(-1px);
-  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
 }
 
 .study-guide-panel-sheen {
@@ -206,6 +207,7 @@ body {
 
 .study-guide-editor {
   transition: border-color 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease;
+  contain: paint;
 }
 
 .study-guide-editor:focus-within {
@@ -568,5 +570,19 @@ body {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .study-guide-fade-up,
+  .study-guide-editor-shell,
+  .study-guide-skeleton-shimmer::after {
+    animation: none !important;
+  }
+
+  .study-guide-reader,
+  .study-guide-editor,
+  .study-guide-sidebar {
+    transition: none !important;
   }
 }

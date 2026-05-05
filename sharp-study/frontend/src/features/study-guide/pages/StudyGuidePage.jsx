@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Edit2, Loader2, PanelLeftClose, PanelLeftOpen, Volume2, VolumeX } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -85,6 +85,7 @@ export default function StudyGuidePage() {
   const utteranceRef = useRef(null);
   const lastSavedContentRef = useRef('');
   const lastLocalSaveAtRef = useRef(0);
+  const deferredContent = useDeferredValue(content);
 
   useEffect(() => {
     let isMounted = true;
@@ -153,10 +154,10 @@ export default function StudyGuidePage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const sections = useMemo(() => extractStudyGuideSections(content), [content]);
+  const sections = useMemo(() => extractStudyGuideSections(deferredContent), [deferredContent]);
   const lessonText = useMemo(
-    () => guide?.document?.extracted_text || stripStudyGuideHtml(content),
-    [guide?.document?.extracted_text, content]
+    () => guide?.document?.extracted_text || stripStudyGuideHtml(deferredContent),
+    [deferredContent, guide?.document?.extracted_text]
   );
   const resolvedActiveSectionId = useMemo(
     () => (sections.some((section) => section.id === activeSectionId) ? activeSectionId : sections[0]?.id || ''),
@@ -172,7 +173,7 @@ export default function StudyGuidePage() {
   );
 
   const renderedHtml = useMemo(() => {
-    const html = normalizeStudyGuideHtml(content);
+    const html = normalizeStudyGuideHtml(deferredContent);
     if (!html) return '';
 
     const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -188,9 +189,9 @@ export default function StudyGuidePage() {
     });
 
     return doc.body.innerHTML;
-  }, [content, sections]);
+  }, [deferredContent, sections]);
 
-  const plainTextContent = useMemo(() => stripStudyGuideHtml(content), [content]);
+  const plainTextContent = useMemo(() => stripStudyGuideHtml(deferredContent), [deferredContent]);
   const hasPendingChanges = editing && (saving || content !== savedContent);
   const effectiveSaveState = useMemo(() => {
     if (!editing) return saveState;

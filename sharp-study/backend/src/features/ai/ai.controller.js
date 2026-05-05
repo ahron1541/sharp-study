@@ -1,6 +1,7 @@
 const multer = require('multer');
 const { PDFParse } = require('pdf-parse'); // Correctly import the v2 class
 const mammoth = require('mammoth');
+const AdmZip = require('adm-zip');
 const { supabaseAdmin } = require('../../config/supabase');
 const { generateStudyGuide, generateFlashcards, generateQuiz } = require('./ai.service');
 const { invalidateDashboardCache } = require('../dashboard/dashboard.cache');
@@ -24,6 +25,43 @@ const upload = multer({
     }
   },
 }).single('file');
+
+function decodeXmlEntities(text) {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#xA;/gi, '\n')
+    .replace(/&#10;/g, '\n');
+}
+
+function extractPptxText(buffer) {
+  const zip = new AdmZip(buffer);
+  const slideEntries = zip
+    .getEntries()
+    .filter((entry) => /^ppt\/slides\/slide\d+\.xml$/i.test(entry.entryName))
+    .sort((a, b) => {
+      const aNumber = Number(a.entryName.match(/slide(\d+)\.xml/i)?.[1] || 0);
+      const bNumber = Number(b.entryName.match(/slide(\d+)\.xml/i)?.[1] || 0);
+      return aNumber - bNumber;
+    });
+
+  const slides = slideEntries
+    .map((entry) => {
+      const xml = entry.getData().toString('utf8');
+      const textRuns = Array.from(xml.matchAll(/<a:t[^>]*>([\s\S]*?)<\/a:t>/gi))
+        .map((match) => decodeXmlEntities(match[1]).trim())
+        .filter(Boolean);
+
+      return textRuns.join('\n').trim();
+    })
+    .filter(Boolean)
+    .map((slideText, index) => `Slide ${index + 1}\n${slideText}`);
+
+  return slides.join('\n\n').trim();
+}
 
 async function extractText(file) {
   if (file.mimetype === 'application/pdf') {
@@ -52,9 +90,17 @@ async function extractText(file) {
   if (file.mimetype === 'text/plain') {
     return file.buffer.toString('utf8');
   }
-  
-  // For PPTX: basic text extraction
-  return file.buffer.toString('utf8').replace(/[^\x20-\x7E\n]/g, ' ').trim();
+
+  if (file.mimetype.includes('presentationml')) {
+    try {
+      return extractPptxText(file.buffer);
+    } catch (err) {
+      console.error('PPTX parsing failed:', err);
+      throw new Error('Failed to parse PPTX document.');
+    }
+  }
+
+  throw new Error('Legacy PPT files are not supported yet. Please upload PPTX instead.');
 }
 
 const generateMaterials = [
@@ -66,6 +112,24 @@ const generateMaterials = [
   },
   
   async (req, res) => {
+    const abortController = new AbortController();
+    let requestAborted = false;
+    let documentId = null;
+    let userId = null;
+    const handleAbort = () => {
+      requestAborted = true;
+      abortController.abort();
+    };
+
+    const handleClose = () => {
+      if (!res.writableEnded) {
+        handleAbort();
+      }
+    };
+
+    req.on('aborted', handleAbort);
+    req.on('close', handleClose);
+
     try {
       const file = req.file;
       if (!file) return res.status(400).json({ error: 'No file uploaded.' });
@@ -82,7 +146,7 @@ const generateMaterials = [
         return res.status(422).json({ error: 'Could not extract enough text from this file.' });
       }
 
-      const userId = req.user.id;
+      userId = req.user.id;
       const docTitle = file.originalname.replace(/\.[^.]+$/, '');
       const fileType = file.mimetype.includes('pdf') 
         ? 'pdf' 
@@ -106,64 +170,67 @@ const generateMaterials = [
         .single();
 
       if (docError) throw docError;
+      documentId = doc.id;
 
-      const tasks = [];
-
+      const requestOptions = { signal: abortController.signal };
+      const generators = [];
       if (generateOptions.includes('study_guide')) {
-        tasks.push(
-          generateStudyGuide(extractedText).then((content) =>
-            supabaseAdmin.from('study_guides').insert({
-              user_id: userId,
-              document_id: doc.id,
-              title: `Study Guide: ${docTitle}`,
-              content,
-            })
-          )
-        );
+        generators.push(async () => {
+          const content = await generateStudyGuide(extractedText, requestOptions);
+          await supabaseAdmin.from('study_guides').insert({
+            user_id: userId,
+            document_id: doc.id,
+            title: `Study Guide: ${docTitle}`,
+            content,
+          });
+        });
       }
 
       if (generateOptions.includes('flashcards')) {
-        tasks.push(
-          generateFlashcards(extractedText).then(async (cards) => {
-            const { data: set } = await supabaseAdmin
-              .from('flashcard_sets')
-              .insert({ user_id: userId, document_id: doc.id, title: `Flashcards: ${docTitle}` })
-              .select()
-              .single();
-              
-            if (set && cards && cards.length > 0) {
-              await supabaseAdmin.from('flashcards').insert(
-                cards.map((c) => ({ set_id: set.id, front: c.front, back: c.back }))
-              );
-            }
-          })
-        );
+        generators.push(async () => {
+          const cards = await generateFlashcards(extractedText, requestOptions);
+          const { data: set } = await supabaseAdmin
+            .from('flashcard_sets')
+            .insert({ user_id: userId, document_id: doc.id, title: `Flashcards: ${docTitle}` })
+            .select()
+            .single();
+
+          if (set && cards && cards.length > 0) {
+            await supabaseAdmin.from('flashcards').insert(
+              cards.map((c) => ({ set_id: set.id, front: c.front, back: c.back }))
+            );
+          }
+        });
       }
 
       if (generateOptions.includes('quiz')) {
-        tasks.push(
-          generateQuiz(extractedText).then(async (questions) => {
-            const { data: quiz } = await supabaseAdmin
-              .from('quizzes')
-              .insert({ user_id: userId, document_id: doc.id, title: `Quiz: ${docTitle}` })
-              .select()
-              .single();
-              
-            if (quiz && questions && questions.length > 0) {
-              await supabaseAdmin.from('quiz_questions').insert(
-                questions.map((q) => ({
-                  quiz_id: quiz.id,
-                  question: q.question,
-                  options: q.options,
-                  correct_index: q.correct_index,
-                }))
-              );
-            }
-          })
-        );
+        generators.push(async () => {
+          const questions = await generateQuiz(extractedText, requestOptions);
+          const { data: quiz } = await supabaseAdmin
+            .from('quizzes')
+            .insert({ user_id: userId, document_id: doc.id, title: `Quiz: ${docTitle}` })
+            .select()
+            .single();
+
+          if (quiz && questions && questions.length > 0) {
+            await supabaseAdmin.from('quiz_questions').insert(
+              questions.map((q) => ({
+                quiz_id: quiz.id,
+                question: q.question,
+                options: q.options,
+                correct_index: q.correct_index,
+              }))
+            );
+          }
+        });
       }
 
-      await Promise.all(tasks);
+      for (const runGeneration of generators) {
+        if (abortController.signal.aborted) {
+          throw new Error('Generation aborted.');
+        }
+        await runGeneration();
+      }
 
       await supabaseAdmin
         .from('documents')
@@ -178,16 +245,32 @@ const generateMaterials = [
       res.json({ success: true, generated: generateOptions });
     } catch (err) {
       console.error('AI generation error:', err);
+
+      if (documentId) {
+        const nextStatus = requestAborted || abortController.signal.aborted || err.message === 'Generation aborted.'
+          ? 'cancelled'
+          : 'failed';
+        await supabaseAdmin.from('documents').update({ status: nextStatus }).eq('id', documentId);
+      }
+
+      if (requestAborted || abortController.signal.aborted) {
+        return;
+      }
       
-      // Check if it's an overloaded API error
-      if (err.status === 503 || (err.message && err.message.includes('503'))) {
+      if (err.message === 'Generation aborted.') {
+        return res.status(499).json({ error: 'Generation was cancelled.' });
+      }
+
+      if (err.status === 429 || err.status === 503 || (err.message && /(429|503)/.test(err.message))) {
         return res.status(503).json({ 
-          error: 'The AI is currently experiencing high demand. Please wait a few seconds and try again.' 
+          error: 'Gemini AI is busy right now. Please wait a bit and try again.'
         });
       }
 
-      // Default fallback error
       res.status(500).json({ error: 'AI generation failed. Please try again.' });
+    } finally {
+      req.off('aborted', handleAbort);
+      req.off('close', handleClose);
     }
   },
 ];

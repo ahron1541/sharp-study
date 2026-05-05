@@ -67,7 +67,7 @@ function ToolButton({ onClick, active, disabled = false, label, children }) {
       aria-label={label}
       aria-pressed={active}
       disabled={disabled}
-      className={`flex h-10 w-10 items-center justify-center rounded-2xl border transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-40 ${
+      className={`flex h-10 w-10 items-center justify-center rounded-2xl border transition-[transform,background-color,color,border-color] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-40 ${
         active
           ? 'border-[color:var(--color-accent)] bg-[color:var(--color-accent)] text-[color:var(--color-accent-text)] shadow-sm'
           : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text-muted)] hover:-translate-y-0.5 hover:bg-[color:var(--color-surface-2)] hover:text-[color:var(--color-text)]'
@@ -89,7 +89,7 @@ function ToolbarAction({ label, icon, onClick, variant = 'secondary', disabled =
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex h-10 items-center justify-center gap-2 rounded-2xl border px-4 text-sm font-bold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 ${styles[variant]}`}
+      className={`inline-flex h-10 items-center justify-center gap-2 rounded-2xl border px-4 text-sm font-bold transition-[transform,background-color,color,border-color,opacity] duration-200 disabled:cursor-not-allowed disabled:opacity-50 ${styles[variant]}`}
     >
       {icon}
       <span>{label}</span>
@@ -107,6 +107,8 @@ export default function StudyGuideEditor({
   onRead,
   onPreview,
   saving = false,
+  showReadActions = true,
+  saveActionLabel,
 }) {
   const initialContent = starterContent || content || createInstructionalStudyGuideTemplate();
 
@@ -366,10 +368,10 @@ export default function StudyGuideEditor({
             </div>
 
             <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-              <ToolbarAction label="Read aloud" icon={<Volume2 size={16} />} onClick={onRead} disabled={saving} />
-              <ToolbarAction label="Read mode" icon={<Eye size={16} />} onClick={onPreview} disabled={saving} />
+              {showReadActions ? <ToolbarAction label="Read aloud" icon={<Volume2 size={16} />} onClick={onRead} disabled={saving} /> : null}
+              {showReadActions ? <ToolbarAction label="Read mode" icon={<Eye size={16} />} onClick={onPreview} disabled={saving} /> : null}
               <ToolbarAction
-                label={saving ? 'Saving to cloud...' : saveState === 'cached' ? 'Sync now' : 'Save'}
+                label={saving ? 'Saving to cloud...' : saveActionLabel || (saveState === 'cached' ? 'Sync now' : 'Save')}
                 icon={<Save size={16} />}
                 onClick={onSave}
                 variant="primary"
@@ -383,7 +385,7 @@ export default function StudyGuideEditor({
       <div className="relative flex-1 overflow-hidden bg-[color:var(--color-surface)] px-5 py-6 sm:px-7 sm:py-7">
         <div className="study-guide-panel-sheen pointer-events-none absolute inset-x-6 top-0 h-px" />
         <div className="mb-5 rounded-[1.5rem] border border-dashed border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]/75 p-4 text-sm leading-6 text-[color:var(--color-text-muted)]">
-          Edit freely while the guide autosaves every 5 seconds. Use larger headings for main sections and smaller headings for subtopics.
+          Edit freely while your draft is cached locally right away and synced to the cloud after a short pause. Use larger headings for main sections and smaller headings for subtopics.
         </div>
 
         <div className="study-guide-editor-scroll h-[calc(100%-5.5rem)] overflow-y-auto pr-2">
