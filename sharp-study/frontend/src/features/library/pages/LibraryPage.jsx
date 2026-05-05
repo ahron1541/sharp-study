@@ -36,6 +36,7 @@ const GENERATION_STEPS = [
   { value: 76, title: 'Generating with Gemini AI', detail: 'Building the selected study material step by step.' },
   { value: 100, title: 'Finishing your library update', detail: 'Saving the result and refreshing your workspace.' },
 ];
+const GENERATION_CANCEL_DELAY_MS = 15000;
 
 function createDefaultManualText(selectedType) {
   if (selectedType === 'flashcards') return 'Front | Back';
@@ -61,9 +62,12 @@ export default function LibraryPage() {
   const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState({ value: 0, title: '', detail: '' });
+  const [generationJob, setGenerationJob] = useState(null);
+  const [generationElapsedMs, setGenerationElapsedMs] = useState(0);
   const [actionIntent, setActionIntent] = useState(null);
   const [actionProgress, setActionProgress] = useState(null);
-  const abortControllerRef = useRef(null);
+  const pollTimerRef = useRef(null);
+  const elapsedTimerRef = useRef(null);
 
   const activeType = MATERIAL_TYPE_KEYS.includes(searchParams.get('tab')) ? searchParams.get('tab') : 'study_guide';
   const page = Math.max(1, Number(searchParams.get('page') || 1));
@@ -121,9 +125,32 @@ export default function LibraryPage() {
 
   useEffect(() => {
     return () => {
-      abortControllerRef.current?.abort();
+      if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+      if (elapsedTimerRef.current) window.clearInterval(elapsedTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!saving || !generationJob?.id) return undefined;
+
+    const token = localStorage.getItem('sharp-study-token');
+    const cancelOnPageHide = () => {
+      if (!token) return;
+
+      fetch(`${API_URL}/api/ai/generate/${generationJob.id}/cancel`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        keepalive: true,
+      }).catch(() => {});
+    };
+
+    window.addEventListener('pagehide', cancelOnPageHide);
+    window.addEventListener('beforeunload', cancelOnPageHide);
+    return () => {
+      window.removeEventListener('pagehide', cancelOnPageHide);
+      window.removeEventListener('beforeunload', cancelOnPageHide);
+    };
+  }, [generationJob?.id, saving]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -169,6 +196,8 @@ export default function LibraryPage() {
     setManualText('');
     setFile(null);
     setProgress({ value: 0, title: '', detail: '' });
+    setGenerationJob(null);
+    setGenerationElapsedMs(0);
     setLibraryParams({ modal: 'create', type: activeType, mode: null });
   };
 
@@ -180,6 +209,8 @@ export default function LibraryPage() {
     setManualText('');
     setFile(null);
     setProgress({ value: 0, title: '', detail: '' });
+    setGenerationJob(null);
+    setGenerationElapsedMs(0);
     setLibraryParams({ modal: null, type: null, mode: null });
   };
 
@@ -317,67 +348,173 @@ export default function LibraryPage() {
     formData.append('file', file);
     formData.append('generate', JSON.stringify([MATERIAL_TYPES[selectedType].generateId]));
 
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
     setSaving(true);
     setProgress(GENERATION_STEPS[0]);
-
-    const timers = [
-      window.setTimeout(() => setProgress(GENERATION_STEPS[1]), 700),
-      window.setTimeout(() => setProgress(GENERATION_STEPS[2]), 1700),
-    ];
-
-    const abortGeneration = () => abortController.abort();
-    window.addEventListener('beforeunload', abortGeneration);
-    window.addEventListener('pagehide', abortGeneration);
+    setGenerationJob(null);
+    setGenerationElapsedMs(0);
 
     try {
       const response = await fetch(`${API_URL}/api/ai/generate`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
-        signal: abortController.signal,
       });
 
+      const body = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
         throw new Error(body.error || 'AI generation failed.');
       }
 
-      const body = await response.json().catch(() => ({}));
-      setProgress(GENERATION_STEPS[3]);
-      await invalidateDashboardCache();
-      await loadPage({ nextType: activeType, nextPage: 1, nextSearch: deferredSearch });
-      toast.success('Generated successfully.');
-      closeWizard(true);
-
-      const createdStudyGuideId = body?.created?.study_guide?.id;
-      if (selectedType === 'study_guide' && createdStudyGuideId) {
-        navigate(`/study-guide/${createdStudyGuideId}`);
+      const queuedJob = body?.job;
+      if (!queuedJob?.id) {
+        throw new Error('The AI queue did not return a valid job id.');
       }
-    } catch (generationError) {
-      if (generationError.name !== 'AbortError') {
-        setProgress({ value: 0, title: '', detail: '' });
-        const message = generationError.message || 'Generation failed.';
-        toast.error(message);
 
-        if (/no readable text|small amount of readable text|legacy ppt|unsupported document format/i.test(message)) {
-          toast(() => (
-            <div className="space-y-1">
-              <p className="font-bold">We could not read enough text from that file.</p>
-              <p className="text-sm leading-6 text-text-muted">
-                Try exporting the slides again as a text-based PPTX or PDF, then re-upload the clearer version.
-              </p>
-            </div>
-          ), { id: 'file-readability-help', duration: 5200 });
+      setGenerationJob(queuedJob);
+      setProgress({
+        value: queuedJob.progressValue || 10,
+        title: queuedJob.status === 'queued' ? 'Queued for Gemini AI' : 'Preparing your generation',
+        detail: queuedJob.detail || 'Your request was accepted and is being prepared.',
+      });
+
+      if (elapsedTimerRef.current) window.clearInterval(elapsedTimerRef.current);
+      const startTime = Date.now();
+      elapsedTimerRef.current = window.setInterval(() => {
+        setGenerationElapsedMs(Date.now() - startTime);
+      }, 1000);
+
+      const updateFromJob = async (nextJob) => {
+        setGenerationJob(nextJob);
+        setProgress({
+          value: nextJob?.progressValue || 10,
+          title: nextJob?.message || 'Waiting for Gemini AI',
+          detail: nextJob?.status === 'queued' && typeof nextJob?.positionAhead === 'number'
+            ? nextJob.positionAhead > 0
+              ? `${nextJob.detail} ${nextJob.positionAhead} request${nextJob.positionAhead === 1 ? '' : 's'} ahead of you.`
+              : 'Your request is first in line and should start shortly.'
+            : (nextJob?.detail || 'Your request is being processed.'),
+        });
+
+        if (nextJob?.status === 'completed') {
+          setProgress(GENERATION_STEPS[3]);
+          if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+          if (elapsedTimerRef.current) window.clearInterval(elapsedTimerRef.current);
+          pollTimerRef.current = null;
+          elapsedTimerRef.current = null;
+          setSaving(false);
+          await invalidateDashboardCache();
+          await loadPage({ nextType: activeType, nextPage: 1, nextSearch: deferredSearch });
+          toast.success('Generated successfully.');
+          closeWizard(true);
+
+          const createdStudyGuideId = nextJob?.result?.created?.study_guide?.id;
+          if (selectedType === 'study_guide' && createdStudyGuideId) {
+            navigate(`/study-guide/${createdStudyGuideId}`);
+          }
+          return true;
         }
+
+        if (nextJob?.status === 'failed') {
+          if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+          if (elapsedTimerRef.current) window.clearInterval(elapsedTimerRef.current);
+          pollTimerRef.current = null;
+          elapsedTimerRef.current = null;
+          setSaving(false);
+          throw new Error(nextJob.error || 'AI generation failed.');
+        }
+
+        if (nextJob?.status === 'cancelled') {
+          if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+          if (elapsedTimerRef.current) window.clearInterval(elapsedTimerRef.current);
+          pollTimerRef.current = null;
+          elapsedTimerRef.current = null;
+          setSaving(false);
+          throw new Error('Generation was cancelled.');
+        }
+
+        return false;
+      };
+
+      const firstFinished = await updateFromJob(queuedJob);
+      if (firstFinished) return;
+
+      if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = window.setInterval(async () => {
+        try {
+          const statusResponse = await fetch(`${API_URL}/api/ai/generate/${queuedJob.id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          const statusBody = await statusResponse.json().catch(() => ({}));
+          if (!statusResponse.ok) {
+            throw new Error(statusBody.error || 'Failed to check generation status.');
+          }
+
+          const done = await updateFromJob(statusBody.job);
+          if (done && pollTimerRef.current) {
+            window.clearInterval(pollTimerRef.current);
+          }
+        } catch (pollError) {
+          if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+          if (elapsedTimerRef.current) window.clearInterval(elapsedTimerRef.current);
+          pollTimerRef.current = null;
+          elapsedTimerRef.current = null;
+          setSaving(false);
+          setGenerationJob(null);
+          setProgress({ value: 0, title: '', detail: '' });
+          toast.error(pollError.message || 'Failed to check generation status.');
+        }
+      }, 2000);
+    } catch (generationError) {
+      setProgress({ value: 0, title: '', detail: '' });
+      setGenerationJob(null);
+      const message = generationError.message || 'Generation failed.';
+      toast.error(message);
+
+      if (/no readable text|small amount of readable text|legacy ppt|unsupported document format/i.test(message)) {
+        toast(() => (
+          <div className="space-y-1">
+            <p className="font-bold">We could not read enough text from that file.</p>
+            <p className="text-sm leading-6 text-text-muted">
+              Try exporting the slides again as a text-based PPTX or PDF, then re-upload the clearer version.
+            </p>
+          </div>
+        ), { id: 'file-readability-help', duration: 5200 });
       }
     } finally {
-      timers.forEach((timer) => window.clearTimeout(timer));
-      window.removeEventListener('beforeunload', abortGeneration);
-      window.removeEventListener('pagehide', abortGeneration);
-      abortControllerRef.current = null;
+      if (!pollTimerRef.current) {
+        if (elapsedTimerRef.current) window.clearInterval(elapsedTimerRef.current);
+        setSaving(false);
+      }
+    }
+  };
+
+  const cancelGeneration = async () => {
+    if (!generationJob?.id) return;
+    const token = localStorage.getItem('sharp-study-token');
+
+    try {
+      const response = await fetch(`${API_URL}/api/ai/generate/${generationJob.id}/cancel`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body.error || 'Failed to cancel the generation.');
+      }
+
+      if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+      if (elapsedTimerRef.current) window.clearInterval(elapsedTimerRef.current);
+      pollTimerRef.current = null;
+      elapsedTimerRef.current = null;
       setSaving(false);
+      setGenerationJob(body.job || null);
+      setProgress({ value: 0, title: '', detail: '' });
+      toast.success('Generation request cancelled.');
+      closeWizard(true);
+    } catch (cancelError) {
+      toast.error(cancelError.message || 'Failed to cancel the generation.');
     }
   };
 
@@ -612,6 +749,8 @@ export default function LibraryPage() {
         file={file}
         saving={saving}
         progress={progress}
+        generationJob={generationJob}
+        generationElapsedMs={generationElapsedMs}
         onClose={closeWizard}
         onSelectType={handleSelectType}
         onSelectMode={handleSelectMode}
@@ -620,6 +759,7 @@ export default function LibraryPage() {
         onFileChange={handleFileChange}
         onManualCreate={saveManualMaterial}
         onAutoCreate={generateAutomatically}
+        onCancelGeneration={cancelGeneration}
       />
 
       <Modal
@@ -689,6 +829,8 @@ function CreateWizard({
   file,
   saving,
   progress,
+  generationJob,
+  generationElapsedMs,
   onClose,
   onSelectType,
   onSelectMode,
@@ -697,9 +839,12 @@ function CreateWizard({
   onFileChange,
   onManualCreate,
   onAutoCreate,
+  onCancelGeneration,
 }) {
   const selectedMeta = selectedType ? MATERIAL_TYPES[selectedType] : null;
   const currentStep = !selectedType ? 1 : !creationMode ? 2 : 3;
+  const canCancelGeneration = saving && generationElapsedMs >= GENERATION_CANCEL_DELAY_MS;
+  const generationSeconds = Math.floor(generationElapsedMs / 1000);
 
   return (
     <Modal
@@ -726,10 +871,10 @@ function CreateWizard({
           <p className="mt-2 max-w-2xl text-sm leading-7 text-text-muted">
             {!selectedType
               ? 'Start with the material type, then decide whether you want a manual flow or AI generation.'
-              : !creationMode
-                ? 'Manual study guide creation opens a full-page editor. Flashcards and quizzes stay lightweight here.'
-                : creationMode === 'automatic'
-                  ? 'Keep this window open while Gemini AI works. Closing the tab will stop the request on your side.'
+                : !creationMode
+                  ? 'Manual study guide creation opens a full-page editor. Flashcards and quizzes stay lightweight here.'
+                  : creationMode === 'automatic'
+                  ? 'If another request is ahead of you, your file will wait in line. If it takes too long, you can cancel the request.'
                   : 'Use the quick form below for smaller manual entries.'}
           </p>
         </section>
@@ -813,6 +958,37 @@ function CreateWizard({
                   </div>
                 </div>
 
+                {generationJob?.status === 'queued' ? (
+                  <div className="mt-4 rounded-[1.25rem] border border-border bg-surface-2 p-4 text-sm leading-6 text-text-muted">
+                    <p className="font-bold text-text">
+                      {generationJob.positionAhead > 0
+                        ? `${generationJob.positionAhead} request${generationJob.positionAhead === 1 ? '' : 's'} ahead of you`
+                        : 'You are first in line'}
+                    </p>
+                    <p className="mt-1">
+                      The server is keeping AI requests in a short queue so Gemini AI does not get overwhelmed.
+                    </p>
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+                  <span className="rounded-full border border-border bg-surface-2 px-3 py-1 font-semibold text-text-muted">
+                    {generationJob?.status === 'queued' ? 'Waiting in line' : 'Now generating'}
+                  </span>
+                  <span className="text-text-muted">
+                    {generationSeconds}s elapsed
+                  </span>
+                  {canCancelGeneration ? (
+                    <span className="text-amber-400">
+                      This is taking longer than usual. You can cancel this request now.
+                    </span>
+                  ) : (
+                    <span className="text-text-muted">
+                      Cancel becomes available after 15 seconds.
+                    </span>
+                  )}
+                </div>
+
                 <div className="mt-5 h-3 overflow-hidden rounded-full bg-surface-2">
                   <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${progress.value}%` }} />
                 </div>
@@ -830,9 +1006,19 @@ function CreateWizard({
             ) : null}
 
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <button onClick={onClose} disabled={saving} className="rounded-2xl px-5 py-3 font-bold text-text-muted disabled:opacity-50">
-                Cancel
-              </button>
+              {saving ? (
+                <button
+                  onClick={canCancelGeneration ? onCancelGeneration : undefined}
+                  disabled={!canCancelGeneration}
+                  className="rounded-2xl px-5 py-3 font-bold text-text-muted disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Cancel request
+                </button>
+              ) : (
+                <button onClick={onClose} disabled={saving} className="rounded-2xl px-5 py-3 font-bold text-text-muted disabled:opacity-50">
+                  Cancel
+                </button>
+              )}
               <button
                 onClick={onAutoCreate}
                 disabled={!file || saving}
