@@ -86,6 +86,9 @@ function normalizeGeneratedDiscussionQuestions(items = []) {
       const question = String(item?.question || '').replace(/\s+/g, ' ').trim();
       const answer = String(item?.answer || '').replace(/\s+/g, ' ').trim();
       if (!question || !answer) return null;
+      if (/self-check|think about|test your understanding|review the lesson|important points/i.test(answer)) {
+        return null;
+      }
 
       return {
         id: item?.id || `dq-ai-${index + 1}`,
@@ -231,6 +234,9 @@ async function processGenerationJob(job) {
       try {
         const generatedQuestions = await generateDiscussionQuestions(cleanedExtractedText, requestOptions);
         discussionQuestions = normalizeGeneratedDiscussionQuestions(generatedQuestions);
+        if (discussionQuestions.length < 3) {
+          discussionQuestions = [];
+        }
       } catch (discussionError) {
         console.warn('Discussion question generation fell back to client builder:', discussionError?.message || discussionError);
       }

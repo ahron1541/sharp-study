@@ -8,6 +8,7 @@ const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flas
 const geminiClient = process.env.GEMINI_API_KEY
   ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
   : null;
+const providerCooldowns = new Map();
 
 function sleep(delayMs, signal) {
   return new Promise((resolve, reject) => {
@@ -42,6 +43,29 @@ function isQuotaError(error) {
   return error?.status === 429 || /quota|rate limit|too many requests/i.test(error?.message || '');
 }
 
+function isHardQuotaError(error) {
+  return /quota exceeded|exceeded your current quota|billing details|free_tier/i.test(error?.message || '');
+}
+
+function parseRetryDelayMs(error) {
+  const message = String(error?.message || '');
+  const match = message.match(/retry in\s+([\d.]+)s/i);
+  if (!match) return null;
+  const seconds = Number(match[1]);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  return Math.round(seconds * 1000);
+}
+
+function isProviderCoolingDown(providerName) {
+  const cooldownUntil = providerCooldowns.get(providerName);
+  return Boolean(cooldownUntil && cooldownUntil > Date.now());
+}
+
+function setProviderCooldown(providerName, durationMs) {
+  if (!durationMs || durationMs <= 0) return;
+  providerCooldowns.set(providerName, Date.now() + durationMs);
+}
+
 function stripCodeFences(text = '') {
   return String(text).trim().replace(/```json|```html|```/gi, '').trim();
 }
@@ -66,6 +90,10 @@ async function withRetry(apiCall, options = {}) {
       return await apiCall();
     } catch (error) {
       if (isAbortError(error) || signal?.aborted) {
+        throw error;
+      }
+
+      if (isHardQuotaError(error)) {
         throw error;
       }
 
@@ -238,6 +266,11 @@ async function generateWithFallback(prompt, requestOptions = {}, label = 'genera
   let lastError = null;
 
   for (const provider of providers) {
+    if (isProviderCoolingDown(provider.name)) {
+      console.info(`[AI Provider] Skipping ${provider.name} for ${label} because it is cooling down after a quota hit.`);
+      continue;
+    }
+
     try {
       console.info(`[AI Provider] Trying ${provider.name} for ${label}`);
       const content = await provider.run(prompt, requestOptions);
@@ -252,6 +285,11 @@ async function generateWithFallback(prompt, requestOptions = {}, label = 'genera
 
       if (isAbortError(error) || requestOptions.signal?.aborted) {
         throw error;
+      }
+
+      if (isQuotaError(error)) {
+        const retryDelayMs = parseRetryDelayMs(error) || 5 * 60 * 1000;
+        setProviderCooldown(provider.name, retryDelayMs);
       }
 
       const hasMoreProviders = providers[providers.length - 1] !== provider;
@@ -340,8 +378,10 @@ Rules:
 - Every answer must directly answer the question.
 - Do not repeat the question inside the answer.
 - Do not use placeholders like "review the lesson" or "explain in your own words".
+- Do not use labels or filler such as "Self-Check", "Think about", "test your understanding", or "important points".
 - Do not invent facts that are not supported by the lesson text.
 - Keep each answer to 1 to 3 sentences.
+- Prefer specific factual answers that include exact names, laws, titles, dates, roles, or examples when the lesson provides them.
 
 Lesson text:
 """

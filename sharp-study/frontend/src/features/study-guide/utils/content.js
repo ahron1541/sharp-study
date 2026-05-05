@@ -552,6 +552,9 @@ function normalizeDiscussionQuestionItems(items = []) {
       const question = String(item?.question || '').replace(/\s+/g, ' ').trim();
       const answer = String(item?.answer || '').replace(/\s+/g, ' ').trim();
       if (!question || !answer || isQuestionLike(answer)) return null;
+      if (/self-check|think about|test your understanding|review the lesson|important points/i.test(answer)) {
+        return null;
+      }
 
       return {
         id: item?.id || `dq-meta-${index + 1}`,
@@ -628,7 +631,7 @@ export function buildQuickReferenceGroups(sections, sourceText = '', fallbackTit
 export function buildDiscussionQuestions(sections, sourceText = '', fallbackTitle = 'this lesson', rawContent = '') {
   const payload = extractStudyGuidePayload(rawContent);
   const embeddedQuestions = normalizeDiscussionQuestionItems(payload.metadata?.discussionQuestions || []);
-  if (embeddedQuestions.length) {
+  if (embeddedQuestions.length >= 3) {
     return embeddedQuestions;
   }
 
