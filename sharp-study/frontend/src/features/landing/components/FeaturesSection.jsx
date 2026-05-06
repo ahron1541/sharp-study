@@ -1,18 +1,44 @@
+import { motion } from 'framer-motion';
 import styles from './FeaturesSection.module.css';
 
 const FEATURES = [
-  { id: 1, alt: 'Feature placeholder 1' },
-  { id: 2, alt: 'Feature placeholder 2' },
-  { id: 3, alt: 'Feature placeholder 3' },
+  {
+    id: 1,
+    title: 'Readable Study Guides',
+    body: 'Compress long PDFs, DOCX, and PPTX files into organized lessons with clear headings and summaries.',
+    src: 'https://placehold.co/420x540/e8f5ff/12324a.svg?text=Study+Guides',
+    alt: 'Study guide placeholder',
+  },
+  {
+    id: 2,
+    title: 'Flashcards and Quizzes',
+    body: 'Practice with generated flashcards and quiz questions so review feels active instead of overwhelming.',
+    src: 'https://placehold.co/420x540/f6edff/2b1845.svg?text=Cards+%2B+Quizzes',
+    alt: 'Flashcards and quizzes placeholder',
+  },
+  {
+    id: 3,
+    title: 'Comfort Controls',
+    body: 'Use dark mode, larger text, dyslexia-friendly settings, and narrator support for easier reading.',
+    src: 'https://placehold.co/420x540/fff2df/3d2814.svg?text=Accessible+Tools',
+    alt: 'Accessibility tools placeholder',
+  },
 ];
 
-function FeatureCard({ alt }) {
+function FeatureCard({ feature, index }) {
   return (
-    <div className={styles.card}>
+    <motion.article
+      className={styles.card}
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-80px' }}
+      transition={{ duration: 0.3, ease: 'easeOut', delay: index * 0.06 }}
+    >
       <div className={styles.cardImage}>
+        <div className={styles.skeleton} aria-hidden="true" />
         <img
-          src="https://placehold.co/400x520/AAAAAA/AAAAAA"
-          alt={alt}
+          src={feature.src}
+          alt={feature.alt}
           className={styles.cardImg}
           width="400"
           height="520"
@@ -28,7 +54,9 @@ function FeatureCard({ alt }) {
           <line x1="100" y1="0" x2="0" y2="100" stroke="rgba(0,0,0,0.12)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
         </svg>
       </div>
-    </div>
+      <h3 className={styles.cardTitle}>{feature.title}</h3>
+      <p className={styles.cardBody}>{feature.body}</p>
+    </motion.article>
   );
 }
 
@@ -37,16 +65,17 @@ export default function FeaturesSection() {
     <section aria-labelledby="features-heading" className={styles.section}>
       <div className={styles.inner}>
         <h2 id="features-heading" className={styles.sectionTitle}>
-          Loream Ipsum
+          Built around how students actually study
         </h2>
         <p className={styles.sectionSub}>
-          Lorem ipsum dolor sit amet, consectetur adipiscing elit.
-          Morbi rutrum sed magna id mollis.
+          Verso keeps the wireframe simple on purpose: fewer distractions,
+          stronger contrast, bigger readable text, and study tools that reduce
+          the load of long academic files.
         </p>
 
         <div className={styles.grid}>
-          {FEATURES.map((f) => (
-            <FeatureCard key={f.id} alt={f.alt} />
+          {FEATURES.map((f, index) => (
+            <FeatureCard key={f.id} feature={f} index={index} />
           ))}
         </div>
       </div>

@@ -110,6 +110,11 @@
   opacity: 0.8;
 }
 
+.backBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .backBtn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
@@ -155,4 +160,57 @@
   .formPanel {
     padding: var(--space-lg);
   }
+}
+
+.busyOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: grid;
+  place-items: center;
+  padding: var(--space-lg);
+  background: rgba(8, 12, 20, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.busyCard {
+  width: min(28rem, 100%);
+  padding: var(--space-lg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card);
+  background: var(--auth-right-bg);
+  box-shadow: var(--shadow-card);
+}
+
+.progressTrack {
+  height: 0.45rem;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--card-border);
+}
+
+.progressBar {
+  height: 100%;
+  width: 42%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: authProgress 0.9s ease-in-out infinite alternate;
+}
+
+.busyTitle {
+  margin: var(--space-md) 0 var(--space-xs);
+  color: var(--text-color);
+  font-weight: 900;
+}
+
+.busyText {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+@keyframes authProgress {
+  from { transform: translateX(-30%); }
+  to { transform: translateX(155%); }
 }

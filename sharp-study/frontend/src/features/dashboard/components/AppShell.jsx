@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import TopBar  from './TopBar';
@@ -23,7 +23,6 @@ export default function AppShell() {
   const [mobileOpen, setMobileOpen]   = useState(false);
   const [isMobile, setIsMobile]       = useState(window.innerWidth < 768);
   const [routeLoading, setRouteLoading] = useState(false);
-  const firstLocationRef = useRef(true);
 
   const routeLabel = useMemo(() => {
     if (location.pathname.startsWith('/library')) return 'Opening your library';
@@ -45,17 +44,17 @@ export default function AppShell() {
   }, []);
 
   useEffect(() => {
-    if (firstLocationRef.current) {
-      firstLocationRef.current = false;
-      return undefined;
-    }
-
-    setRouteLoading(true);
+    const startTimer = window.setTimeout(() => {
+      setRouteLoading(true);
+    }, 0);
     const timer = window.setTimeout(() => {
       setRouteLoading(false);
     }, ROUTE_LOADING_MIN_MS);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(startTimer);
+      window.clearTimeout(timer);
+    };
   }, [location.pathname, location.search]);
 
   const handleMenuToggle = () => {

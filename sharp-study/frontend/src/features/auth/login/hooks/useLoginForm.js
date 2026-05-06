@@ -13,6 +13,7 @@ export function useLoginForm() {
   const [rememberMe, setRememberMe] = useState(false);
   const [errors,     setErrors]     = useState({});
   const [loading,    setLoading]    = useState(false);
+  const [transitionLabel, setTransitionLabel] = useState('');
   const [lockInfo,   setLockInfo]   = useState(null);
 
   const clearFieldError = (field) =>
@@ -32,6 +33,7 @@ export function useLoginForm() {
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
     setLoading(true);
+    setTransitionLabel('Checking your account...');
     setErrors({});
     setLockInfo(null);
 
@@ -54,6 +56,7 @@ export function useLoginForm() {
       localStorage.setItem('sharp-study-token', accessToken);
       if (rememberMe && refreshToken) localStorage.setItem('sharp-study-refresh', refreshToken);
 
+      setTransitionLabel('Preparing your dashboard...');
       console.log("4. Attempting to set Supabase session...");
       const sessionResponse = await supabase.auth.setSession({
         access_token:  accessToken,
@@ -61,6 +64,7 @@ export function useLoginForm() {
       });
       console.log("5. Session set response:", sessionResponse);
 
+      setTransitionLabel('Opening your dashboard...');
       console.log("6. Navigating to dashboard...");
       navigate('/dashboard');
 
@@ -70,6 +74,7 @@ export function useLoginForm() {
     } finally {
       console.log("7. Finally block executed. Stopping loading spinner.");
       setLoading(false);
+      setTransitionLabel('');
     }
   };
 
@@ -77,7 +82,7 @@ export function useLoginForm() {
     identifier, setIdentifier,
     password,   setPassword,
     rememberMe, setRememberMe,
-    errors, loading, lockInfo,
+    errors, loading, transitionLabel, lockInfo,
     clearFieldError, submit,
   };
 }

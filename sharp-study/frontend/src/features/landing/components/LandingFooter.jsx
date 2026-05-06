@@ -2,24 +2,24 @@ import { Link } from 'react-router-dom';
 import styles from './LandingFooter.module.css';
 
 const COL_A = [
-  { label: 'Website Content', href: '#' },
-  { label: 'Website Content', href: '#' },
-  { label: 'Website Content', href: '#' },
-  { label: 'Website Content', href: '#' },
+  { label: 'Study Guides', href: '/register' },
+  { label: 'Flashcards', href: '/register' },
+  { label: 'Quizzes', href: '/register' },
+  { label: 'Narrator Tools', href: '/register' },
 ];
 
 const COL_B = [
   { label: 'Privacy Policy', href: '/privacy' },
   { label: 'Terms of Service', href: '/terms' },
-  { label: 'Website Content', href: '#' },
-  { label: 'Website Content', href: '#' },
+  { label: 'Accessibility', href: '/register' },
+  { label: 'Admin Dashboard', href: '/login' },
 ];
 
 export default function LandingFooter() {
   return (
     <footer role="contentinfo" className={styles.footer}>
       <div className={styles.inner}>
-        <p className={styles.footerLabel}>Footer</p>
+        <p className={styles.footerLabel}>Verso learning platform</p>
 
         <div className={styles.grid}>
           {/* Logo / brand — matches wireframe bottom-left image box */}

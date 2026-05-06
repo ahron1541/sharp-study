@@ -1,11 +1,16 @@
 import { Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import styles from './HeroSection.module.css';
 
-function PlaceholderBox({ className, ariaLabel }) {
+const studyGuideSvg = 'https://placehold.co/620x420/eaf7ef/1f4d3a.svg?text=Readable+Study+Guide';
+const narratorSvg = 'https://placehold.co/620x420/fff4d8/3b2f14.svg?text=Voice+Narrator';
+
+function PlaceholderBox({ className, ariaLabel, src }) {
   return (
     <div className={className}>
+      <div className={styles.skeleton} aria-hidden="true" />
       <img
-        src="https://placehold.co/600x400/AAAAAA/AAAAAA"
+        src={src}
         alt={ariaLabel || ''}
         aria-hidden={!ariaLabel}
         className={styles.placeholderImg}
@@ -32,25 +37,49 @@ export default function HeroSection() {
       <div className={styles.inner}>
 
         {/* Left: headline + CTA */}
-        <div className={styles.textCol}>
+        <motion.div
+          className={styles.textCol}
+          initial={{ opacity: 0, y: 18 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: '-80px' }}
+          transition={{ duration: 0.34, ease: 'easeOut' }}
+        >
+          <p className={styles.eyebrow}>Accessible AI learning for every student</p>
           <h1 id="hero-heading" className={styles.headline}>
-            Lorem Ipsum
+            Study long lessons in a clearer, calmer way.
           </h1>
           <p className={styles.subheadline}>
-            Lorem ipsum dolor sit amet, consectetur adipiscing elit.
-            Morbi rutrum sed magna id mollis. Pellentesque ut diam nisl.
-            Fusce et ligula ipsum. Aenean egestas erat vitae pretium mattis.
+            Verso turns school documents into short study guides, flashcards,
+            quizzes, and spoken lessons built for students with low vision,
+            dyslexia, ADHD, and other learning needs.
           </p>
-          <Link to="/register" className={styles.ctaBtn}>
-            Join for free
-          </Link>
-        </div>
+          <div className={styles.ctaRow}>
+            <Link to="/register" className={styles.ctaBtn}>
+              Start studying
+            </Link>
+            <Link to="/login" className={styles.secondaryBtn}>
+              I already have an account
+            </Link>
+          </div>
+          <div className={styles.statRow} aria-label="Verso highlights">
+            <span>High contrast</span>
+            <span>Large text</span>
+            <span>Voice-ready</span>
+          </div>
+        </motion.div>
 
         {/* Right: stacked image placeholders */}
-        <div className={styles.imageCol} aria-hidden="true">
-          <PlaceholderBox className={styles.imageFront} />
-          <PlaceholderBox className={styles.imageBack} />
-        </div>
+        <motion.div
+          className={styles.imageCol}
+          aria-hidden="true"
+          initial={{ opacity: 0, x: 28 }}
+          whileInView={{ opacity: 1, x: 0 }}
+          viewport={{ once: true, margin: '-80px' }}
+          transition={{ duration: 0.38, ease: 'easeOut', delay: 0.08 }}
+        >
+          <PlaceholderBox className={styles.imageFront} src={studyGuideSvg} />
+          <PlaceholderBox className={styles.imageBack} src={narratorSvg} />
+        </motion.div>
 
       </div>
     </section>

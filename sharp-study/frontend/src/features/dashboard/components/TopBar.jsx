@@ -8,6 +8,7 @@ export default function TopBar({ onMenuToggle }) {
   const { profile, signOut } = useAuth();
   const navigate = useNavigate();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const menuRef = useRef(null);
 
   // UX FIX: Check if we are waiting for the profile to sync
@@ -25,6 +26,8 @@ export default function TopBar({ onMenuToggle }) {
   }, []);
 
   const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
     setUserMenuOpen(false);
     await signOut();
     navigate('/login');
@@ -45,6 +48,7 @@ export default function TopBar({ onMenuToggle }) {
       <div className="flex items-center gap-1">
         <button
           onClick={onMenuToggle}
+          disabled={loggingOut}
           aria-label="Toggle navigation menu"
           className="
             p-2 rounded-lg text-text-muted hover:bg-surface-2
@@ -90,6 +94,7 @@ export default function TopBar({ onMenuToggle }) {
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setUserMenuOpen((o) => !o)}
+                disabled={loggingOut}
                 aria-label="Open user menu"
                 aria-expanded={userMenuOpen}
                 aria-haspopup="true"
@@ -127,12 +132,13 @@ export default function TopBar({ onMenuToggle }) {
                   <button
                     role="menuitem"
                     onClick={handleLogout}
+                    disabled={loggingOut}
                     className="
                       w-full text-left px-4 py-2 text-sm text-red-500
                       hover:bg-surface-2 transition-colors
                     "
                   >
-                    Log out
+                    {loggingOut ? 'Logging out...' : 'Log out'}
                   </button>
                 </div>
               )}

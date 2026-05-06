@@ -15,7 +15,7 @@ import backButtonLight from '../../../../assets/icons/buttons/back_button_light_
  *     <LoginForm />
  *   </AuthLayout>
  */
-export default function AuthLayout({ children }) {
+export default function AuthLayout({ children, busy = false, busyLabel = 'Preparing your workspace...' }) {
   const navigate = useNavigate();
   const { theme } = useAccessibility();
   const backIcon = theme === 'dark' ? backButtonDark : backButtonLight;
@@ -58,6 +58,7 @@ export default function AuthLayout({ children }) {
           {/* Back button — top left of the right panel */}
           <button
             onClick={() => navigate('/')}
+            disabled={busy}
             className={styles.backBtn}
             aria-label="Back to landing page"
           >
@@ -76,6 +77,17 @@ export default function AuthLayout({ children }) {
         </main>
 
       </div>
+      {busy && (
+        <div className={styles.busyOverlay} role="alert" aria-live="assertive" aria-busy="true">
+          <div className={styles.busyCard}>
+            <div className={styles.progressTrack}>
+              <div className={styles.progressBar} />
+            </div>
+            <p className={styles.busyTitle}>{busyLabel}</p>
+            <p className={styles.busyText}>Please wait a moment. Actions are locked to keep your account safe.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

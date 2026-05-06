@@ -49,6 +49,11 @@ export default function Step2UserDetails({ email, signupToken, onSuccess }) {
 
   return (
     <div className={styles.wrapper}>
+      {loading && (
+        <div className={styles.busyOverlay} role="alert" aria-live="assertive" aria-busy="true">
+          <div className={styles.busyCard}>Creating your Verso account...</div>
+        </div>
+      )}
       <div className={styles.titleRow}>
         <h1 className={styles.title}>{t('title')}</h1>
         <p className={styles.subtitle}>

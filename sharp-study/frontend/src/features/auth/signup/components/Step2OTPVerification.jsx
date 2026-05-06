@@ -50,6 +50,13 @@ export default function Step2OTPVerification({ email, onBack, onVerified, onBoot
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: 'easeOut' }}
     >
+      {busy && (
+        <div className={styles.busyOverlay} role="alert" aria-live="assertive" aria-busy="true">
+          <div className={styles.busyCard}>
+            {sending ? t('sendingHint') : 'Checking your verification code...'}
+          </div>
+        </div>
+      )}
       <div className={styles.titleRow}>
         <h1 className={styles.title}>{t('title')}</h1>
         <p className={styles.subtitle}>

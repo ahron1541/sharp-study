@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AiOutlineWarning } from 'react-icons/ai';
 import { MdLockOutline } from 'react-icons/md';
@@ -10,18 +11,28 @@ import PasswordInput     from '../../shared/components/PasswordInput';
 import PillButton        from '../../shared/components/PillButton';
 import styles            from './LoginForm.module.css';
 
-export default function LoginForm({ sessionTimeout = false }) {
+export default function LoginForm({ sessionTimeout = false, onBusyChange }) {
   const { t } = useTranslation('auth', { keyPrefix: 'login' });
   const {
     identifier, setIdentifier,
     password,   setPassword,
     rememberMe, setRememberMe,
-    errors, loading, lockInfo,
+    errors, loading, transitionLabel, lockInfo,
     clearFieldError, submit,
   } = useLoginForm();
+  const busyLabel = transitionLabel || 'Logging in...';
+
+  useEffect(() => {
+    onBusyChange?.({ active: loading, label: busyLabel });
+  }, [busyLabel, loading, onBusyChange]);
 
   return (
-    <div className={styles.wrapper}>
+    <div className={styles.wrapper} aria-busy={loading}>
+      {loading && (
+        <div className={styles.loginProgress} aria-hidden="true">
+          <span />
+        </div>
+      )}
 
       {/* Tab switcher — Login active */}
       <AuthTabs activeTab="login" disabled={loading} />
@@ -158,7 +169,7 @@ export default function LoginForm({ sessionTimeout = false }) {
             className={styles.submitBtn}
             ariaLabel={t('submit')}
           >
-            {t('submit')}
+            {loading ? (transitionLabel || 'Logging in...') : t('submit')}
           </PillButton>
         </div>
       </form>

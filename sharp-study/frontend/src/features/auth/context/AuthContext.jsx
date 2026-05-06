@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Spinner from '../../../shared/components/Spinner';
@@ -19,6 +20,39 @@ export function AuthProvider({ children }) {
   const [user,    setUser]    = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingLabel, setLoadingLabel] = useState('Loading your workspace...');
+
+  async function fetchProfile(userId) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        console.error("Supabase error fetching profile:", error);
+        return;
+      }
+
+      if (data) {
+        setProfile(data);
+        localStorage.setItem('sharp-study-role', data.role);
+
+        // Safely apply preferences
+        let userPrefs = DEFAULT_PREFERENCES;
+        if (data.preferences) {
+          userPrefs = typeof data.preferences === 'string'
+            ? JSON.parse(data.preferences)
+            : data.preferences;
+        }
+
+        applyPreferences(userPrefs);
+      }
+    } catch (err) {
+      console.error("Unexpected error in fetchProfile:", err);
+    }
+  }
 
   useEffect(() => {
     // Timeout for initial session check
@@ -67,38 +101,6 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const fetchProfile = async (userId) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-        
-      if (error) {
-        console.error("Supabase error fetching profile:", error);
-        return;
-      }
-        
-      if (data) {
-        setProfile(data);
-        localStorage.setItem('sharp-study-role', data.role);
-        
-        // Safely apply preferences
-        let userPrefs = DEFAULT_PREFERENCES;
-        if (data.preferences) {
-          userPrefs = typeof data.preferences === 'string' 
-            ? JSON.parse(data.preferences) 
-            : data.preferences;
-        }
-        
-        applyPreferences(userPrefs);
-      }
-    } catch (err) {
-      console.error("Unexpected error in fetchProfile:", err);
-    }
-  };
-
   const resetThemeOnLogout = () => {
     applyPreferences(DEFAULT_PREFERENCES);
     localStorage.removeItem('sharp-study-token');
@@ -107,15 +109,22 @@ export function AuthProvider({ children }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    resetThemeOnLogout();
+    setLoadingLabel('Logging you out securely...');
+    setLoading(true);
+    try {
+      await supabase.auth.signOut();
+      resetThemeOnLogout();
+    } finally {
+      setLoading(false);
+      setLoadingLabel('Loading your workspace...');
+    }
   };
 
   // 1. Initial Load State (Handles F5 hard refreshes)
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-bg, #ffffff)' }}>
-        <Spinner size="lg" label="Loading your workspace..." />
+        <Spinner size="lg" label={loadingLabel} />
       </div>
     );
   }

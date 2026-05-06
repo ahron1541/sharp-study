@@ -36,6 +36,7 @@ export default function ForgotPasswordFlow() {
     sending: otpSending,
     sendOTP: resendResetOTP,
   } = useOTP(requestPasswordResetOTP, verifyPasswordResetOTP, fp.resolvedEmail);
+  const busy = fp.loading || otpSending;
 
   const handleVerifyOTP = async (e) => {
     e.preventDefault();
@@ -55,6 +56,13 @@ export default function ForgotPasswordFlow() {
         transition={{ duration: 0.2, ease: 'easeInOut' }}
         className={styles.wrapper}
       >
+        {busy && (
+          <div className={styles.busyOverlay} role="alert" aria-live="assertive" aria-busy="true">
+            <div className={styles.busyCard}>
+              {fp.stage === 'request' ? 'Sending your recovery code...' : fp.stage === 'verify' ? 'Checking your code...' : 'Updating your password...'}
+            </div>
+          </div>
+        )}
 
         {/* ── Stage 1: Request email / username ── */}
         {fp.stage === 'request' && (

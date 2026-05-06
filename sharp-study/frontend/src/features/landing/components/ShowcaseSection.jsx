@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion';
 import styles from './ShowcaseSection.module.css';
 
 export default function ShowcaseSection() {
@@ -5,17 +6,25 @@ export default function ShowcaseSection() {
     <section aria-labelledby="showcase-heading" className={styles.section}>
       <div className={styles.inner}>
         <h2 id="showcase-heading" className={styles.sectionTitle}>
-          Loream Ipsum
+          A focused workspace from upload to review
         </h2>
         <p className={styles.sectionSub}>
-          Lorem ipsum dolor sit amet, consectetur adipiscing elit.
-          Morbi rutrum sed magna id mollis.
+          Upload learning materials, edit your notes manually, listen with the
+          narrator, and let the admin dashboard keep users and content managed
+          securely.
         </p>
 
-        <div className={styles.imageWrapper}>
+        <motion.div
+          className={styles.imageWrapper}
+          initial={{ opacity: 0, scale: 0.97 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true, margin: '-80px' }}
+          transition={{ duration: 0.34, ease: 'easeOut' }}
+        >
+          <div className={styles.skeleton} aria-hidden="true" />
           <img
-            src="https://placehold.co/800x500/AAAAAA/AAAAAA"
-            alt="Application showcase — placeholder"
+            src="https://placehold.co/900x560/eaf7ef/183b2a.svg?text=Verso+Dashboard+Preview"
+            alt="Verso dashboard preview placeholder"
             className={styles.showcaseImg}
             width="800"
             height="500"
@@ -30,7 +39,7 @@ export default function ShowcaseSection() {
             <line x1="0" y1="0" x2="100" y2="100" stroke="rgba(0,0,0,0.12)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
             <line x1="100" y1="0" x2="0" y2="100" stroke="rgba(0,0,0,0.12)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
           </svg>
-        </div>
+        </motion.div>
       </div>
     </section>
   );
