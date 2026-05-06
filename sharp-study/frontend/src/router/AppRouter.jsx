@@ -4,6 +4,8 @@ import ProtectedRoute from '../shared/components/ProtectedRoute';
 import Spinner from '../shared/components/Spinner';
 import SessionTimeout from '../shared/components/SessionTimeout';
 import AppShell from '../features/dashboard/components/AppShell';
+import AdminShell from '../features/admin/components/AdminShell';
+import { useAuth } from '../features/auth/context/AuthContext';
 
 // Lazy-loaded pages (performance — loads only when needed)
 const LandingPage = lazy(() => import('../features/landing/pages/LandingPage'));
@@ -27,6 +29,16 @@ const FullPageSpinner = () => (
   </div>
 );
 
+function RoleLandingRedirect() {
+  const { profile } = useAuth();
+
+  if (!profile) {
+    return <FullPageSpinner />;
+  }
+
+  return <Navigate to={profile.role === 'admin' ? '/admin' : '/dashboard'} replace />;
+}
+
 export default function AppRouter() {
   return (
     <BrowserRouter>
@@ -39,10 +51,19 @@ export default function AppRouter() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
+          <Route
+            path="/home"
+            element={(
+              <ProtectedRoute>
+                <RoleLandingRedirect />
+              </ProtectedRoute>
+            )}
+          />
+
           {/* Protected Routes wrapped in AppShell Layout */}
           <Route
             element={
-              <ProtectedRoute>
+              <ProtectedRoute studentOnly>
                 <AppShell />
               </ProtectedRoute>
             }
@@ -55,16 +76,16 @@ export default function AppRouter() {
             <Route path="/study-guide/:id" element={<StudyGuidePage />} />
             <Route path="/flashcards/:id" element={<FlashcardsPage />} />
             <Route path="/quiz/:id" element={<QuizPage />} />
-            
-            {/* Admin only (Requires standard protection + admin flag) */}
-            <Route 
-              path="/admin" 
-              element={
-                <ProtectedRoute adminOnly>
-                  <AdminPage />
-                </ProtectedRoute>
-              } 
-            />
+          </Route>
+
+          <Route
+            element={
+              <ProtectedRoute adminOnly>
+                <AdminShell />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/admin" element={<AdminPage />} />
           </Route>
 
           {/* 404 */}

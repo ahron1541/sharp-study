@@ -83,6 +83,16 @@ export function useForgotPassword() {
     }
   };
 
+  const returnToRequest = () => {
+    if (loading) return;
+    setStage('request');
+    setResolvedEmail('');
+    setResetToken('');
+    setPassword('');
+    setConfirm('');
+    setErrors({});
+  };
+
   return {
     stage,
     identifier, setIdentifier,
@@ -91,6 +101,6 @@ export function useForgotPassword() {
     password, setPassword,
     confirm, setConfirm,
     errors, setErrors, loading,
-    requestOTP, verifyOTP, submitNewPassword,
+    requestOTP, verifyOTP, submitNewPassword, returnToRequest,
   };
 }

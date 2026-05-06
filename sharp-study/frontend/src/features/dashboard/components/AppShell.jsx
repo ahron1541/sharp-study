@@ -25,6 +25,7 @@ export default function AppShell() {
   const [routeLoading, setRouteLoading] = useState(false);
 
   const routeLabel = useMemo(() => {
+    if (location.pathname.startsWith('/admin')) return 'Opening your admin dashboard';
     if (location.pathname.startsWith('/library')) return 'Opening your library';
     if (location.pathname.startsWith('/archive')) return 'Opening your archive';
     if (location.pathname.startsWith('/settings')) return 'Opening your settings';

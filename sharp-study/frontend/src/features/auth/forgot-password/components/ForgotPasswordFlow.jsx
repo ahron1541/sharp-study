@@ -37,6 +37,18 @@ export default function ForgotPasswordFlow() {
     sendOTP: resendResetOTP,
   } = useOTP(requestPasswordResetOTP, verifyPasswordResetOTP, fp.resolvedEmail);
   const busy = fp.loading || otpSending;
+  const busyMessage =
+    fp.stage === 'request'
+      ? 'Sending your recovery code...'
+      : fp.stage === 'verify'
+        ? 'Checking your code...'
+        : 'Updating your password...';
+
+  const handleOtpChange = (nextValue) => {
+    setOtp(nextValue);
+    setOtpError('');
+    fp.setErrors((prev) => ({ ...prev, otp: null }));
+  };
 
   const handleVerifyOTP = async (e) => {
     e.preventDefault();
@@ -56,14 +68,6 @@ export default function ForgotPasswordFlow() {
         transition={{ duration: 0.2, ease: 'easeInOut' }}
         className={styles.wrapper}
       >
-        {busy && (
-          <div className={styles.busyOverlay} role="alert" aria-live="assertive" aria-busy="true">
-            <div className={styles.busyCard}>
-              {fp.stage === 'request' ? 'Sending your recovery code...' : fp.stage === 'verify' ? 'Checking your code...' : 'Updating your password...'}
-            </div>
-          </div>
-        )}
-
         {/* ── Stage 1: Request email / username ── */}
         {fp.stage === 'request' && (
           <>
@@ -71,6 +75,25 @@ export default function ForgotPasswordFlow() {
               <h1 className={styles.title}>{t('title')}</h1>
               <p className={styles.subtitle}>{t('subtitle')}</p>
             </div>
+
+            <div className={styles.infoCard}>
+              <strong>Quick recovery</strong>
+              <span>We’ll send a 6-digit code to your registered email using the same OTP email provider as signup.</span>
+            </div>
+
+            <AnimatePresence>
+              {busy && (
+                <motion.div
+                  className={styles.inlineStatus}
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                >
+                  <span className={styles.inlineSpinner} aria-hidden="true" />
+                  {busyMessage}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             <form
               onSubmit={(e) => { e.preventDefault(); if (!fp.loading) fp.requestOTP(); }}
@@ -94,7 +117,7 @@ export default function ForgotPasswordFlow() {
                   disabled={fp.loading}
                   error={fp.errors.identifier}
                   rightAddon={{
-                    label:    'Send',
+                    label:    fp.loading ? 'Sending...' : 'Send',
                     ariaLabel: 'Send reset code',
                     onClick:  (e) => { e.preventDefault(); fp.requestOTP(); },
                     disabled: fp.loading,
@@ -123,8 +146,24 @@ export default function ForgotPasswordFlow() {
           <>
             <div className={styles.titleRow}>
               <h1 className={styles.title}>{t('otpTitle')}</h1>
-              <p className={styles.subtitle}>{t('otpSubtitle')}</p>
+              <p className={styles.subtitle}>
+                {t('otpSubtitle')} <strong>{fp.resolvedEmail}</strong>
+              </p>
             </div>
+
+            <AnimatePresence>
+              {busy && (
+                <motion.div
+                  className={styles.inlineStatus}
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                >
+                  <span className={styles.inlineSpinner} aria-hidden="true" />
+                  {busyMessage}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             <form onSubmit={handleVerifyOTP} noValidate aria-busy={fp.loading || otpSending}>
               <div className={styles.fields}>
@@ -132,7 +171,7 @@ export default function ForgotPasswordFlow() {
 
                 <OTPInput
                   value={otp}
-                  onChange={setOtp}
+                  onChange={handleOtpChange}
                   error={!!(otpHookError || fp.errors.otp)}
                   disabled={fp.loading || otpSending}
                 />
@@ -166,6 +205,14 @@ export default function ForgotPasswordFlow() {
                 >
                   {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
                 </button>
+                <button
+                  type="button"
+                  onClick={fp.returnToRequest}
+                  disabled={busy}
+                  className={styles.resendBtn}
+                >
+                  Use a different email or username
+                </button>
               </div>
             </form>
           </>
@@ -181,6 +228,20 @@ export default function ForgotPasswordFlow() {
               </p>
             </div>
 
+            <AnimatePresence>
+              {busy && (
+                <motion.div
+                  className={styles.inlineStatus}
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                >
+                  <span className={styles.inlineSpinner} aria-hidden="true" />
+                  {busyMessage}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <form
               onSubmit={(e) => { e.preventDefault(); if (!fp.loading) fp.submitNewPassword(); }}
               noValidate
@@ -193,7 +254,7 @@ export default function ForgotPasswordFlow() {
                 */}
                 <PillInput
                   id="fp-username-display"
-                  label="Username"
+                  label="Recovery email"
                   type="text"
                   value={fp.resolvedEmail}
                   onChange={() => {}}
@@ -241,7 +302,11 @@ export default function ForgotPasswordFlow() {
               </div>
 
               <div className={styles.submitRow}>
-                <PillButton type="submit" loading={fp.loading}>
+                <PillButton
+                  type="submit"
+                  loading={fp.loading}
+                  disabled={!fp.password || !fp.confirm || resetPasswordsMismatch}
+                >
                   {t('resetButton', 'Change Password')}
                 </PillButton>
               </div>

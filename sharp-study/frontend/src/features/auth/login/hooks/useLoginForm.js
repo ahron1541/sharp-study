@@ -64,9 +64,25 @@ export function useLoginForm() {
       });
       console.log("5. Session set response:", sessionResponse);
 
-      setTransitionLabel('Opening your dashboard...');
-      console.log("6. Navigating to dashboard...");
-      navigate('/dashboard');
+      setTransitionLabel('Preparing your workspace...');
+      const roleSourceUserId = data.user?.id || sessionResponse?.data?.session?.user?.id;
+      let nextPath = '/dashboard';
+
+      if (roleSourceUserId) {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', roleSourceUserId)
+          .single();
+
+        if (profileData?.role === 'admin') {
+          nextPath = '/admin';
+        }
+      }
+
+      setTransitionLabel(nextPath === '/admin' ? 'Opening Admin Control...' : 'Opening your dashboard...');
+      console.log("6. Navigating to:", nextPath);
+      navigate(nextPath);
 
     } catch (err) {
       console.error("CRITICAL ERROR IN SUBMIT:", err);

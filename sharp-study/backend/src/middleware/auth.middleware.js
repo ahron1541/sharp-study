@@ -29,7 +29,23 @@ const requireAuth = async (req, res, next) => {
       return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
     }
 
+    const { supabaseAdmin } = require('../config/supabase');
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, email, full_name, role, is_blocked')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError || !profile) {
+      return res.status(401).json({ error: 'Unauthorized: Profile not found' });
+    }
+
+    if (profile.is_blocked) {
+      return res.status(403).json({ error: 'Account is blocked' });
+    }
+
     req.user = user;
+    req.profile = profile;
     req.accessToken = token;
     next();
   } catch (err) {
@@ -39,18 +55,9 @@ const requireAuth = async (req, res, next) => {
 };
 
 const requireAdmin = async (req, res, next) => {
-  // Use requireAuth to verify identity first
   await requireAuth(req, res, async () => {
     try {
-      const { supabaseAdmin } = require('../config/supabase');
-      // Check the database to see if they have the admin role
-      const { data: profile } = await supabaseAdmin
-        .from('profiles')
-        .select('role')
-        .eq('id', req.user.id)
-        .single();
-
-      if (!profile || profile.role !== 'admin') {
+      if (!req.profile || req.profile.role !== 'admin') {
         console.log(`[ERROR] Admin Auth Error: User ${req.user.id} attempted to access an admin route.`);
         return res.status(403).json({ error: 'Forbidden: Admin access required' });
       }
