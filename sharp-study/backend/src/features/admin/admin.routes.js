@@ -103,9 +103,9 @@ async function fetchOverview() {
   ] = await Promise.all([
     supabaseAdmin.from('profiles').select('id, role, is_blocked', { count: 'exact' }),
     supabaseAdmin.from('documents').select('id, status', { count: 'exact' }),
-    supabaseAdmin.from('study_guides').select('id', { count: 'exact' }),
-    supabaseAdmin.from('flashcard_sets').select('id', { count: 'exact' }),
-    supabaseAdmin.from('quizzes').select('id', { count: 'exact' }),
+    supabaseAdmin.from('study_guides').select('id, is_archived', { count: 'exact' }),
+    supabaseAdmin.from('flashcard_sets').select('id, is_archived', { count: 'exact' }),
+    supabaseAdmin.from('quizzes').select('id, is_archived', { count: 'exact' }),
     supabaseAdmin.from('audit_logs').select('id, event, created_at, metadata, user_id').order('created_at', { ascending: false }).limit(8),
   ]);
 
@@ -124,6 +124,9 @@ async function fetchOverview() {
 
   const profiles = profilesResult.data || [];
   const documents = documentsResult.data || [];
+  const studyGuides = studyGuidesResult.data || [];
+  const flashcardSets = flashcardSetsResult.data || [];
+  const quizzes = quizzesResult.data || [];
   const audits = auditResult.data || [];
 
   return {
@@ -133,9 +136,17 @@ async function fetchOverview() {
       blocked_users: profiles.filter((profile) => profile.is_blocked).length,
       active_users: profiles.filter((profile) => !profile.is_blocked).length,
       documents: documentsResult.count || documents.length,
-      study_guides: studyGuidesResult.count || 0,
-      flashcard_sets: flashcardSetsResult.count || 0,
-      quizzes: quizzesResult.count || 0,
+      documents_active: documents.filter((doc) => !doc.is_archived).length,
+      documents_archived: documents.filter((doc) => doc.is_archived).length,
+      study_guides: studyGuidesResult.count || studyGuides.length,
+      study_guides_active: studyGuides.filter((item) => !item.is_archived).length,
+      study_guides_archived: studyGuides.filter((item) => item.is_archived).length,
+      flashcard_sets: flashcardSetsResult.count || flashcardSets.length,
+      flashcard_sets_active: flashcardSets.filter((item) => !item.is_archived).length,
+      flashcard_sets_archived: flashcardSets.filter((item) => item.is_archived).length,
+      quizzes: quizzesResult.count || quizzes.length,
+      quizzes_active: quizzes.filter((item) => !item.is_archived).length,
+      quizzes_archived: quizzes.filter((item) => item.is_archived).length,
       documents_processing: documents.filter((doc) => doc.status === 'processing').length,
       documents_done: documents.filter((doc) => doc.status === 'done').length,
       documents_error: documents.filter((doc) => doc.status === 'error').length,
@@ -378,7 +389,7 @@ router.delete('/users/:id', async (req, res) => {
   }
 });
 
-async function fetchContentPage({ type, search, page, pageSize }) {
+async function fetchContentPage({ type, search, page, pageSize, archived = 'all', ownerSearch = '', ownerId = '' }) {
   const normalizedType = CONTENT_TYPES.has(type) ? type : 'all';
   const queries = normalizedType === 'all' ? [...CONTENT_TYPES] : [normalizedType];
   const rows = [];
@@ -399,6 +410,16 @@ async function fetchContentPage({ type, search, page, pageSize }) {
       query = query.ilike('title', `%${search}%`);
     }
 
+     if (archived === 'archived') {
+      query = query.eq('is_archived', true);
+    } else if (archived === 'active') {
+      query = query.eq('is_archived', false);
+    }
+
+    if (ownerId) {
+      query = query.eq('user_id', ownerId);
+    }
+
     const { data, error } = await query.limit(normalizedType === 'all' ? 1000 : pageSize * 3);
     if (error) throw error;
 
@@ -415,17 +436,31 @@ async function fetchContentPage({ type, search, page, pageSize }) {
   const totalCount = rows.length;
   const from = (page - 1) * pageSize;
   const to = from + pageSize;
-  const pageItems = rows.slice(from, to);
-  const userIds = [...new Set(pageItems.map((item) => item.user_id).filter(Boolean))];
+  const userIds = [...new Set(rows.map((item) => item.user_id).filter(Boolean))];
   const profilesMap = await fetchProfilesMap(userIds);
+  const hydratedRows = rows.map((item) => ({
+    ...item,
+    owner: profilesMap.get(item.user_id) || null,
+  }));
+
+  const filteredRows = ownerSearch
+    ? hydratedRows.filter((item) => {
+      const haystack = [
+        item.owner?.full_name,
+        item.owner?.email,
+        item.owner?.username,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(ownerSearch);
+    })
+    : hydratedRows;
+
+  const filteredTotalCount = filteredRows.length;
+  const pageItems = filteredRows.slice(from, to);
 
   return {
-    items: pageItems.map((item) => ({
-      ...item,
-      owner: profilesMap.get(item.user_id) || null,
-    })),
-    totalCount,
-    totalPages: Math.max(1, Math.ceil(totalCount / pageSize)),
+    items: pageItems,
+    totalCount: filteredTotalCount,
+    totalPages: Math.max(1, Math.ceil(filteredTotalCount / pageSize)),
   };
 }
 
@@ -433,9 +468,14 @@ router.get('/content', async (req, res) => {
   try {
     const type = String(req.query.type || 'all').trim();
     const search = normalizeSearch(req.query.search);
+    const ownerSearch = normalizeSearch(req.query.owner);
+    const ownerId = String(req.query.owner_id || '').trim();
+    const archived = ['all', 'active', 'archived'].includes(String(req.query.archived || 'all'))
+      ? String(req.query.archived || 'all')
+      : 'all';
     const page = parsePositiveInt(req.query.page, 1);
     const pageSize = parsePositiveInt(req.query.pageSize, CONTENT_PAGE_SIZE, 25);
-    const result = await fetchContentPage({ type, search, page, pageSize });
+    const result = await fetchContentPage({ type, search, page, pageSize, archived, ownerSearch, ownerId });
 
     res.json({
       items: result.items,

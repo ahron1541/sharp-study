@@ -1,14 +1,41 @@
-import { LogOut, Shield } from 'lucide-react';
-import { Outlet, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { Archive, ChevronLeft, ChevronRight, FileText, LogOut, Menu, MonitorCog, Shield, Users, X } from 'lucide-react';
+import { Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useMemo, useState } from 'react';
 
 import { useAuth } from '../../auth/context/AuthContext';
 import Button from '../../../shared/components/Button';
+import versoLogo from '../../../assets/logo/verso_w_name.svg';
+
+const NAV_ITEMS = [
+  { id: 'overview', label: 'Overview', icon: Shield },
+  { id: 'users', label: 'User Management', icon: Users },
+  { id: 'content', label: 'Active Content', icon: FileText },
+  { id: 'archived', label: 'Archived Content', icon: Archive },
+  { id: 'settings', label: 'Settings', icon: MonitorCog },
+];
+const COLLAPSED_KEY = 'sharp-study-admin-sidebar-collapsed';
 
 export default function AdminShell() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { profile, signOut } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(COLLAPSED_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const activeSection = useMemo(() => {
+    const section = searchParams.get('section') || 'overview';
+    return NAV_ITEMS.some((item) => item.id === section) ? section : 'overview';
+  }, [searchParams]);
+
+  const firstName = profile?.first_name ?? profile?.full_name?.split(' ')[0] ?? 'Admin';
 
   const handleLogout = async () => {
     if (loggingOut) return;
@@ -21,44 +48,151 @@ export default function AdminShell() {
     }
   };
 
-  const firstName = profile?.first_name ?? profile?.full_name?.split(' ')[0] ?? 'Admin';
+  const goToSection = (section) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('section', section);
+    if (section !== 'content' && section !== 'archived') {
+      next.delete('owner');
+      next.delete('owner_id');
+      next.delete('type');
+      next.delete('q');
+      next.delete('page');
+      next.delete('archived');
+    }
+    if (section === 'content') {
+      next.set('archived', 'active');
+    }
+    if (section === 'archived') {
+      next.set('archived', 'archived');
+    }
+    setSearchParams(next, { replace: location.pathname === '/admin' });
+    setMobileOpen(false);
+  };
+
+  const handleCollapseToggle = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    try {
+      localStorage.setItem(COLLAPSED_KEY, String(next));
+    } catch {
+      // ignore persistence failure
+    }
+  };
+
+  const navContent = (
+    <div className="flex h-full flex-col bg-sidebar">
+      <div className="border-b border-border px-4 py-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface text-accent shadow-card">
+              <img src={versoLogo} alt="Verso" className="h-7 w-auto" />
+            </span>
+            {!collapsed ? (
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Admin Control</p>
+                <p className="truncate text-lg font-black text-text">{firstName}</p>
+              </div>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={handleCollapseToggle}
+            className="hidden cursor-pointer rounded-xl p-2 text-text-muted transition-colors hover:bg-surface-2 lg:inline-flex"
+            aria-label={collapsed ? 'Expand admin sidebar' : 'Collapse admin sidebar'}
+          >
+            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          </button>
+        </div>
+      </div>
+
+      <nav className="flex-1 space-y-2 overflow-y-auto px-3 py-4" aria-label="Admin navigation">
+        {NAV_ITEMS.map((item) => {
+          const active = activeSection === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => goToSection(item.id)}
+              className={`flex w-full cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 text-left transition-colors ${
+                active
+                  ? 'bg-[var(--color-sidebar-active-bg)] text-[var(--color-sidebar-active-text)]'
+                  : 'text-sidebar-text hover:bg-surface-2 hover:text-text'
+              }`}
+            >
+              <item.icon size={18} aria-hidden="true" />
+              {!collapsed ? (
+                <span>
+                  <span className="block text-sm font-black">{item.label}</span>
+                  <span className={`block text-xs ${active ? 'text-white/80' : 'text-text-muted'}`}>
+                    {item.id === 'overview' ? 'System health' : item.id === 'users' ? 'Roles and accounts' : item.id === 'content' ? 'Current materials' : 'Stored and archived'}
+                  </span>
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="space-y-2 border-t border-border p-3">
+        <Button
+          variant="danger"
+          size="sm"
+          className="w-full"
+          loading={loggingOut}
+          icon={<LogOut size={14} />}
+          onClick={handleLogout}
+        >
+          Log out
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-bg">
-      <header className="sticky top-0 z-30 border-b border-border bg-surface/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent text-accent-text">
-              <Shield size={20} />
-            </span>
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Admin Control</p>
-              <p className="text-base font-black text-text">{firstName}</p>
+    <div className="min-h-screen bg-bg lg:flex lg:h-screen">
+      <aside className={`hidden h-screen shrink-0 border-r border-border transition-[width] duration-300 lg:sticky lg:top-0 lg:block ${collapsed ? 'w-[96px]' : 'w-[280px]'}`}>
+        {navContent}
+      </aside>
+
+      {mobileOpen ? (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden" onClick={() => setMobileOpen(false)} aria-hidden="true" />
+          <aside className="fixed inset-y-0 left-0 z-50 w-[280px] border-r border-border lg:hidden">
+            {navContent}
+          </aside>
+        </>
+      ) : null}
+
+      <div className="min-w-0 flex-1">
+        <header className="sticky top-0 z-30 border-b border-border bg-surface/95 backdrop-blur lg:hidden">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setMobileOpen((value) => !value)}
+                className="rounded-xl p-2 text-text-muted hover:bg-surface-2"
+                aria-label="Toggle admin navigation"
+              >
+                {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+              </button>
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Admin Control</p>
+                <p className="text-base font-black text-text">{NAV_ITEMS.find((item) => item.id === activeSection)?.label || 'Overview'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={() => goToSection('settings')}>
+                Settings
+              </Button>
+              <Button variant="danger" size="sm" loading={loggingOut} onClick={handleLogout}>
+                Exit
+              </Button>
             </div>
           </div>
+        </header>
 
-          <div className="flex items-center gap-3">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => navigate('/admin')}
-            >
-              Dashboard
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              loading={loggingOut}
-              icon={<LogOut size={14} />}
-              onClick={handleLogout}
-            >
-              Log out
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <Outlet />
+        <Outlet />
+      </div>
     </div>
   );
 }
