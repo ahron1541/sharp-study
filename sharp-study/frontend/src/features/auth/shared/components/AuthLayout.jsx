@@ -57,9 +57,9 @@ export default function AuthLayout({ children }) {
         <main className={styles.formPanel}>
           {/* Back button — top left of the right panel */}
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => navigate('/')}
             className={styles.backBtn}
-            aria-label="Go back"
+            aria-label="Back to landing page"
           >
             <img src={backIcon} alt="" className={styles.backIcon} />
           </button>

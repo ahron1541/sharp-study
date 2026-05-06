@@ -1,3 +1,5 @@
+import { isStrongPassword } from '../../features/auth/shared/utils/passwordPolicy';
+
 export const validators = {
   email: (value) => {
     const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -8,10 +10,7 @@ export const validators = {
 
   password: (value) => {
     if (!value) return 'Password is required.';
-    if (value.length < 8) return 'Password must be at least 8 characters.';
-    if (!/[A-Z]/.test(value)) return 'Must include an uppercase letter.';
-    if (!/[0-9]/.test(value)) return 'Must include a number.';
-    if (!/[^A-Za-z0-9]/.test(value)) return 'Must include a special character (!@#$...).';
+    if (!isStrongPassword(value)) return 'Use at least 8 characters and pass 4 of the 5 strength checks.';
     return null;
   },
 

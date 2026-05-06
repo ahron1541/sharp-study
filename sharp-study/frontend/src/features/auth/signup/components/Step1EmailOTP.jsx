@@ -13,6 +13,7 @@ export default function Step1EmailOTP({ onContinue, sending = false }) {
 
   const handleEmailSubmit = async (e) => {
     e.preventDefault();
+    if (sending) return;
     const sanitizedEmail = sanitizePlainText(email).toLowerCase().trim();
     const err = validators.email(sanitizedEmail);
     if (err) { setEmailError(err); return; }
@@ -44,6 +45,7 @@ export default function Step1EmailOTP({ onContinue, sending = false }) {
             placeholder="Enter your Email Address"
             required
             error={emailError}
+            disabled={sending}
             rightAddon={{
               label: sending ? <span className={styles.inlineLoader}><span className={styles.inlineSpinner} aria-hidden="true" />{t('sendPending')}</span> : t('submit'),
               ariaLabel: 'Send verification code',

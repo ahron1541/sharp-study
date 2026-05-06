@@ -24,6 +24,7 @@ export default function Step2OTPVerification({ email, onBack, onVerified, onBoot
     sendOTP,
     verifyOTP,
   } = useOTP(requestSignupOTP, verifySignupOTP, email);
+  const busy = sending || verifying;
 
   useEffect(() => {
     if (!email || autoSendRef.current) return;
@@ -35,6 +36,7 @@ export default function Step2OTPVerification({ email, onBack, onVerified, onBoot
 
   const handleVerify = async (event) => {
     event.preventDefault();
+    if (busy) return;
     const response = await verifyOTP();
     if (response?.signup_token) {
       onVerified(response.signup_token);
@@ -83,7 +85,7 @@ export default function Step2OTPVerification({ email, onBack, onVerified, onBoot
               value={otp}
               onChange={setOtp}
               error={!!error}
-              disabled={verifying}
+              disabled={busy}
             />
             <AnimatePresence>
               {error && (
@@ -105,10 +107,10 @@ export default function Step2OTPVerification({ email, onBack, onVerified, onBoot
           </div>
 
           <div className={styles.actionRow}>
-            <button type="button" onClick={onBack} className={styles.backBtn}>
+            <button type="button" onClick={onBack} disabled={busy} className={styles.backBtn}>
               {t('changeEmail')}
             </button>
-            <PillButton type="submit" loading={verifying} disabled={otp.replace(/\D/g, '').length < 6}>
+            <PillButton type="submit" loading={verifying} disabled={sending || otp.replace(/\D/g, '').length < 6}>
               {t('verifyButton')}
             </PillButton>
           </div>
@@ -116,7 +118,7 @@ export default function Step2OTPVerification({ email, onBack, onVerified, onBoot
           <button
             type="button"
             onClick={sendOTP}
-            disabled={cooldown > 0 || sending}
+            disabled={cooldown > 0 || busy}
             className={styles.resendBtn}
           >
             {cooldown > 0 ? t('resendCooldown', { seconds: cooldown }) : t('resend')}

@@ -34,7 +34,7 @@ export function useOTP(requestFn, verifyFn, email, options = {}) {
   }, [cooldown]);
 
   const sendOTP = async () => {
-    if (cooldown > 0 || sending) return;
+    if (cooldown > 0 || sending || verifying) return;
     setSending(true);
     setError('');
     try {
@@ -53,6 +53,7 @@ export function useOTP(requestFn, verifyFn, email, options = {}) {
   };
 
   const verifyOTP = async () => {
+    if (sending || verifying) return null;
     if (otp.replace(/\D/g, '').length < 6) {
       setError('Please enter all 6 digits.');
       return false;

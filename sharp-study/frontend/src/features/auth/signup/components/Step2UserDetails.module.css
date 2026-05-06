@@ -27,4 +27,15 @@
 .statusError     { font-size: var(--font-size-xs); color: #EF4444; padding-left: 0.75rem; margin-top: 0.2rem; }
 .statusHint      { font-size: var(--font-size-xs); color: var(--muted); padding-left: 0.75rem; margin-top: 0.2rem; }
 
+.matchSuccess,
+.matchError {
+  margin: -0.55rem 0 0;
+  padding-left: 0.75rem;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+}
+
+.matchSuccess { color: #22C55E; }
+.matchError { color: #EF4444; }
+
 .submitRow { margin-top: var(--space-sm); }

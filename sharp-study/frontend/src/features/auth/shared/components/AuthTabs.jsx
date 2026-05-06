@@ -8,8 +8,9 @@ import styles from './AuthTabs.module.css';
  *
  * Props:
  *   activeTab — 'login' | 'signup'
+ *   disabled  — prevents tab switching while an auth request is running
  */
-export default function AuthTabs({ activeTab }) {
+export default function AuthTabs({ activeTab, disabled = false }) {
   const navigate = useNavigate();
   const { t } = useTranslation('auth');
 
@@ -20,7 +21,10 @@ export default function AuthTabs({ activeTab }) {
           role="tab"
           aria-selected={activeTab === 'login'}
           aria-controls="auth-panel"
-          onClick={() => navigate('/login')}
+          disabled={disabled}
+          onClick={() => {
+            if (!disabled) navigate('/login');
+          }}
           className={`${styles.tab} ${activeTab === 'login' ? styles.active : ''}`}
         >
           {t('tabs.login', 'Login')}
@@ -29,7 +33,10 @@ export default function AuthTabs({ activeTab }) {
           role="tab"
           aria-selected={activeTab === 'signup'}
           aria-controls="auth-panel"
-          onClick={() => navigate('/register')}
+          disabled={disabled}
+          onClick={() => {
+            if (!disabled) navigate('/register');
+          }}
           className={`${styles.tab} ${activeTab === 'signup' ? styles.active : ''}`}
         >
           {t('tabs.signup', 'Sign Up')}

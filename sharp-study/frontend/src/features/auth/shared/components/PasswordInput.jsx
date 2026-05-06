@@ -17,6 +17,7 @@ export default function PasswordInput({
   placeholder = '',
   required = true,
   describedBy,
+  disabled = false,
 }) {
   const [visible, setVisible] = useState(false);
   const { t } = useTranslation('auth');
@@ -31,10 +32,12 @@ export default function PasswordInput({
       placeholder={placeholder}
       autoComplete={autoComplete}
       required={required}
+      disabled={disabled}
       error={error}
       describedBy={describedBy}
       toggleButton={{
         onClick: () => setVisible((v) => !v),
+        disabled,
         label:   visible ? t('password.hidePassword') : t('password.showPassword'),
         pressed: visible,
         icon:    visible

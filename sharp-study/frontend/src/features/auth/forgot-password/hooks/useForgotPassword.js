@@ -5,17 +5,10 @@ import {
   resetPassword,
 } from '../../shared/services/auth.service';
 import { sanitizePlainText } from '../../../../shared/utils/sanitize';
+import { isStrongPassword } from '../../shared/utils/passwordPolicy';
 import toast from 'react-hot-toast';
 
 const STAGES = ['request', 'verify', 'reset', 'done'];
-
-const PASSWORD_CHECKS = [
-  (v) => v.length >= 12,
-  (v) => /[A-Z]/.test(v),
-  (v) => /[a-z]/.test(v),
-  (v) => /[0-9]/.test(v),
-  (v) => /[^A-Za-z0-9]/.test(v),
-];
 
 export function useForgotPassword() {
   const [stage,     setStage]     = useState('request');
@@ -28,6 +21,7 @@ export function useForgotPassword() {
   const [loading,   setLoading]   = useState(false);
 
   const requestOTP = async () => {
+    if (loading) return;
     if (!identifier.trim()) {
       setErrors({ identifier: 'Email or username is required.' });
       return;
@@ -40,17 +34,17 @@ export function useForgotPassword() {
       setResetToken('');
       setStage('verify');
       toast.success('Reset code sent! Check your email.');
-    } catch {
-      // Always advance (security: don't reveal if account exists)
-      setResolvedEmail(identifier);
-      setStage('verify');
-      toast.success('If an account exists, a reset code was sent.');
+    } catch (err) {
+      const message = err.message || 'Reset code could not be sent. Please try again.';
+      setErrors({ identifier: message });
+      toast.error(message);
     } finally {
       setLoading(false);
     }
   };
 
   const verifyOTP = async (otp) => {
+    if (loading) return false;
     if (otp.replace(/\D/g, '').length < 6) return false;
     setLoading(true);
     try {
@@ -67,8 +61,9 @@ export function useForgotPassword() {
   };
 
   const submitNewPassword = async () => {
+    if (loading) return;
     const errs = {};
-    if (!PASSWORD_CHECKS.every((c) => c(password))) errs.password = 'Password does not meet all requirements.';
+    if (!isStrongPassword(password)) errs.password = 'Use at least 8 characters and pass 4 of the 5 strength checks.';
     if (password !== confirm) errs.confirm = 'Passwords do not match.';
     if (Object.keys(errs).length) { setErrors(errs); return; }
 

@@ -1,19 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { sanitizePlainText } from '../../../../shared/utils/sanitize';
 import { checkUsername, completeSignup } from '../../shared/services/auth.service';
+import { isStrongPassword } from '../../shared/utils/passwordPolicy';
 import toast from 'react-hot-toast';
-
-const PASSWORD_CHECKS = [
-  (v) => v.length >= 12,
-  (v) => /[A-Z]/.test(v),
-  (v) => /[a-z]/.test(v),
-  (v) => /[0-9]/.test(v),
-  (v) => /[^A-Za-z0-9]/.test(v),
-];
-
-function isStrongPassword(pw) {
-  return PASSWORD_CHECKS.every((check) => check(pw));
-}
 
 export function useSignupForm(email, signupToken) {
   const [form, setForm] = useState({
@@ -27,6 +16,7 @@ export function useSignupForm(email, signupToken) {
   const debounceRef = useRef(null);
 
   const update = (field, raw) => {
+    if (loading) return;
     const value = sanitizePlainText(raw);
     setForm((prev) => ({ ...prev, [field]: value }));
     setErrors((prev) => ({ ...prev, [field]: null }));
@@ -35,14 +25,17 @@ export function useSignupForm(email, signupToken) {
   // Debounced username check
   useEffect(() => {
     const name = form.username.trim();
-    if (name.length < 3) { setUsernameStatus(null); return; }
-    if (!/^[a-zA-Z0-9_.-]+$/.test(name)) {
-      setUsernameStatus('invalid');
-      return;
-    }
-    setUsernameStatus('checking');
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
+      if (name.length < 3) {
+        setUsernameStatus(null);
+        return;
+      }
+      if (!/^[a-zA-Z0-9_.-]+$/.test(name)) {
+        setUsernameStatus('invalid');
+        return;
+      }
+      setUsernameStatus('checking');
       try {
         const res = await checkUsername(name);
         setUsernameStatus(res.available ? 'available' : 'taken');
@@ -60,12 +53,13 @@ export function useSignupForm(email, signupToken) {
     if (form.username.length < 3)  e.username = 'Username must be at least 3 characters.';
     if (usernameStatus === 'taken')  e.username = 'This username is already taken.';
     if (usernameStatus === 'invalid') e.username = 'Only letters, numbers, _ . - are allowed.';
-    if (!isStrongPassword(form.password)) e.password = 'Password does not meet all requirements.';
+    if (!isStrongPassword(form.password)) e.password = 'Use at least 8 characters and pass 4 of the 5 strength checks.';
     if (form.password !== form.confirm_password) e.confirm_password = 'Passwords do not match.';
     return e;
   };
 
   const submit = async () => {
+    if (loading) return false;
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return false; }
     if (!email || !signupToken) {

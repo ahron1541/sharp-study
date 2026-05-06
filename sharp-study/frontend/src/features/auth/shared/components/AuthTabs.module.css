@@ -53,3 +53,8 @@
 .tab:not(.active):hover {
   color: var(--text-color);
 }
+
+.tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}

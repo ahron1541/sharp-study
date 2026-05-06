@@ -10,9 +10,13 @@ import styles               from './Step2UserDetails.module.css';
 export default function Step2UserDetails({ email, signupToken, onSuccess }) {
   const { t } = useTranslation('auth', { keyPrefix: 'signup.step2' });
   const { form, update, errors, loading, usernameStatus, submit } = useSignupForm(email, signupToken);
+  const confirmTouched = form.confirm_password.length > 0;
+  const passwordsMatch = confirmTouched && form.password === form.confirm_password;
+  const passwordsMismatch = confirmTouched && form.password !== form.confirm_password;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading) return;
     const ok = await submit();
     if (ok) onSuccess();
   };
@@ -52,7 +56,7 @@ export default function Step2UserDetails({ email, signupToken, onSuccess }) {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} noValidate>
+      <form onSubmit={handleSubmit} noValidate aria-busy={loading}>
         <div className={styles.fields}>
           {/* First + Last name grid */}
           <div className={styles.nameGrid}>
@@ -66,6 +70,7 @@ export default function Step2UserDetails({ email, signupToken, onSuccess }) {
               placeholder="Juan"
               required
               error={errors.first_name}
+              disabled={loading}
             />
             <PillInput
               id="last-name"
@@ -77,6 +82,7 @@ export default function Step2UserDetails({ email, signupToken, onSuccess }) {
               placeholder="dela Cruz"
               required
               error={errors.last_name}
+              disabled={loading}
             />
           </div>
 
@@ -89,6 +95,7 @@ export default function Step2UserDetails({ email, signupToken, onSuccess }) {
             value={form.middle_name}
             onChange={(e) => update('middle_name', e.target.value)}
             placeholder="Optional"
+            disabled={loading}
           />
 
           {/* Username with live availability icon */}
@@ -103,6 +110,7 @@ export default function Step2UserDetails({ email, signupToken, onSuccess }) {
               placeholder="juana_dc"
               required
               error={errors.username}
+              disabled={loading}
               rightIcon={usernameRightIcon()}
               aria-invalid={
                 errors.username || usernameStatus === 'taken' || usernameStatus === 'invalid'
@@ -137,6 +145,7 @@ export default function Step2UserDetails({ email, signupToken, onSuccess }) {
             error={errors.password}
             autoComplete="new-password"
             describedBy="pw-strength"
+            disabled={loading}
           />
           <PasswordStrength password={form.password} id="pw-strength" />
 
@@ -148,7 +157,16 @@ export default function Step2UserDetails({ email, signupToken, onSuccess }) {
             onChange={(e) => update('confirm_password', e.target.value)}
             error={errors.confirm_password}
             autoComplete="new-password"
+            disabled={loading}
           />
+          {confirmTouched && (
+            <p
+              className={passwordsMatch ? styles.matchSuccess : styles.matchError}
+              role={passwordsMismatch ? 'alert' : 'status'}
+            >
+              {passwordsMatch ? 'Passwords match.' : 'Passwords do not match.'}
+            </p>
+          )}
         </div>
 
         <div className={styles.submitRow}>

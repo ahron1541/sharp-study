@@ -1,16 +1,19 @@
 import { useMemo } from 'react';
 import { AiOutlineCheck, AiOutlineClose } from 'react-icons/ai';
 import { useTranslation } from 'react-i18next';
+import {
+  MIN_PASSWORD_LENGTH,
+  MIN_PASSWORD_SCORE,
+  PASSWORD_REQUIREMENTS,
+  getPasswordScore,
+} from '../utils/passwordPolicy';
 import styles from './PasswordStrength.module.css';
 
 function getRequirements(t) {
-  return [
-    { key: 'length',   label: t('password.requirements.length'),   test: (v) => v.length >= 12 },
-    { key: 'upper',    label: t('password.requirements.uppercase'), test: (v) => /[A-Z]/.test(v) },
-    { key: 'lower',    label: t('password.requirements.lowercase'), test: (v) => /[a-z]/.test(v) },
-    { key: 'number',   label: t('password.requirements.number'),    test: (v) => /[0-9]/.test(v) },
-    { key: 'special',  label: t('password.requirements.special'),   test: (v) => /[^A-Za-z0-9]/.test(v) },
-  ];
+  return PASSWORD_REQUIREMENTS.map((rule) => ({
+    ...rule,
+    label: t(`password.requirements.${rule.key}`),
+  }));
 }
 
 const LEVEL_COLORS = ['level1', 'level2', 'level3', 'level4', 'level5'];
@@ -20,8 +23,9 @@ export default function PasswordStrength({ password = '', id }) {
   const requirements = useMemo(() => getRequirements(t), [t]);
   const levels = t('password.strength.levels', { returnObjects: true });
 
-  const metCount = requirements.filter((r) => r.test(password)).length;
+  const metCount = getPasswordScore(password);
   const showBar  = password.length > 0;
+  const strengthIndex = Math.max(0, metCount - 1);
 
   return (
     <div id={id} aria-live="polite" aria-label={t('password.strength.label')}>
@@ -37,10 +41,18 @@ export default function PasswordStrength({ password = '', id }) {
             ))}
           </div>
           <p className={styles.strengthLabel}>
-            {password.length > 0 && levels[metCount - 1]}
+            {password.length > 0 && levels[strengthIndex]}
           </p>
         </>
       )}
+
+      <p className={styles.policyHint}>
+        {t('password.requirements.policyHint', {
+          score: MIN_PASSWORD_SCORE,
+          total: requirements.length,
+          min: MIN_PASSWORD_LENGTH,
+        })}
+      </p>
 
       {/* Requirements checklist */}
       <ul className={styles.list} aria-label="Password requirements">

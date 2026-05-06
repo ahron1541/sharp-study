@@ -80,7 +80,7 @@ export default function SignupStepper() {
   return (
     <div className={styles.wrapper}>
       {/* Auth Tabs */}
-      <AuthTabs activeTab="signup" />
+      <AuthTabs activeTab="signup" disabled={bootingStep2} />
 
       {/* Step indicator */}
       <nav

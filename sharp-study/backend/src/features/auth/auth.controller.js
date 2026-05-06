@@ -24,6 +24,8 @@ const resetTokenTtlMinutes = Number(process.env.RESET_TOKEN_TTL_MINUTES || 20);
 const signupTokenSecret = process.env.SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const usernamePattern = /^[a-z0-9_.-]{3,20}$/;
 const namePattern = /^[A-Za-z][A-Za-z' -]{0,48}$/;
+const minPasswordLength = 8;
+const minPasswordScore = 4;
 
 console.info('[Auth Email] Provider configuration', {
   provider: emailProvider,
@@ -43,6 +45,24 @@ const otpVerificationSchema = z.object({
   otp: z.string().trim().regex(/^\d{6}$/, 'OTP must be 6 digits'),
 });
 
+function getPasswordScore(password = '') {
+  return [
+    password.length >= 12,
+    /[A-Z]/.test(password),
+    /[a-z]/.test(password),
+    /[0-9]/.test(password),
+    /[^A-Za-z0-9]/.test(password),
+  ].filter(Boolean).length;
+}
+
+const passwordSchema = z.string()
+  .min(minPasswordLength, `Password must be at least ${minPasswordLength} characters long`)
+  .max(128)
+  .refine(
+    (value) => getPasswordScore(value) >= minPasswordScore,
+    `Password must pass at least ${minPasswordScore} strength checks`
+  );
+
 const completeSignupSchema = z.object({
   email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),
   signup_token: z.string().min(20),
@@ -50,11 +70,7 @@ const completeSignupSchema = z.object({
   middle_name: z.string().trim().max(50).regex(/^[A-Za-z' -]*$/, 'Invalid middle name').optional().or(z.literal('')),
   last_name: z.string().trim().min(1).max(50).regex(namePattern, 'Invalid last name'),
   username: z.string().trim().toLowerCase().regex(usernamePattern, 'Invalid username'),
-  password: z.string().min(12).max(128)
-    .regex(/[A-Z]/, 'Password must include an uppercase letter')
-    .regex(/[a-z]/, 'Password must include a lowercase letter')
-    .regex(/[0-9]/, 'Password must include a number')
-    .regex(/[^A-Za-z0-9]/, 'Password must include a special character'),
+  password: passwordSchema,
 });
 
 const loginSchema = z.object({
@@ -69,11 +85,7 @@ const resetRequestSchema = z.object({
 const resetSchema = z.object({
   identifier: z.string().trim().min(3).max(254),
   reset_token: z.string().min(20),
-  password: z.string().min(12).max(128)
-    .regex(/[A-Z]/, 'Password must include an uppercase letter')
-    .regex(/[a-z]/, 'Password must include a lowercase letter')
-    .regex(/[0-9]/, 'Password must include a number')
-    .regex(/[^A-Za-z0-9]/, 'Password must include a special character'),
+  password: passwordSchema,
 });
 
 let smtpTransporterPromise = null;
@@ -789,8 +801,10 @@ exports.changePassword = async (req, res) => {
       return res.status(400).json({ error: 'Current password and new password are required.' });
     }
 
-    if (newPassword.length < 12) {
-      return res.status(400).json({ error: 'New password must be at least 12 characters long.' });
+    if (newPassword.length < minPasswordLength || getPasswordScore(newPassword) < minPasswordScore) {
+      return res.status(400).json({
+        error: `New password must be at least ${minPasswordLength} characters and pass ${minPasswordScore} strength checks.`,
+      });
     }
 
     const { data: profile, error: profileError } = await supabase

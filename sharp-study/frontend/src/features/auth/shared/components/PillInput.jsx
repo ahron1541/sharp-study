@@ -117,6 +117,7 @@ const PillInput = forwardRef(function PillInput(
           <button
             type="button"
             onClick={toggleButton.onClick}
+            disabled={disabled || toggleButton.disabled}
             aria-label={toggleButton.label}
             aria-pressed={toggleButton.pressed}
             className={styles.toggleButton}

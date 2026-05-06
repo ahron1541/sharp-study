@@ -24,7 +24,7 @@ export default function LoginForm({ sessionTimeout = false }) {
     <div className={styles.wrapper}>
 
       {/* Tab switcher — Login active */}
-      <AuthTabs activeTab="login" />
+      <AuthTabs activeTab="login" disabled={loading} />
 
       {/* Heading */}
       <div className={styles.titleRow}>
@@ -86,6 +86,7 @@ export default function LoginForm({ sessionTimeout = false }) {
         onSubmit={submit}
         noValidate
         aria-label={t('subtitle')}
+        aria-busy={loading}
       >
         <div className={styles.fields}>
           {/* Username or email */}
@@ -102,6 +103,7 @@ export default function LoginForm({ sessionTimeout = false }) {
             placeholder={t('emailPlaceholder', 'Enter your username')}
             required
             error={errors.identifier}
+            disabled={loading}
           />
 
           {/* Password */}
@@ -117,6 +119,7 @@ export default function LoginForm({ sessionTimeout = false }) {
               error={errors.password}
               autoComplete="current-password"
               required
+              disabled={loading}
             />
           </div>
 
@@ -128,12 +131,20 @@ export default function LoginForm({ sessionTimeout = false }) {
                 id="remember-me"
                 className={styles.checkbox}
                 checked={rememberMe}
+                disabled={loading}
                 onChange={(e) => setRememberMe(e.target.checked)}
               />
               <span className={styles.checkboxLabel}>{t('rememberMe')}</span>
             </label>
 
-            <Link to="/forgot-password" className={styles.forgotLink}>
+            <Link
+              to="/forgot-password"
+              onClick={(event) => {
+                if (loading) event.preventDefault();
+              }}
+              className={`${styles.forgotLink} ${loading ? styles.disabledLink : ''}`}
+              aria-disabled={loading}
+            >
               {t('forgotPassword')}
             </Link>
           </div>

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AiOutlineWarning } from 'react-icons/ai';
@@ -27,6 +26,9 @@ export default function ForgotPasswordFlow() {
   const { t } = useTranslation('auth', { keyPrefix: 'forgot' });
   const navigate = useNavigate();
   const fp = useForgotPassword();
+  const resetConfirmTouched = fp.confirm.length > 0;
+  const resetPasswordsMatch = resetConfirmTouched && fp.password === fp.confirm;
+  const resetPasswordsMismatch = resetConfirmTouched && fp.password !== fp.confirm;
 
   const {
     otp, setOtp,
@@ -37,6 +39,7 @@ export default function ForgotPasswordFlow() {
 
   const handleVerifyOTP = async (e) => {
     e.preventDefault();
+    if (fp.loading || otpSending) return;
     const ok = await fp.verifyOTP(otp);
     if (!ok && fp.errors.otp) setOtpError(fp.errors.otp);
   };
@@ -62,8 +65,9 @@ export default function ForgotPasswordFlow() {
             </div>
 
             <form
-              onSubmit={(e) => { e.preventDefault(); fp.requestOTP(); }}
+              onSubmit={(e) => { e.preventDefault(); if (!fp.loading) fp.requestOTP(); }}
               noValidate
+              aria-busy={fp.loading}
             >
               <div className={styles.fields}>
                 {/*
@@ -79,6 +83,7 @@ export default function ForgotPasswordFlow() {
                   autoComplete="username email"
                   placeholder="Enter your email"
                   required
+                  disabled={fp.loading}
                   error={fp.errors.identifier}
                   rightAddon={{
                     label:    'Send',
@@ -91,7 +96,14 @@ export default function ForgotPasswordFlow() {
             </form>
 
             <div className={styles.backLinkRow}>
-              <Link to="/login" className={styles.backLink}>
+              <Link
+                to="/login"
+                onClick={(event) => {
+                  if (fp.loading) event.preventDefault();
+                }}
+                className={`${styles.backLink} ${fp.loading ? styles.disabledLink : ''}`}
+                aria-disabled={fp.loading}
+              >
                 Back to Login
               </Link>
             </div>
@@ -106,7 +118,7 @@ export default function ForgotPasswordFlow() {
               <p className={styles.subtitle}>{t('otpSubtitle')}</p>
             </div>
 
-            <form onSubmit={handleVerifyOTP} noValidate>
+            <form onSubmit={handleVerifyOTP} noValidate aria-busy={fp.loading || otpSending}>
               <div className={styles.fields}>
                 <p className={styles.otpLabel}>Enter the 6-digit reset code</p>
 
@@ -114,7 +126,7 @@ export default function ForgotPasswordFlow() {
                   value={otp}
                   onChange={setOtp}
                   error={!!(otpHookError || fp.errors.otp)}
-                  disabled={fp.loading}
+                  disabled={fp.loading || otpSending}
                 />
 
                 {(otpHookError || fp.errors.otp) && (
@@ -132,7 +144,7 @@ export default function ForgotPasswordFlow() {
                   <PillButton
                     type="submit"
                     loading={fp.loading}
-                    disabled={otp.replace(/\D/g, '').length < 6}
+                    disabled={otpSending || otp.replace(/\D/g, '').length < 6}
                   >
                     {t('verifyOTP')}
                   </PillButton>
@@ -141,7 +153,7 @@ export default function ForgotPasswordFlow() {
                 <button
                   type="button"
                   onClick={resendResetOTP}
-                  disabled={cooldown > 0 || otpSending}
+                  disabled={cooldown > 0 || otpSending || fp.loading}
                   className={styles.resendBtn}
                 >
                   {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
@@ -162,8 +174,9 @@ export default function ForgotPasswordFlow() {
             </div>
 
             <form
-              onSubmit={(e) => { e.preventDefault(); fp.submitNewPassword(); }}
+              onSubmit={(e) => { e.preventDefault(); if (!fp.loading) fp.submitNewPassword(); }}
               noValidate
+              aria-busy={fp.loading}
             >
               <div className={styles.fields}>
                 {/*
@@ -192,6 +205,7 @@ export default function ForgotPasswordFlow() {
                   autoComplete="new-password"
                   describedBy="fp-pw-strength"
                   placeholder="Enter New Password"
+                  disabled={fp.loading}
                 />
                 <PasswordStrength password={fp.password} id="fp-pw-strength" />
 
@@ -206,7 +220,16 @@ export default function ForgotPasswordFlow() {
                   error={fp.errors.confirm}
                   autoComplete="new-password"
                   placeholder="Confirm your new Password"
+                  disabled={fp.loading}
                 />
+                {resetConfirmTouched && (
+                  <p
+                    className={resetPasswordsMatch ? styles.matchSuccess : styles.matchError}
+                    role={resetPasswordsMismatch ? 'alert' : 'status'}
+                  >
+                    {resetPasswordsMatch ? 'Passwords match.' : 'Passwords do not match.'}
+                  </p>
+                )}
               </div>
 
               <div className={styles.submitRow}>
