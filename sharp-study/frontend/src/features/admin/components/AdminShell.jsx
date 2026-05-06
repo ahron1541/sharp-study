@@ -59,6 +59,8 @@ export default function AdminShell() {
       next.delete('page');
       next.delete('archived');
     }
+    next.delete('preview_id');
+    next.delete('preview_type');
     if (section === 'content') {
       next.set('archived', 'active');
     }
@@ -80,7 +82,7 @@ export default function AdminShell() {
   };
 
   const navContent = (
-    <div className="flex h-full flex-col bg-sidebar">
+    <div className="flex min-h-full flex-col bg-sidebar">
       <div className="border-b border-border px-4 py-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-3 overflow-hidden">
@@ -133,7 +135,7 @@ export default function AdminShell() {
         })}
       </nav>
 
-      <div className="space-y-2 border-t border-border p-3">
+      <div className="mt-auto space-y-2 border-t border-border p-3">
         <Button
           variant="danger"
           size="sm"
@@ -149,21 +151,25 @@ export default function AdminShell() {
   );
 
   return (
-    <div className="min-h-screen bg-bg lg:flex lg:h-screen">
-      <aside className={`hidden h-screen shrink-0 border-r border-border transition-[width] duration-300 lg:sticky lg:top-0 lg:block ${collapsed ? 'w-[96px]' : 'w-[280px]'}`}>
-        {navContent}
+    <div className="min-h-screen bg-bg lg:flex lg:items-start">
+      <aside className={`hidden shrink-0 self-start border-r border-border bg-sidebar transition-[width] duration-300 lg:sticky lg:top-0 lg:block ${collapsed ? 'w-[96px]' : 'w-[280px]'}`}>
+        <div className="h-screen">
+          {navContent}
+        </div>
       </aside>
 
       {mobileOpen ? (
         <>
           <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden" onClick={() => setMobileOpen(false)} aria-hidden="true" />
-          <aside className="fixed inset-y-0 left-0 z-50 w-[280px] border-r border-border lg:hidden">
-            {navContent}
+          <aside className="fixed inset-y-0 left-0 z-50 w-[280px] border-r border-border bg-sidebar lg:hidden">
+            <div className="h-full">
+              {navContent}
+            </div>
           </aside>
         </>
       ) : null}
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 bg-bg">
         <header className="sticky top-0 z-30 border-b border-border bg-surface/95 backdrop-blur lg:hidden">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3">

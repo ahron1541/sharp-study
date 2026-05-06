@@ -464,6 +464,34 @@ async function fetchContentPage({ type, search, page, pageSize, archived = 'all'
   };
 }
 
+async function fetchContentItem(type, id) {
+  if (!CONTENT_TYPES.has(type)) {
+    throw new Error('Unsupported content type.');
+  }
+
+  const fields = type === 'documents'
+    ? 'id, user_id, title, created_at, is_archived, file_type, status, file_url, file_size_bytes, extracted_text'
+    : type === 'study_guides'
+      ? 'id, user_id, title, created_at, is_archived, document_id, content'
+      : 'id, user_id, title, created_at, is_archived, document_id';
+
+  const { data, error } = await supabaseAdmin
+    .from(type)
+    .select(fields)
+    .eq('id', id)
+    .single();
+
+  if (error) throw error;
+
+  const profilesMap = await fetchProfilesMap(data?.user_id ? [data.user_id] : []);
+
+  return {
+    ...data,
+    type,
+    owner: profilesMap.get(data.user_id) || null,
+  };
+}
+
 router.get('/content', async (req, res) => {
   try {
     const type = String(req.query.type || 'all').trim();
@@ -489,6 +517,23 @@ router.get('/content', async (req, res) => {
   } catch (error) {
     console.error('[ADMIN] Failed to fetch content:', error.message);
     res.status(500).json({ error: 'Failed to fetch content.' });
+  }
+});
+
+router.get('/content/:type/:id', async (req, res) => {
+  try {
+    const type = String(req.params.type || '').trim();
+    const id = String(req.params.id || '').trim();
+
+    if (!CONTENT_TYPES.has(type)) {
+      return res.status(400).json({ error: 'Unsupported content type.' });
+    }
+
+    const item = await fetchContentItem(type, id);
+    res.json({ item });
+  } catch (error) {
+    console.error('[ADMIN] Failed to fetch content item:', error.message);
+    res.status(500).json({ error: 'Failed to fetch content item.' });
   }
 });
 

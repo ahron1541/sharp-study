@@ -1,5 +1,5 @@
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Archive, ArrowRight, BookOpen, FileText, FolderKanban, GraduationCap, Layers3, LoaderCircle, MonitorCog, Moon, Search, Shield, Sparkles, Sun, Trash2, UserCog, UserPlus, Users } from 'lucide-react';
+import { AlertTriangle, Archive, ArrowLeft, ArrowRight, BookOpen, Eye, FileText, FolderKanban, GraduationCap, Layers3, LoaderCircle, MonitorCog, Moon, Search, Shield, Sparkles, Sun, Trash2, UserCog, UserPlus, Users } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -18,6 +18,7 @@ import {
   deleteAdminContent,
   deleteAdminUser,
   fetchAdminContent,
+  fetchAdminContentItem,
   fetchAdminOverview,
   fetchAdminUsers,
   updateAdminContent,
@@ -77,8 +78,9 @@ export default function AdminPage() {
   const [contentLoading, setContentLoading] = useState(false);
   const [actionState, setActionState] = useState({ active: false, label: '', progress: 0 });
   const [userModal, setUserModal] = useState({ mode: 'create', open: false, form: USER_EMPTY, target: null });
-  const [contentModal, setContentModal] = useState({ open: false, form: null, target: null, previewMode: 'preview' });
   const [confirmState, setConfirmState] = useState({ open: false, mode: '', target: null });
+  const [previewItem, setPreviewItem] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState(() => ({
     ...DEFAULT_PREFERENCES,
     display_mode: readStoredDisplayMode(),
@@ -110,6 +112,9 @@ export default function AdminPage() {
     page: Math.max(1, Number(searchParams.get('page') || 1)),
   }), [searchParams]);
   const archivedState = section === 'archived' ? 'archived' : 'active';
+  const previewType = String(searchParams.get('preview_type') || '').trim();
+  const previewId = String(searchParams.get('preview_id') || '').trim();
+  const previewOpen = Boolean(previewType && previewId && (section === 'content' || section === 'archived'));
   const metrics = useMemo(() => overview?.metrics || {}, [overview]);
   const recentActivity = useMemo(() => overview?.recent_activity || [], [overview]);
 
@@ -206,6 +211,35 @@ export default function AdminPage() {
     }
     return undefined;
   }, [section, loadContent]);
+
+  useEffect(() => {
+    if (!previewOpen) {
+      return undefined;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setPreviewLoading(true);
+      void fetchAdminContentItem(previewType, previewId)
+        .then((data) => {
+          if (!active) return;
+          setPreviewItem(data.item || null);
+        })
+        .catch((error) => {
+          if (!active) return;
+          toast.error(error.message || 'Failed to load content preview.');
+          setPreviewItem(null);
+        })
+        .finally(() => {
+          if (active) setPreviewLoading(false);
+        });
+    }, 0);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [previewId, previewOpen, previewType]);
 
   useEffect(() => () => {
     if (progressTimerRef.current) {
@@ -330,17 +364,10 @@ export default function AdminPage() {
     });
   }
 
-  function openEditContentModal(item) {
-    setContentModal({
-      open: true,
-      target: item,
-      previewMode: item.type === 'study_guides' ? 'preview' : 'meta',
-      form: {
-        title: item.title || '',
-        is_archived: Boolean(item.is_archived),
-        status: item.status || 'done',
-        content: item.type === 'study_guides' ? item.content || '' : '',
-      },
+  function openContentPreview(item) {
+    mergeSearchParams({
+      preview_type: item.type,
+      preview_id: item.id,
     });
   }
 
@@ -370,26 +397,15 @@ export default function AdminPage() {
     }
   }
 
-  async function handleContentSubmit(event) {
-    event.preventDefault();
+  async function handleContentSave(type, id, payload) {
     try {
-      const payload = {
-        title: contentModal.form.title,
-        is_archived: Boolean(contentModal.form.is_archived),
-      };
-
-      if (contentModal.target.type === 'documents') {
-        payload.status = contentModal.form.status;
-      }
-
-      if (contentModal.target.type === 'study_guides') {
-        payload.content = contentModal.form.content;
-      }
-
-      await trackAction('Saving content changes', () => updateAdminContent(contentModal.target.type, contentModal.target.id, payload));
+      await trackAction('Saving content changes', () => updateAdminContent(type, id, payload));
       toast.success('Content updated.');
-      setContentModal({ open: false, form: null, target: null, previewMode: 'preview' });
       await Promise.all([loadOverview(), loadContent()]);
+      if (previewOpen && previewType === type && previewId === id) {
+        const data = await fetchAdminContentItem(type, id);
+        setPreviewItem(data.item || null);
+      }
     } catch (error) {
       toast.error(error.message || 'Failed to update content.');
     }
@@ -407,6 +423,9 @@ export default function AdminPage() {
       } else if (mode === 'delete-content') {
         await trackAction('Deleting content', () => deleteAdminContent(target.type, target.id));
         toast.success('Content deleted.');
+        if (previewType === target.type && previewId === target.id) {
+          mergeSearchParams({ preview_type: null, preview_id: null });
+        }
         await Promise.all([loadOverview(), loadContent()]);
       } else if (mode === 'toggle-block') {
         await trackAction(target.is_blocked ? 'Restoring account' : 'Blocking account', () =>
@@ -497,18 +516,29 @@ export default function AdminPage() {
         ) : null}
 
         {section === 'content' || section === 'archived' ? (
-          <ContentSection
-            archived={section === 'archived'}
-            items={contentItems}
-            loading={contentLoading}
-            filters={contentFilters}
-            pagination={contentPagination}
-            metrics={metrics}
-            onFilterChange={updateContentFilter}
-            onClearOwner={() => updateContentFilter('owner', null) || updateContentFilter('owner_id', null)}
-            onEditContent={openEditContentModal}
-            onDeleteContent={(item) => setConfirmState({ open: true, mode: 'delete-content', target: item })}
-          />
+          previewOpen ? (
+            <ContentDetailSection
+              archived={section === 'archived'}
+              item={previewItem}
+              loading={previewLoading}
+              onBack={() => mergeSearchParams({ preview_type: null, preview_id: null })}
+              onSave={handleContentSave}
+              onDelete={(item) => setConfirmState({ open: true, mode: 'delete-content', target: item })}
+            />
+          ) : (
+            <ContentSection
+              archived={section === 'archived'}
+              items={contentItems}
+              loading={contentLoading}
+              filters={contentFilters}
+              pagination={contentPagination}
+              metrics={metrics}
+              onFilterChange={updateContentFilter}
+              onClearOwner={() => updateContentFilter('owner', null) || updateContentFilter('owner_id', null)}
+              onPreviewContent={openContentPreview}
+              onDeleteContent={(item) => setConfirmState({ open: true, mode: 'delete-content', target: item })}
+            />
+          )
         ) : null}
 
         {section === 'settings' ? (
@@ -571,90 +601,6 @@ export default function AdminPage() {
             <Button type="button" variant="secondary" onClick={() => setUserModal({ mode: 'create', open: false, form: USER_EMPTY, target: null })}>Cancel</Button>
           </div>
         </form>
-      </Modal>
-
-      <Modal
-        isOpen={contentModal.open}
-        onClose={() => setContentModal({ open: false, form: null, target: null, previewMode: 'preview' })}
-        title={contentModal.target ? `Edit ${CONTENT_TYPE_META[contentModal.target.type]?.singular || 'Content'}` : 'Edit content'}
-        size={contentModal.target?.type === 'study_guides' ? 'xl' : 'lg'}
-      >
-        {contentModal.form && contentModal.target ? (
-          <form className="space-y-5" onSubmit={handleContentSubmit}>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Title">
-                <input required value={contentModal.form.title} onChange={(event) => setContentModal((current) => ({ ...current, form: { ...current.form, title: event.target.value } }))} className="w-full rounded-2xl border border-border bg-surface-2 px-4 py-3 text-sm text-text outline-none focus:border-accent" />
-              </Field>
-
-              {contentModal.target.type === 'documents' ? (
-                <Field label="Processing status">
-                  <select value={contentModal.form.status} onChange={(event) => setContentModal((current) => ({ ...current, form: { ...current.form, status: event.target.value } }))} className="w-full rounded-2xl border border-border bg-surface-2 px-4 py-3 text-sm text-text outline-none focus:border-accent">
-                    <option value="processing">Processing</option>
-                    <option value="done">Done</option>
-                    <option value="error">Error</option>
-                  </select>
-                </Field>
-              ) : (
-                <Field label="Owner">
-                  <div className="rounded-2xl border border-border bg-surface-2 px-4 py-3 text-sm text-text">
-                    {contentModal.target.owner?.full_name || contentModal.target.owner?.email || 'Unknown owner'}
-                  </div>
-                </Field>
-              )}
-            </div>
-
-            <label className="flex items-center gap-3 rounded-2xl border border-border bg-surface-2 px-4 py-3 text-sm text-text">
-              <input type="checkbox" checked={Boolean(contentModal.form.is_archived)} onChange={(event) => setContentModal((current) => ({ ...current, form: { ...current.form, is_archived: event.target.checked } }))} />
-              Keep this item in archived storage
-            </label>
-
-            {contentModal.target.type === 'study_guides' ? (
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" size="sm" variant={contentModal.previewMode === 'preview' ? 'primary' : 'secondary'} onClick={() => setContentModal((current) => ({ ...current, previewMode: 'preview' }))}>
-                    Preview
-                  </Button>
-                  <Button type="button" size="sm" variant={contentModal.previewMode === 'split' ? 'primary' : 'secondary'} onClick={() => setContentModal((current) => ({ ...current, previewMode: 'split' }))}>
-                    Split view
-                  </Button>
-                  <Button type="button" size="sm" variant={contentModal.previewMode === 'source' ? 'primary' : 'secondary'} onClick={() => setContentModal((current) => ({ ...current, previewMode: 'source' }))}>
-                    Source
-                  </Button>
-                </div>
-
-                <div className={`grid gap-4 ${contentModal.previewMode === 'split' ? 'xl:grid-cols-2' : ''}`}>
-                  {contentModal.previewMode !== 'preview' ? (
-                    <Field label="Guide source">
-                      <textarea rows={14} value={contentModal.form.content} onChange={(event) => setContentModal((current) => ({ ...current, form: { ...current.form, content: event.target.value } }))} className="w-full rounded-2xl border border-border bg-surface-2 px-4 py-3 font-mono text-sm text-text outline-none focus:border-accent" />
-                    </Field>
-                  ) : null}
-
-                  {contentModal.previewMode !== 'source' ? (
-                    <div>
-                      <span className="mb-2 block text-sm font-bold text-text">Rendered preview</span>
-                      <div className="prose prose-sm max-w-none rounded-2xl border border-border bg-surface-2 p-4 text-text">
-                        <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(contentModal.form.content || '<p>No content yet.</p>') }} />
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-border bg-surface-2 px-4 py-4 text-sm leading-7 text-text-muted">
-                {contentModal.target.type === 'documents'
-                  ? 'Document editing here is limited to moderation metadata for now. File content stays managed through the upload and extraction flow.'
-                  : 'Full card and quiz editing in Admin Control can be added once those content experiences are fully live. For now this panel handles moderation metadata cleanly.'}
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-3">
-              <Button type="submit">Save changes</Button>
-              <Button type="button" variant="secondary" onClick={() => setContentModal({ open: false, form: null, target: null, previewMode: 'preview' })}>
-                Cancel
-              </Button>
-            </div>
-          </form>
-        ) : null}
       </Modal>
 
       <Modal isOpen={confirmState.open} onClose={() => setConfirmState({ open: false, mode: '', target: null })} title={buildConfirmTitle(confirmState.mode)} size="sm">
@@ -869,6 +815,8 @@ function OverviewSection({ loading, metrics, activeMaterialTotal, archivedMateri
 }
 
 function UsersSection({ users, loading, filters, pagination, onFilterChange, onCreateUser, onEditUser, onViewUserContent, onToggleBlock, onDeleteUser }) {
+  const pageSize = pagination.pageSize || users.length || 10;
+
   return (
     <section className="rounded-[1.7rem] border border-border bg-surface shadow-card sm:rounded-[2rem]">
       <div className="border-b border-border p-4 sm:p-5">
@@ -902,11 +850,14 @@ function UsersSection({ users, loading, filters, pagination, onFilterChange, onC
         <EmptyPanel icon={Users} title="No users matched this filter." body="Try a broader search or create a new account directly from this management panel." actionLabel="Create account" onAction={onCreateUser} />
       ) : (
         <>
-          <div className="space-y-3 p-4 sm:p-5">
-            {users.map((user) => (
+          <div className="space-y-4 p-4 sm:p-5">
+            {users.map((user, index) => {
+              const displayId = String(((pagination.page - 1) * pageSize) + index + 1).padStart(3, '0');
+
+              return (
               <article key={user.id} className="rounded-[1.5rem] border border-border bg-surface-2 p-4 sm:rounded-[1.8rem] sm:p-5">
-                <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-start 2xl:justify-between">
-                  <div className="grid flex-1 gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_auto]">
+                <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="grid flex-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                     <div>
                       <p className="text-lg font-black text-text">{user.full_name || 'Unnamed user'}</p>
                       <p className="mt-1 text-sm text-text-muted">@{user.username || 'no-username'}</p>
@@ -915,29 +866,32 @@ function UsersSection({ users, loading, filters, pagination, onFilterChange, onC
                       <p className="text-sm font-semibold text-text">{user.email}</p>
                       <p className="mt-1 text-xs uppercase tracking-[0.16em] text-text-muted">Joined {formatShortDate(user.created_at)}</p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Chip tone={user.role === 'admin' ? 'warning' : 'accent'}>{user.role}</Chip>
-                      <Chip tone={user.is_blocked ? 'danger' : 'success'}>{user.is_blocked ? 'Blocked' : 'Active'}</Chip>
-                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Chip tone="neutral">User #{displayId}</Chip>
+                    <Chip tone={user.role === 'admin' ? 'warning' : 'accent'}>{user.role}</Chip>
+                    <Chip tone={user.is_blocked ? 'danger' : 'success'}>{user.is_blocked ? 'Blocked' : 'Active'}</Chip>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <InfoPill label="Admin ID" value={`User ${displayId}`} />
+                    <InfoPill label="Workspace access" value={user.role === 'admin' ? 'Administrative access' : 'Student access'} />
+                    <InfoPill label="Archive access" value={user.is_blocked ? 'Disabled while blocked' : 'Available'} />
                   </div>
 
                   <div className="grid gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:justify-end">
-                    <Button size="sm" variant="secondary" icon={<FileText size={14} />} onClick={() => onViewUserContent(user, false)}>View content</Button>
-                    <Button size="sm" variant="secondary" icon={<Archive size={14} />} onClick={() => onViewUserContent(user, true)}>View archive</Button>
-                    <Button size="sm" variant="secondary" icon={<UserCog size={14} />} onClick={() => onEditUser(user)}>Edit</Button>
-                    <Button size="sm" variant="secondary" icon={<AlertTriangle size={14} />} onClick={() => onToggleBlock(user)}>{user.is_blocked ? 'Unblock' : 'Block'}</Button>
+                    <Button size="sm" variant="secondary" className="border-border bg-surface text-text hover:bg-bg" icon={<FileText size={14} />} onClick={() => onViewUserContent(user, false)}>Open content</Button>
+                    <Button size="sm" variant="secondary" className="border-border bg-surface text-text hover:bg-bg" icon={<Archive size={14} />} onClick={() => onViewUserContent(user, true)}>Open archive</Button>
+                    <Button size="sm" variant="secondary" className="border-border bg-surface text-text hover:bg-bg" icon={<UserCog size={14} />} onClick={() => onEditUser(user)}>Edit profile</Button>
+                    <Button size="sm" variant="secondary" className="border-border bg-surface text-text hover:bg-bg" icon={<AlertTriangle size={14} />} onClick={() => onToggleBlock(user)}>{user.is_blocked ? 'Unblock' : 'Block access'}</Button>
                     <Button size="sm" variant="danger" icon={<Trash2 size={14} />} onClick={() => onDeleteUser(user)}>Delete</Button>
                   </div>
                 </div>
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-                  <InfoPill label="Login attempts" value={user.login_attempts || 0} />
-                  <InfoPill label="Lock status" value={user.locked_until ? `Until ${formatDateTime(user.locked_until)}` : 'Not locked'} />
-                  <InfoPill label="User id" value={truncateMiddle(user.id)} />
-                  <InfoPill label="Account type" value={user.role === 'admin' ? 'Administrative access' : 'Student access'} />
-                </div>
               </article>
-            ))}
+            )})}
           </div>
           <PaginationBar page={pagination.page} totalPages={pagination.totalPages} totalCount={pagination.totalCount} onPrev={() => onFilterChange('page', Math.max(1, pagination.page - 1))} onNext={() => onFilterChange('page', Math.min(pagination.totalPages, pagination.page + 1))} />
         </>
@@ -946,7 +900,7 @@ function UsersSection({ users, loading, filters, pagination, onFilterChange, onC
   );
 }
 
-function ContentSection({ archived, items, loading, filters, pagination, metrics, onFilterChange, onClearOwner, onEditContent, onDeleteContent }) {
+function ContentSection({ archived, items, loading, filters, pagination, metrics, onFilterChange, onClearOwner, onPreviewContent, onDeleteContent }) {
   const sectionLabel = archived ? 'Archived content' : 'Active content';
   const totalBySection = archived
     ? Number(metrics.documents_archived || 0) + Number(metrics.study_guides_archived || 0) + Number(metrics.flashcard_sets_archived || 0) + Number(metrics.quizzes_archived || 0)
@@ -1000,11 +954,11 @@ function ContentSection({ archived, items, loading, filters, pagination, metrics
           <EmptyPanel icon={archived ? Archive : FileText} title={`No ${archived ? 'archived' : 'active'} content matched this filter.`} body="Try another content type, a different owner filter, or a broader title search." />
         ) : (
           <>
-          <div className="space-y-3 p-4 sm:p-5">
+          <div className="space-y-4 p-4 sm:p-5">
             {items.map((item) => (
                 <article key={`${item.type}:${item.id}`} className="rounded-[1.5rem] border border-border bg-surface-2 p-4 sm:rounded-[1.8rem] sm:p-5">
-                  <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-start 2xl:justify-between">
-                    <div className="grid flex-1 gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_auto]">
+                  <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="grid flex-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                       <div>
                         <div className="flex items-center gap-3">
                           <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-surface text-accent">
@@ -1017,10 +971,9 @@ function ContentSection({ archived, items, loading, filters, pagination, metrics
                         </div>
 
                         {item.type === 'study_guides' ? (
-                          <div className="mt-4 rounded-[1.2rem] border border-border bg-surface p-3 sm:rounded-[1.4rem] sm:p-4">
-                            <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-text-muted">Preview</p>
-                            <div className="prose prose-sm max-w-none text-text" dangerouslySetInnerHTML={{ __html: sanitizeHtml(extractPreviewHtml(item.content)) }} />
-                          </div>
+                          <p className="mt-4 max-w-xl text-sm leading-7 text-text-muted">
+                            Open the dedicated review page to preview, edit, or moderate this study guide cleanly.
+                          </p>
                         ) : item.type === 'documents' ? (
                           <p className="mt-4 text-sm text-text-muted">File type: {item.file_type ? item.file_type.toUpperCase() : 'Unknown'}{item.status ? ` • ${item.status}` : ''}</p>
                         ) : (
@@ -1037,12 +990,13 @@ function ContentSection({ archived, items, loading, filters, pagination, metrics
                       <div className="flex flex-wrap gap-2">
                         <Chip tone={archived ? 'neutral' : 'success'}>{archived ? 'Archived' : 'Active'}</Chip>
                         {item.type === 'documents' ? <Chip tone={item.status === 'done' ? 'success' : item.status === 'error' ? 'danger' : 'warning'}>{item.status}</Chip> : null}
+                        <Chip tone="accent">{CONTENT_TYPE_META[item.type]?.singular || item.type}</Chip>
                       </div>
                     </div>
 
                     <div className="grid gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:justify-end">
-                      <Button size="sm" variant="secondary" icon={<Search size={14} />} onClick={() => onFilterChange('owner_id', item.user_id)}>More from owner</Button>
-                      <Button size="sm" variant="secondary" icon={<FileText size={14} />} onClick={() => onEditContent(item)}>Edit</Button>
+                      <Button size="sm" variant="secondary" className="border-border bg-surface text-text hover:bg-bg" icon={<Eye size={14} />} onClick={() => onPreviewContent(item)}>Open review</Button>
+                      <Button size="sm" variant="secondary" className="border-border bg-surface text-text hover:bg-bg" icon={<Search size={14} />} onClick={() => onFilterChange('owner_id', item.user_id)}>More from owner</Button>
                       <Button size="sm" variant="danger" icon={<Trash2 size={14} />} onClick={() => onDeleteContent(item)}>Delete</Button>
                     </div>
                   </div>
@@ -1058,6 +1012,190 @@ function ContentSection({ archived, items, loading, filters, pagination, metrics
             <PaginationBar page={pagination.page} totalPages={pagination.totalPages} totalCount={pagination.totalCount} onPrev={() => onFilterChange('page', Math.max(1, pagination.page - 1))} onNext={() => onFilterChange('page', Math.min(pagination.totalPages, pagination.page + 1))} />
           </>
         )}
+      </section>
+    </section>
+  );
+}
+
+function ContentDetailSection({ archived, item, loading, onBack, onSave, onDelete }) {
+  const [draft, setDraft] = useState(null);
+  const [viewMode, setViewMode] = useState('preview');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (!item) {
+        setDraft(null);
+        return;
+      }
+
+      setDraft({
+        title: item.title || '',
+        is_archived: Boolean(item.is_archived),
+        status: item.status || 'processing',
+        content: item.content || '',
+      });
+      setViewMode(item.type === 'study_guides' ? 'preview' : 'details');
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [item]);
+
+  if (loading) {
+    return (
+      <section className="rounded-[1.7rem] border border-border bg-surface p-4 shadow-card sm:rounded-[2rem] sm:p-5">
+        <div className="h-9 w-36 animate-pulse rounded-2xl bg-surface-2" />
+        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
+          <div className="h-[28rem] animate-pulse rounded-[1.8rem] bg-surface-2" />
+          <div className="h-[28rem] animate-pulse rounded-[1.8rem] bg-surface-2" />
+        </div>
+      </section>
+    );
+  }
+
+  if (!item || !draft) {
+    return <EmptyPanel icon={FileText} title="This content could not be opened." body="Try returning to the list and selecting the item again." actionLabel="Back to list" onAction={onBack} />;
+  }
+
+  const itemLabel = CONTENT_TYPE_META[item.type]?.singular || 'Content';
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const payload = {
+        title: draft.title,
+        is_archived: Boolean(draft.is_archived),
+      };
+
+      if (item.type === 'documents') {
+        payload.status = draft.status;
+      }
+
+      if (item.type === 'study_guides') {
+        payload.content = draft.content;
+      }
+
+      await onSave(item.type, item.id, payload);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Button variant="secondary" className="border-border bg-surface text-text hover:bg-bg" icon={<ArrowLeft size={14} />} onClick={onBack}>
+          Back to {archived ? 'archive' : 'content'}
+        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Chip tone={archived ? 'neutral' : 'success'}>{archived ? 'Archived' : 'Active'}</Chip>
+          <Chip tone="accent">{itemLabel}</Chip>
+          {item.type === 'documents' ? <Chip tone={item.status === 'done' ? 'success' : item.status === 'error' ? 'danger' : 'warning'}>{item.status}</Chip> : null}
+        </div>
+      </div>
+
+      <section className="rounded-[1.7rem] border border-border bg-surface shadow-card sm:rounded-[2rem]">
+        <div className="border-b border-border p-4 sm:p-5">
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">{archived ? 'Archived review' : 'Content review'}</p>
+          <h2 className="mt-2 text-2xl font-black text-text sm:text-3xl">{item.title}</h2>
+          <p className="mt-2 text-sm leading-7 text-text-muted">
+            Review the content on its own page, then update title, status, archive state, or study guide source without crowding the list view.
+          </p>
+        </div>
+
+        <div className="grid gap-5 p-4 sm:p-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
+          <section className="rounded-[1.5rem] border border-border bg-surface-2 p-4 sm:rounded-[1.8rem] sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Preview</p>
+                <p className="mt-1 text-lg font-black text-text">{itemLabel} viewer</p>
+              </div>
+
+              {item.type === 'study_guides' ? (
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant={viewMode === 'preview' ? 'primary' : 'secondary'} className={viewMode === 'preview' ? '' : 'border-border bg-surface text-text hover:bg-bg'} onClick={() => setViewMode('preview')}>
+                    Rendered
+                  </Button>
+                  <Button size="sm" variant={viewMode === 'source' ? 'primary' : 'secondary'} className={viewMode === 'source' ? '' : 'border-border bg-surface text-text hover:bg-bg'} onClick={() => setViewMode('source')}>
+                    Source
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-5">
+              {item.type === 'study_guides' ? (
+                viewMode === 'source' ? (
+                  <div className="rounded-[1.3rem] border border-border bg-surface p-4">
+                    <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-sm leading-7 text-text">{draft.content || 'No content yet.'}</pre>
+                  </div>
+                ) : (
+                  <div className="prose prose-sm max-w-none rounded-[1.3rem] border border-border bg-surface p-4 text-text">
+                    <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(draft.content || '<p>No content yet.</p>') }} />
+                  </div>
+                )
+              ) : item.type === 'documents' ? (
+                <div className="space-y-4 rounded-[1.3rem] border border-border bg-surface p-4">
+                  <InfoPill label="File type" value={item.file_type ? item.file_type.toUpperCase() : 'Unknown'} />
+                  <InfoPill label="File size" value={item.file_size_bytes ? formatBytes(item.file_size_bytes) : 'Not recorded'} />
+                  <InfoPill label="Extraction" value={item.extracted_text ? 'Extracted text available' : 'No extracted text recorded'} />
+                  {item.extracted_text ? (
+                    <div className="rounded-[1.1rem] border border-border bg-surface-2 p-4 text-sm leading-7 text-text-muted">
+                      {item.extracted_text.slice(0, 1200)}{item.extracted_text.length > 1200 ? '...' : ''}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="rounded-[1.3rem] border border-dashed border-border bg-surface p-4 text-sm leading-7 text-text-muted">
+                  Full preview for {CONTENT_TYPE_META[item.type]?.label.toLowerCase()} can expand when those creation flows are finalized. This review page still keeps moderation actions and ownership details isolated from the list.
+                </div>
+              )}
+            </div>
+          </section>
+
+          <form className="space-y-4 rounded-[1.5rem] border border-border bg-surface-2 p-4 sm:rounded-[1.8rem] sm:p-5" onSubmit={handleSubmit}>
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Moderation controls</p>
+              <h3 className="mt-2 text-xl font-black text-text">Update this item cleanly.</h3>
+            </div>
+
+            <InfoPill label="Owner" value={item.owner?.full_name || item.owner?.email || 'Unknown owner'} />
+            <InfoPill label="Owner contact" value={item.owner?.email || 'No email available'} />
+            <InfoPill label="Owner username" value={`@${item.owner?.username || 'no-username'}`} />
+
+            <Field label="Title">
+              <input required value={draft.title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} className="w-full rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-text outline-none focus:border-accent" />
+            </Field>
+
+            {item.type === 'documents' ? (
+              <Field label="Processing status">
+                <select value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))} className="w-full cursor-pointer rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-text outline-none focus:border-accent">
+                  <option value="processing">Processing</option>
+                  <option value="done">Done</option>
+                  <option value="error">Error</option>
+                </select>
+              </Field>
+            ) : null}
+
+            {item.type === 'study_guides' ? (
+              <Field label="Guide source">
+                <textarea rows={14} value={draft.content} onChange={(event) => setDraft((current) => ({ ...current, content: event.target.value }))} className="w-full rounded-2xl border border-border bg-surface px-4 py-3 font-mono text-sm text-text outline-none focus:border-accent" />
+              </Field>
+            ) : null}
+
+            <label className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-text">
+              <input type="checkbox" checked={Boolean(draft.is_archived)} onChange={(event) => setDraft((current) => ({ ...current, is_archived: event.target.checked }))} />
+              Keep this item in archived storage
+            </label>
+
+            <div className="flex flex-wrap gap-3">
+              <Button type="submit" loading={saving}>Save changes</Button>
+              <Button type="button" variant="secondary" className="border-border bg-surface text-text hover:bg-bg" onClick={onBack}>Back</Button>
+              <Button type="button" variant="danger" onClick={() => onDelete(item)}>Delete</Button>
+            </div>
+          </form>
+        </div>
       </section>
     </section>
   );
@@ -1201,11 +1339,11 @@ function EmptyPanel({ icon, title, body, actionLabel, onAction }) {
 
 function Chip({ children, tone = 'neutral' }) {
   const tones = {
-    neutral: 'bg-surface text-text',
-    accent: 'bg-accent/10 text-accent',
-    success: 'bg-emerald-500/10 text-emerald-600',
-    warning: 'bg-amber-500/10 text-amber-700',
-    danger: 'bg-rose-500/10 text-rose-600',
+    neutral: 'border border-border bg-surface text-text',
+    accent: 'bg-accent/12 text-accent',
+    success: 'bg-emerald-500/14 text-emerald-400',
+    warning: 'bg-amber-500/14 text-amber-300',
+    danger: 'bg-rose-500/14 text-rose-300',
   };
 
   return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.16em] ${tones[tone] || tones.neutral}`}>{children}</span>;
@@ -1251,6 +1389,15 @@ function buildConfirmMessage(mode, target) {
 function formatShortDate(value) {
   if (!value) return 'Unknown date';
   return new Date(value).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatBytes(value) {
+  const size = Number(value || 0);
+  if (!Number.isFinite(size) || size <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const unitIndex = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
+  const normalized = size / (1024 ** unitIndex);
+  return `${normalized.toFixed(normalized >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 function formatDateTime(value) {
@@ -1301,12 +1448,6 @@ function readStoredDisplayMode() {
 
 function titleCase(value = '') {
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : '';
-}
-
-function extractPreviewHtml(content = '') {
-  const normalized = String(content || '').trim();
-  if (!normalized) return '<p>No content yet.</p>';
-  return normalized.length > 1200 ? `${normalized.slice(0, 1200)}<p>...</p>` : normalized;
 }
 
 function resolvePercent(value, items) {

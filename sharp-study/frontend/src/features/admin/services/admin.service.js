@@ -44,6 +44,10 @@ export function fetchAdminContent(params) {
   return apiRequest(`/api/admin/content${toQuery(params)}`);
 }
 
+export function fetchAdminContentItem(type, id) {
+  return apiRequest(`/api/admin/content/${type}/${id}`);
+}
+
 export function updateAdminContent(type, id, payload) {
   return apiRequest(`/api/admin/content/${type}/${id}`, {
     method: 'PATCH',
