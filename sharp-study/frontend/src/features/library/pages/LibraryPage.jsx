@@ -14,7 +14,6 @@ import {
 import toast from 'react-hot-toast';
 
 import Modal from '../../../shared/components/Modal';
-import { sanitizePlainText } from '../../../shared/utils/sanitize';
 import { API_URL } from '../../../config/api';
 import { useAuth } from '../../auth/context/AuthContext';
 import MaterialTypeIcon from '../components/MaterialTypeIcon';
@@ -40,25 +39,8 @@ const GENERATION_STEPS = [
 const GENERATION_CANCEL_DELAY_MS = 60000;
 
 function createDefaultManualText(selectedType) {
-  if (selectedType === 'flashcards') return 'What is the key idea? | The direct answer goes here.\nWhy does it matter? | Add the answer here.';
   if (selectedType === 'quiz') return 'Write your question here';
   return '';
-}
-
-function parseManualFlashcards(text = '') {
-  return String(text)
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [front, ...rest] = line.split('|');
-      return {
-        front: sanitizePlainText(front?.trim() || ''),
-        back: sanitizePlainText(rest.join('|').trim()),
-      };
-    })
-    .filter((card) => card.front && card.back)
-    .slice(0, 50);
 }
 
 export default function LibraryPage() {
@@ -215,7 +197,7 @@ export default function LibraryPage() {
     setProgress({ value: 0, title: '', detail: '' });
     setGenerationJob(null);
     setGenerationElapsedMs(0);
-    setLibraryParams({ modal: 'create', type: activeType, mode: null });
+    setLibraryParams({ modal: 'create', type: null, mode: null });
   };
 
   const closeWizard = (force = false) => {
@@ -252,6 +234,12 @@ export default function LibraryPage() {
     if (selectedType === 'study_guide' && nextMode === 'manual') {
       closeWizard(true);
       navigate('/study-guide/new');
+      return;
+    }
+
+    if (selectedType === 'flashcards' && nextMode === 'manual') {
+      closeWizard(true);
+      navigate('/flashcards/new');
       return;
     }
 
@@ -311,37 +299,8 @@ export default function LibraryPage() {
     });
     try {
       if (selectedType === 'flashcards') {
-        const parsedCards = parseManualFlashcards(manualText);
-        if (!parsedCards.length) {
-          throw new Error('Add at least one flashcard using Question | Answer on each line.');
-        }
-
-        const { data: set, error: setError } = await supabase
-          .from('flashcard_sets')
-          .insert({ user_id: user.id, title: cleanTitle, document_id: null, is_archived: false })
-          .select('id')
-          .single();
-        if (setError) throw setError;
-
-        setProgress({
-          value: 68,
-          title: 'Saving flashcards',
-          detail: 'Creating the cards and linking them to this set.',
-        });
-
-        const { error: cardError } = await supabase.from('flashcards').insert(
-          parsedCards.map((card) => ({
-            set_id: set.id,
-            front: card.front,
-            back: card.back,
-          }))
-        );
-        if (cardError) throw cardError;
-
-        await invalidateDashboardCache();
-        toast.success('Flashcards created.');
         closeWizard(true);
-        navigate(`/flashcards/${set.id}`);
+        navigate('/flashcards/new');
         return;
       }
 

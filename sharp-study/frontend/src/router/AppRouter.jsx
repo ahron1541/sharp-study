@@ -17,6 +17,7 @@ const LibraryPage = lazy(() => import('../features/library/pages/LibraryPage'));
 const ArchivePage = lazy(() => import('../features/archive/pages/ArchivePage'));
 const StudyGuidePage = lazy(() => import('../features/study-guide/pages/StudyGuidePage'));
 const StudyGuideCreatePage = lazy(() => import('../features/study-guide/pages/StudyGuideCreatePage'));
+const FlashcardsCreatePage = lazy(() => import('../features/flashcards/pages/FlashcardsCreatePage'));
 const FlashcardsPage = lazy(() => import('../features/flashcards/pages/FlashcardsPage'));
 const QuizPage = lazy(() => import('../features/quiz/pages/QuizPage'));
 const AdminPage = lazy(() => import('../features/admin/pages/AdminPage'));
@@ -74,6 +75,7 @@ export default function AppRouter() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/study-guide/new" element={<StudyGuideCreatePage />} />
             <Route path="/study-guide/:id" element={<StudyGuidePage />} />
+            <Route path="/flashcards/new" element={<FlashcardsCreatePage />} />
             <Route path="/flashcards/:id" element={<FlashcardsPage />} />
             <Route path="/quiz/:id" element={<QuizPage />} />
           </Route>

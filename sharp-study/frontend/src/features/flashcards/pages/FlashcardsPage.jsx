@@ -55,9 +55,51 @@ function summarizeForHint(text = '') {
   return `It starts with: ${words.slice(0, Math.min(4, words.length)).join(' ')}...`;
 }
 
+function normalizeStoredProgress(rawProgress, cards = []) {
+  const validIds = new Set(cards.map((card) => card.id));
+  const fallback = createInitialProgress(cards);
+  if (!rawProgress) return fallback;
+
+  const order = Array.isArray(rawProgress.order)
+    ? rawProgress.order
+    : Array.isArray(rawProgress.order_json)
+      ? rawProgress.order_json
+      : [];
+  const statuses = rawProgress.statuses && typeof rawProgress.statuses === 'object'
+    ? rawProgress.statuses
+    : rawProgress.statuses_json && typeof rawProgress.statuses_json === 'object'
+      ? rawProgress.statuses_json
+      : {};
+
+  return {
+    ...fallback,
+    currentIndex: clampIndex(Number(rawProgress.currentIndex ?? rawProgress.current_index ?? 0), cards.length),
+    order: order.filter((cardId) => validIds.has(cardId)),
+    statuses: Object.fromEntries(
+      Object.entries(statuses).filter(([cardId, status]) => validIds.has(cardId) && ['known', 'learning'].includes(status))
+    ),
+    history: Array.isArray(rawProgress.history) ? rawProgress.history.filter((item) => validIds.has(item.cardId)) : [],
+    updatedAt: rawProgress.updatedAt || rawProgress.updated_at || fallback.updatedAt,
+  };
+}
+
+function countStatuses(statuses = {}) {
+  const values = Object.values(statuses);
+  return {
+    known: values.filter((status) => status === 'known').length,
+    learning: values.filter((status) => status === 'learning').length,
+  };
+}
+
+function isNewerProgress(candidate, current) {
+  const candidateTime = new Date(candidate?.updatedAt || candidate?.updated_at || 0).getTime();
+  const currentTime = new Date(current?.updatedAt || current?.updated_at || 0).getTime();
+  return Number.isFinite(candidateTime) && candidateTime > currentTime;
+}
+
 export default function FlashcardsPage() {
   const { id } = useParams();
-  const { supabase } = useAuth();
+  const { user, supabase } = useAuth();
   const navigate = useNavigate();
 
   const [set, setSet] = useState(null);
@@ -77,6 +119,9 @@ export default function FlashcardsPage() {
 
   const syncTimerRef = useRef(null);
   const utteranceRef = useRef(null);
+  const progressRowIdRef = useRef('');
+  const cardStartedAtRef = useRef(0);
+  const pendingProgressRef = useRef(null);
 
   const orderedCards = useMemo(() => {
     const byId = new Map(cards.map((card) => [card.id, card]));
@@ -101,17 +146,73 @@ export default function FlashcardsPage() {
     }
   }, [id]);
 
+  const syncProgressToDatabase = useCallback(async (nextProgress) => {
+    if (!user?.id || !id) return;
+
+    const counts = countStatuses(nextProgress.statuses);
+    const payload = {
+      user_id: user.id,
+      set_id: id,
+      current_index: clampIndex(nextProgress.currentIndex, nextProgress.order.length || cards.length),
+      order_json: Array.isArray(nextProgress.order) ? nextProgress.order : [],
+      statuses_json: nextProgress.statuses || {},
+      known_count: counts.known,
+      learning_count: counts.learning,
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      if (progressRowIdRef.current) {
+        const { error } = await supabase
+          .from('flashcard_progress')
+          .update(payload)
+          .eq('id', progressRowIdRef.current)
+          .eq('user_id', user.id);
+        if (error) throw error;
+        return;
+      }
+
+      const { data: existing, error: existingError } = await supabase
+        .from('flashcard_progress')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('set_id', id)
+        .limit(1)
+        .maybeSingle();
+      if (existingError) throw existingError;
+
+      if (existing?.id) {
+        progressRowIdRef.current = existing.id;
+        const { error } = await supabase
+          .from('flashcard_progress')
+          .update(payload)
+          .eq('id', existing.id)
+          .eq('user_id', user.id);
+        if (error) throw error;
+        return;
+      }
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('flashcard_progress')
+        .insert(payload)
+        .select('id')
+        .single();
+      if (insertError) throw insertError;
+      progressRowIdRef.current = inserted.id;
+    } catch (error) {
+      console.warn('[FlashcardsProgress] Database sync failed; local progress is still saved.', error);
+    }
+  }, [cards.length, id, supabase, user]);
+
   const scheduleProgressSync = useCallback((nextProgress) => {
     saveProgressLocally(nextProgress);
+    pendingProgressRef.current = nextProgress;
     if (syncTimerRef.current) window.clearTimeout(syncTimerRef.current);
     syncTimerRef.current = window.setTimeout(() => {
-      console.info('[FlashcardsProgress] Local progress ready for database sync', {
-        setId: id,
-        known: Object.values(nextProgress.statuses).filter((status) => status === 'known').length,
-        learning: Object.values(nextProgress.statuses).filter((status) => status === 'learning').length,
-      });
+      pendingProgressRef.current = null;
+      syncProgressToDatabase(nextProgress);
     }, SYNC_DELAY_MS);
-  }, [id, saveProgressLocally]);
+  }, [saveProgressLocally, syncProgressToDatabase]);
 
   const updateProgress = useCallback((updater) => {
     setProgress((current) => {
@@ -174,26 +275,34 @@ export default function FlashcardsPage() {
         ...card,
         front: sanitizePlainText(card.front),
         back: sanitizePlainText(card.back),
+        hint: sanitizePlainText(card.hint || ''),
       }));
       let nextProgress = createInitialProgress(nextCards);
 
       try {
         const cached = JSON.parse(localStorage.getItem(progressKey(id)) || 'null');
-        if (cached?.order?.length) {
-          const validIds = new Set(nextCards.map((card) => card.id));
-          nextProgress = {
-            ...nextProgress,
-            ...cached,
-            order: cached.order.filter((cardId) => validIds.has(cardId)),
-            statuses: Object.fromEntries(
-              Object.entries(cached.statuses || {}).filter(([cardId]) => validIds.has(cardId))
-            ),
-            currentIndex: clampIndex(Number(cached.currentIndex || 0), nextCards.length),
-            history: Array.isArray(cached.history) ? cached.history.filter((item) => validIds.has(item.cardId)) : [],
-          };
-        }
+        nextProgress = normalizeStoredProgress(cached, nextCards);
       } catch {
         nextProgress = createInitialProgress(nextCards);
+      }
+
+      if (user?.id) {
+        const { data: remoteProgress } = await supabase
+          .from('flashcard_progress')
+          .select('id, current_index, order_json, statuses_json, known_count, learning_count, updated_at')
+          .eq('user_id', user.id)
+          .eq('set_id', id)
+          .limit(1)
+          .maybeSingle();
+
+        if (remoteProgress?.id) {
+          progressRowIdRef.current = remoteProgress.id;
+          const normalizedRemote = normalizeStoredProgress(remoteProgress, nextCards);
+          if (isNewerProgress(normalizedRemote, nextProgress)) {
+            nextProgress = normalizedRemote;
+            saveProgressLocally(nextProgress);
+          }
+        }
       }
 
       setSet(setData);
@@ -219,8 +328,15 @@ export default function FlashcardsPage() {
       mounted = false;
       stopReading();
       if (syncTimerRef.current) window.clearTimeout(syncTimerRef.current);
+      if (pendingProgressRef.current) {
+        syncProgressToDatabase(pendingProgressRef.current);
+      }
     };
-  }, [id, supabase, stopReading]);
+  }, [id, saveProgressLocally, supabase, stopReading, syncProgressToDatabase, user?.id]);
+
+  useEffect(() => {
+    cardStartedAtRef.current = Date.now();
+  }, [currentCard?.id]);
 
   useEffect(() => {
     if (!currentCard || flipped || completed) return undefined;
@@ -256,6 +372,7 @@ export default function FlashcardsPage() {
     if (!currentCard) return;
     withLock(() => {
       stopReading();
+      const responseMs = Math.max(0, Date.now() - cardStartedAtRef.current);
       updateProgress((current) => {
         const nextIndex = clampIndex(current.currentIndex + 1, orderedCards.length);
         return {
@@ -265,10 +382,21 @@ export default function FlashcardsPage() {
           history: [...current.history, { cardId: currentCard.id, index: current.currentIndex, status }].slice(-100),
         };
       });
+      if (user?.id) {
+        supabase.from('flashcard_attempts').insert({
+          user_id: user.id,
+          set_id: id,
+          card_id: currentCard.id,
+          result: status,
+          response_ms: responseMs,
+        }).then(({ error }) => {
+          if (error) console.warn('[FlashcardsProgress] Attempt sync failed.', error);
+        });
+      }
       setFlipped(false);
       setHintVisible(false);
     });
-  }, [currentCard, orderedCards.length, reviewedCount, stopReading, updateProgress, withLock]);
+  }, [currentCard, id, orderedCards.length, reviewedCount, stopReading, supabase, updateProgress, user, withLock]);
 
   const goBackToLastQuestion = useCallback(() => {
     const previous = progress.history[progress.history.length - 1];
@@ -306,9 +434,10 @@ export default function FlashcardsPage() {
     const nextProgress = createInitialProgress(cards);
     setProgress(nextProgress);
     saveProgressLocally(nextProgress);
+    syncProgressToDatabase(nextProgress);
     setFlipped(false);
     setHintVisible(false);
-  }, [cards, saveProgressLocally]);
+  }, [cards, saveProgressLocally, syncProgressToDatabase]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -412,7 +541,7 @@ export default function FlashcardsPage() {
               <p className="text-xs font-black uppercase tracking-[0.22em] text-[color:var(--color-text-muted)]">Flashcards</p>
               <h1 className="mt-2 text-3xl font-black leading-tight text-[color:var(--color-text)] sm:text-4xl">{set.title}</h1>
               <p className="mt-2 text-sm text-[color:var(--color-text-muted)]">
-                {orderedCards.length} cards in this set. Progress is saved on this device during review.
+                {orderedCards.length} cards in this set. Progress saves locally first, then syncs to your account.
               </p>
             </div>
 
@@ -522,7 +651,7 @@ export default function FlashcardsPage() {
                       exit={{ opacity: 0, y: 12 }}
                       className="mx-auto mb-4 max-w-lg rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 text-sm leading-6 text-[color:var(--color-text-muted)]"
                     >
-                      {summarizeForHint(currentCard.back)}
+                      {currentCard.hint || summarizeForHint(currentCard.back)}
                     </MotionDiv>
                   ) : null}
                 </AnimatePresence>

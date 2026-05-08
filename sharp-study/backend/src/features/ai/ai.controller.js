@@ -328,7 +328,7 @@ async function processGenerationJob(job) {
 
     existingSetQuery = guide.document_id
       ? existingSetQuery.eq('document_id', guide.document_id)
-      : existingSetQuery.eq('title', `Flashcards: ${guide.title}`);
+      : existingSetQuery.eq('source_study_guide_id', guide.id);
 
     const { data: existingSet, error: existingSetError } = await existingSetQuery.maybeSingle();
     if (existingSetError) throw existingSetError;
@@ -455,6 +455,7 @@ async function processGenerationJob(job) {
         .insert({
           user_id: userId,
           document_id: doc?.id || null,
+          source_study_guide_id: sourceStudyGuide?.id || null,
           title: `Flashcards: ${sourceStudyGuide?.title || docTitle}`,
         })
         .select()
@@ -462,7 +463,7 @@ async function processGenerationJob(job) {
 
       if (set && cards && cards.length > 0) {
         await supabaseAdmin.from('flashcards').insert(
-          cards.map((c) => ({ set_id: set.id, front: c.front, back: c.back }))
+          cards.map((c) => ({ set_id: set.id, front: c.front, back: c.back, hint: c.hint || null }))
         );
       }
 
