@@ -314,6 +314,8 @@ The HTML will be rendered directly in a study-guide reader with a heading-based 
 
 Output rules:
 - Return semantic HTML only. No markdown, no code fences, no explanations.
+- Use only these HTML tags: <h1>, <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <table>, <thead>, <tbody>, <tr>, <th>, <td>, <pre>, <code>, <mark>, <hr>, and <br>.
+- Do not include scripts, styles, iframes, forms, images, inline style attributes, JavaScript URLs, or event-handler attributes.
 - Use short sentences and simple language.
 - Keep the guide focused, skimmable, and genuinely useful for review.
 - Use these sections in this order:

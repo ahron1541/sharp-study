@@ -5,6 +5,7 @@ export default function SelectionToolbar({
   onHighlight,
   highlightColors = [],
   onEdit,
+  onRemoveHighlight,
   onClose,
 }) {
   if (!visible || !position) return null;
@@ -43,13 +44,22 @@ export default function SelectionToolbar({
                 type="button"
                 onClick={() => onHighlight(color.value)}
                 className="h-7 w-7 rounded-full border border-black/10 transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)]"
-                aria-label={`Highlight with ${color.name}`}
-                title={color.name}
-                style={{ backgroundColor: color.value }}
+                aria-label={`Highlight selected text with ${color.name}`}
+                title={`Highlight selected text with ${color.name}`}
+                style={{ backgroundColor: color.swatch || color.value }}
               />
             ))}
           </div>
         )}
+        <button
+          type="button"
+          onClick={onRemoveHighlight}
+          aria-label="Remove highlight from selected text"
+          title="Remove highlight from selected text"
+          className="rounded-full bg-[color:var(--color-surface-2)] px-3 py-1.5 text-xs font-bold text-[color:var(--color-text)] transition hover:bg-[color:var(--color-border)]"
+        >
+          Remove
+        </button>
         <button
           type="button"
           onClick={onClose}

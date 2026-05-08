@@ -914,6 +914,24 @@ function ContentSection({ archived, items, loading, filters, pagination, metrics
   const ownerScoped = Boolean(filters.owner || filters.owner_id);
   const groupedOwners = useMemo(() => groupContentByOwner(items), [items]);
   const scopedItems = useMemo(() => [...items].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()), [items]);
+  const scopedItemsByType = useMemo(() => groupContentByType(scopedItems), [scopedItems]);
+  const activeScopedType = useMemo(() => {
+    if (!ownerScoped) return filters.type;
+    if (filters.type !== 'all' && CONTENT_TYPE_META[filters.type]) return filters.type;
+    return Object.keys(CONTENT_TYPE_META).find((type) => (scopedItemsByType[type] || []).length > 0) || 'documents';
+  }, [filters.type, ownerScoped, scopedItemsByType]);
+  const [contentTypePages, setContentTypePages] = useState({});
+  const activeTypeItems = ownerScoped ? (scopedItemsByType[activeScopedType] || []) : [];
+  const activeTypeTotalPages = Math.max(1, Math.ceil(activeTypeItems.length / 5));
+  const activeTypePage = Math.min(contentTypePages[activeScopedType] || 1, activeTypeTotalPages);
+  const pagedTypeItems = activeTypeItems.slice((activeTypePage - 1) * 5, activeTypePage * 5);
+
+  function setActiveTypePage(type, page) {
+    setContentTypePages((current) => ({
+      ...current,
+      [type]: Math.min(Math.max(1, page), Math.max(1, Math.ceil((scopedItemsByType[type] || []).length / 5))),
+    }));
+  }
 
   return (
     <section className="space-y-6">
@@ -941,8 +959,10 @@ function ContentSection({ archived, items, loading, filters, pagination, metrics
               </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(15rem,1fr)_minmax(15rem,1fr)_12rem]">
-              <FilterInput value={filters.search} onChange={(value) => onFilterChange('search', value)} placeholder="Search by title" />
+            <div className={`grid gap-3 sm:grid-cols-2 ${ownerScoped ? 'xl:grid-cols-[minmax(15rem,1fr)_minmax(15rem,1fr)_12rem]' : 'xl:grid-cols-[minmax(15rem,1fr)_12rem]'}`}>
+              {ownerScoped ? (
+                <FilterInput value={filters.search} onChange={(value) => onFilterChange('search', value)} placeholder="Search by title" />
+              ) : null}
               <FilterInput value={filters.owner} onChange={(value) => onFilterChange('owner', value)} placeholder="Search owner email or username" />
               <select value={filters.type} onChange={(event) => onFilterChange('type', event.target.value)} className="cursor-pointer rounded-2xl border border-border bg-surface-2 px-4 py-3 text-sm text-text outline-none focus:border-accent sm:col-span-2 xl:col-span-1">
                 <option value="all">All types</option>
@@ -961,6 +981,37 @@ function ContentSection({ archived, items, loading, filters, pagination, metrics
               <Button size="sm" variant="secondary" className="admin-action-button" onClick={onClearOwner}>Back to users</Button>
             </div>
           ) : null}
+
+          {ownerScoped ? (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {Object.entries(CONTENT_TYPE_META).map(([type, meta]) => {
+                const active = activeScopedType === type;
+                const count = scopedItemsByType[type]?.length || 0;
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => onFilterChange('type', type)}
+                    className={`flex min-w-0 items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left transition-colors ${
+                      active
+                        ? 'border-accent bg-accent/10 text-text'
+                        : 'border-border bg-surface-2 text-text-muted hover:bg-surface'
+                    }`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface text-accent">
+                        {createElement(meta.icon, { size: 15 })}
+                      </span>
+                      <span className="truncate text-sm font-semibold">{meta.label}</span>
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${active ? 'bg-accent text-accent-text' : 'bg-surface text-text-muted'}`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
 
         {loading ? (
@@ -969,46 +1020,44 @@ function ContentSection({ archived, items, loading, filters, pagination, metrics
           <EmptyPanel icon={archived ? Archive : FileText} title={`No ${archived ? 'archived' : 'active'} content matched this filter.`} body="Try another content type, a different owner filter, or a broader title search." />
         ) : !ownerScoped ? (
           <>
-            <div className="grid gap-4 p-4 sm:p-5 xl:grid-cols-2">
+            <div className="space-y-2 p-2 sm:p-3">
+              <div className="hidden grid-cols-[minmax(15rem,1.15fr)_minmax(20rem,1fr)_8rem_7rem] gap-3 px-3 py-2 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-text-muted lg:grid">
+                <span>User</span>
+                <span>Content summary</span>
+                <span>Latest</span>
+                <span className="text-right">Action</span>
+              </div>
               {groupedOwners.map((group) => (
-                <article key={group.ownerKey} className="rounded-[1.4rem] border border-border bg-surface-2 p-4 sm:rounded-[1.7rem] sm:p-5">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex items-start gap-3">
-                        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface text-accent">
-                          <Users size={20} />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-lg font-semibold text-text">{group.ownerName}</p>
-                          <p className="truncate text-sm text-text-muted">{group.ownerEmail}</p>
-                          <p className="mt-1 truncate text-sm text-text-muted">@{group.ownerUsername}</p>
-                        </div>
+                <article key={group.ownerKey} className="grid gap-3 rounded-2xl border border-border bg-surface-2 p-3 transition-colors hover:bg-surface lg:grid-cols-[minmax(15rem,1.15fr)_minmax(20rem,1fr)_8rem_7rem] lg:items-center">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface text-accent">
+                        <Users size={17} />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-text">{group.ownerName}</p>
+                        <p className="truncate text-xs text-text-muted">{group.ownerEmail}</p>
+                        <p className="truncate text-xs text-text-muted">@{group.ownerUsername}</p>
                       </div>
                     </div>
+                  </div>
 
+                  <div className="min-w-0">
                     <div className="flex flex-wrap gap-2">
+                      {Object.entries(CONTENT_TYPE_META).map(([type, meta]) => (
+                        <CompactCountPill key={type} icon={meta.icon} label={meta.label} value={group.counts[type] || 0} />
+                      ))}
                       <Chip tone={archived ? 'neutral' : 'success'}>{archived ? 'Archived' : 'Active'}</Chip>
-                      <Chip tone="accent">{group.items.length} items</Chip>
                     </div>
                   </div>
 
-                  <div className="mt-5 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(8rem,1fr))]">
-                    {Object.entries(CONTENT_TYPE_META).map(([type, meta]) => (
-                      <InfoPill key={type} label={meta.label} value={group.counts[type] || 0} />
-                    ))}
+                  <div className="text-sm text-text-muted">
+                    {formatShortDate(group.latestAt)}
                   </div>
 
-                  <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-text-muted">Latest update {formatShortDate(group.latestAt)}</p>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="admin-action-button"
-                      icon={<Search size={14} />}
-                      onClick={() => onViewOwner(group)}
-                      disabled={!group.ownerId}
-                    >
-                      View contents
+                  <div className="flex lg:justify-end">
+                    <Button size="sm" variant="secondary" className="admin-action-button w-full lg:w-auto" icon={<Search size={14} />} onClick={() => onViewOwner(group)} disabled={!group.ownerId}>
+                      Open
                     </Button>
                   </div>
                 </article>
@@ -1018,66 +1067,91 @@ function ContentSection({ archived, items, loading, filters, pagination, metrics
           </>
         ) : (
           <>
-          <div className="space-y-4 p-4 sm:p-5">
-            {scopedItems.map((item, index) => {
-              const typeOrdinal = scopedItems.slice(0, index + 1).filter((candidate) => candidate.type === item.type).length;
+          <div className="space-y-4 p-2 sm:p-3">
+            {(() => {
+              const type = activeScopedType;
+              const meta = CONTENT_TYPE_META[type];
+              const typeItems = activeTypeItems;
 
               return (
-                <article key={`${item.type}:${item.id}`} className="rounded-[1.5rem] border border-border bg-surface-2 p-4 sm:rounded-[1.8rem] sm:p-5">
-                  <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-start">
-                    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(13rem,0.7fr)]">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-3">
-                          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface text-accent">
-                            {createElement(CONTENT_TYPE_META[item.type]?.icon || FileText, { size: 18 })}
-                          </span>
+                <section key={type} className="rounded-xl border border-border bg-surface-2/55">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-surface text-accent">
+                        {createElement(meta.icon, { size: 15 })}
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold leading-5 text-text">{meta.label}</p>
+                        <p className="text-xs text-text-muted">{typeItems.length} {typeItems.length === 1 ? 'item' : 'items'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {typeItems.length === 0 ? (
+                    <div className="px-3 py-3 text-xs text-text-muted">
+                      No {meta.label.toLowerCase()} found for this user.
+                    </div>
+                  ) : (
+                    <div className="space-y-1 p-1.5">
+                      <div className="hidden grid-cols-[minmax(13rem,1.25fr)_6.5rem_minmax(10rem,0.75fr)_minmax(10rem,0.85fr)_6.5rem] gap-2 px-2 py-1 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-text-muted xl:grid">
+                        <span>Content</span>
+                        <span>Status</span>
+                        <span>Content ID</span>
+                        <span>Source</span>
+                        <span className="text-right">Actions</span>
+                      </div>
+
+                      {pagedTypeItems.map((item, index) => {
+                        const globalIndex = (activeTypePage - 1) * 5 + index;
+
+                        return (
+                        <article key={`${item.type}:${item.id}`} className="grid gap-2 rounded-lg border border-border bg-surface px-2 py-2 transition-colors hover:bg-surface-2 xl:grid-cols-[minmax(13rem,1.25fr)_6.5rem_minmax(10rem,0.75fr)_minmax(10rem,0.85fr)_6.5rem] xl:items-center">
                           <div className="min-w-0">
-                            <p className="break-words text-lg font-semibold leading-6 text-text">{item.title}</p>
-                            <p className="text-sm text-text-muted">{CONTENT_TYPE_META[item.type]?.singular || item.type}</p>
+                            <div className="flex items-center gap-2">
+                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-accent">
+                                {createElement(meta.icon || FileText, { size: 15 })}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="truncate text-xs font-semibold text-text sm:text-sm">{item.title}</p>
+                                <p className="truncate text-xs text-text-muted">{meta.singular} • {formatShortDate(item.created_at)}</p>
+                              </div>
+                            </div>
                           </div>
-                        </div>
 
-                        {item.type === 'study_guides' ? (
-                          <p className="mt-4 max-w-xl text-sm leading-7 text-text-muted">
-                            Open the dedicated review page to preview, edit, or moderate this study guide cleanly.
-                          </p>
-                        ) : item.type === 'documents' ? (
-                          <p className="mt-4 text-sm text-text-muted">File type: {item.file_type ? item.file_type.toUpperCase() : 'Unknown'}{item.status ? ` • ${item.status}` : ''}</p>
-                        ) : (
-                          <p className="mt-4 text-sm text-text-muted">Detail editing for {CONTENT_TYPE_META[item.type]?.label.toLowerCase()} can expand as those creation flows go fully live.</p>
-                        )}
-                      </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            <Chip tone={archived ? 'neutral' : 'success'}>{archived ? 'Archived' : 'Active'}</Chip>
+                            {item.type === 'documents' ? <Chip tone={item.status === 'done' ? 'success' : item.status === 'error' ? 'danger' : 'warning'}>{item.status}</Chip> : null}
+                          </div>
 
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-text">{item.owner?.full_name || item.owner?.email || 'Unknown owner'}</p>
-                        <p className="mt-1 text-sm text-text-muted">{item.owner?.email || 'No email available'}</p>
-                        <p className="mt-1 text-sm text-text-muted">@{item.owner?.username || 'no-username'}</p>
-                      </div>
+                          <div className="min-w-0 truncate text-xs font-medium text-text-muted" title={buildUserContentCode(item, globalIndex + 1)}>
+                            {buildUserContentCode(item, globalIndex + 1)}
+                          </div>
 
-                      <div className="flex flex-wrap gap-2 xl:col-span-2">
-                        <Chip tone={archived ? 'neutral' : 'success'}>{archived ? 'Archived' : 'Active'}</Chip>
-                        {item.type === 'documents' ? <Chip tone={item.status === 'done' ? 'success' : item.status === 'error' ? 'danger' : 'warning'}>{item.status}</Chip> : null}
-                        <Chip tone="accent">{CONTENT_TYPE_META[item.type]?.singular || item.type}</Chip>
-                      </div>
+                          <div className="min-w-0 truncate text-xs text-text-muted">
+                            {renderDocumentLink(item)}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-1.5 xl:grid-cols-1">
+                            <Button size="sm" variant="secondary" className="admin-action-button admin-compact-action" icon={<Eye size={12} />} onClick={() => onPreviewContent(item)}>Review</Button>
+                            <Button size="sm" variant="danger" className="admin-compact-danger rounded-xl font-semibold" icon={<Trash2 size={12} />} onClick={() => onDeleteContent(item)}>Delete</Button>
+                          </div>
+                        </article>
+                        );
+                      })}
+
+                      <CompactPagination
+                        page={activeTypePage}
+                        totalPages={activeTypeTotalPages}
+                        totalCount={typeItems.length}
+                        onPrev={() => setActiveTypePage(type, activeTypePage - 1)}
+                        onNext={() => setActiveTypePage(type, activeTypePage + 1)}
+                      />
                     </div>
-
-                    <div className="grid gap-2 sm:grid-cols-2 2xl:w-[24rem]">
-                      <Button size="sm" variant="secondary" className="admin-action-button" icon={<Eye size={14} />} onClick={() => onPreviewContent(item)}>Open review</Button>
-                      <Button size="sm" variant="secondary" className="admin-action-button" icon={<Search size={14} />} onClick={() => onFilterChange('owner_id', item.user_id)}>Refresh owner</Button>
-                      <Button size="sm" variant="danger" icon={<Trash2 size={14} />} onClick={() => onDeleteContent(item)}>Delete</Button>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 text-sm text-text-muted sm:grid-cols-2 xl:grid-cols-3">
-                    <span>Created {formatShortDate(item.created_at)}</span>
-                    <span>Content ID {buildUserContentCode(item, typeOrdinal)}</span>
-                    <span className="min-w-0 break-words">{renderDocumentLink(item)}</span>
-                  </div>
-                </article>
+                  )}
+                </section>
               );
-            })}
+            })()}
             </div>
-            <PaginationBar page={pagination.page} totalPages={pagination.totalPages} totalCount={pagination.totalCount} onPrev={() => onFilterChange('page', Math.max(1, pagination.page - 1))} onNext={() => onFilterChange('page', Math.min(pagination.totalPages, pagination.page + 1))} />
           </>
         )}
       </section>
@@ -1309,6 +1383,18 @@ function ContentTypeCard({ icon, label, value, active, onClick }) {
   );
 }
 
+function CompactCountPill({ icon, label, value }) {
+  return (
+    <span className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-border bg-surface px-3 py-1.5 text-sm text-text">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center text-accent">
+        {createElement(icon, { size: 15 })}
+      </span>
+      <span className="font-semibold">{value}</span>
+      <span className="max-w-28 truncate text-text-muted">{label}</span>
+    </span>
+  );
+}
+
 function groupContentByOwner(items) {
   const groups = new Map();
 
@@ -1334,6 +1420,16 @@ function groupContentByOwner(items) {
   });
 
   return [...groups.values()].sort((a, b) => new Date(b.latestAt).getTime() - new Date(a.latestAt).getTime());
+}
+
+function groupContentByType(items) {
+  return items.reduce((groups, item) => {
+    const type = item.type || 'unknown';
+    return {
+      ...groups,
+      [type]: [...(groups[type] || []), item],
+    };
+  }, {});
 }
 
 function buildUserContentCode(item, ordinal) {
@@ -1540,6 +1636,21 @@ function PaginationBar({ page, totalPages, totalCount, onPrev, onNext }) {
         <Button size="sm" variant="secondary" className="admin-secondary-button" onClick={onPrev} disabled={page <= 1}>Previous</Button>
         <span className="text-sm font-bold text-text">Page {page} of {totalPages}</span>
         <Button size="sm" variant="secondary" className="admin-secondary-button" onClick={onNext} disabled={page >= totalPages}>Next</Button>
+      </div>
+    </div>
+  );
+}
+
+function CompactPagination({ page, totalPages, totalCount, onPrev, onNext }) {
+  return (
+    <div className="flex flex-col gap-2 border-t border-border px-2 py-2 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-xs text-text-muted">
+        Showing {totalCount === 0 ? 0 : ((page - 1) * 5) + 1}-{Math.min(page * 5, totalCount)} of {totalCount}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="secondary" className="admin-compact-action admin-secondary-button" onClick={onPrev} disabled={page <= 1}>Previous</Button>
+        <span className="text-xs font-semibold text-text">Page {page} of {totalPages}</span>
+        <Button size="sm" variant="secondary" className="admin-compact-action admin-secondary-button" onClick={onNext} disabled={page >= totalPages}>Next</Button>
       </div>
     </div>
   );

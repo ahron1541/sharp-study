@@ -4,6 +4,7 @@ import { ArrowLeft, Edit2, Loader2, PanelLeftClose, PanelLeftOpen, Volume2, Volu
 import toast from 'react-hot-toast';
 
 import { useAuth } from '../../auth/context/AuthContext';
+import { apiRequest } from '../../../config/api';
 import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { sanitizeHtml } from '../../../shared/utils/sanitize';
@@ -18,12 +19,12 @@ import {
 } from '../utils/content';
 
 const HIGHLIGHT_COLORS = [
-  { name: 'Yellow', value: '#fde68a' },
-  { name: 'Green', value: '#bbf7d0' },
-  { name: 'Blue', value: '#bfdbfe' },
-  { name: 'Pink', value: '#fbcfe8' },
-  { name: 'Purple', value: '#ddd6fe' },
-  { name: 'Orange', value: '#fed7aa' },
+  { name: 'Yellow', value: 'yellow', swatch: '#fde68a' },
+  { name: 'Green', value: 'green', swatch: '#bbf7d0' },
+  { name: 'Blue', value: 'blue', swatch: '#bfdbfe' },
+  { name: 'Pink', value: 'pink', swatch: '#fbcfe8' },
+  { name: 'Purple', value: 'purple', swatch: '#ddd6fe' },
+  { name: 'Orange', value: 'orange', swatch: '#fed7aa' },
 ];
 
 const DRAFT_SYNC_DELAY_MS = 2 * 60 * 1000;
@@ -110,15 +111,16 @@ export default function StudyGuidePage() {
         return;
       }
 
-      const normalizedContent = normalizeStudyGuideHtml(data.content);
+      const normalizedContent = sanitizeHtml(normalizeStudyGuideHtml(data.content));
       let nextContent = normalizedContent;
 
       try {
         const cachedDraft = localStorage.getItem(draftStorageKey(id));
         if (cachedDraft) {
           const parsedDraft = JSON.parse(cachedDraft);
-          if (parsedDraft?.content && parsedDraft.content !== normalizedContent) {
-            nextContent = parsedDraft.content;
+          const sanitizedDraft = sanitizeHtml(parsedDraft?.content || '');
+          if (sanitizedDraft && sanitizedDraft !== normalizedContent) {
+            nextContent = sanitizedDraft;
             setLastSyncedAt(parsedDraft.updatedAt || data.updated_at || data.created_at || null);
             console.info(`${saveLogPrefix} restored cached draft`, { guideId: id, updatedAt: parsedDraft.updatedAt });
           }
@@ -217,14 +219,15 @@ export default function StudyGuidePage() {
   const writeDraftToLocalCache = useCallback((nextContent) => {
     if (!id) return;
     try {
+      const sanitizedContent = sanitizeHtml(nextContent);
       const payload = {
-        content: nextContent,
+        content: sanitizedContent,
         updatedAt: new Date().toISOString(),
       };
       localStorage.setItem(draftStorageKey(id), JSON.stringify(payload));
       lastLocalSaveAtRef.current = Date.now();
       setLastSyncedAt(payload.updatedAt);
-      console.info(`${saveLogPrefix} draft cached locally`, { guideId: id, bytes: nextContent.length });
+      console.info(`${saveLogPrefix} draft cached locally`, { guideId: id, bytes: sanitizedContent.length });
     } catch (cacheError) {
       console.warn(`${saveLogPrefix} failed to cache draft locally`, cacheError);
     }
@@ -315,7 +318,8 @@ export default function StudyGuidePage() {
 
   const save = useCallback(async ({ nextContent = content, exitEditing = false, showToast = true, reason = 'manual' } = {}) => {
     if (!guide) return false;
-    if (nextContent === savedContent) {
+    const sanitizedContent = sanitizeHtml(nextContent);
+    if (sanitizedContent === savedContent) {
       setSaveState('saved');
       if (exitEditing) setEditing(false);
       return true;
@@ -323,25 +327,34 @@ export default function StudyGuidePage() {
 
     setSaving(true);
     setSaveState('saving');
-    console.info(`${saveLogPrefix} syncing draft to database`, { guideId: id, reason, size: nextContent.length });
+    console.info(`${saveLogPrefix} syncing draft to database`, { guideId: id, reason, size: sanitizedContent.length });
 
-    const { error } = await supabase
-      .from('study_guides')
-      .update({ content: nextContent, title: guide.title })
-      .eq('id', id);
+    let savedItem = null;
+    let saveError = null;
+    try {
+      const response = await apiRequest(`/api/study-guides/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ content: sanitizedContent, title: guide.title }),
+      });
+      savedItem = response.item;
+    } catch (error) {
+      saveError = error;
+    }
 
     setSaving(false);
 
-    if (error) {
+    if (saveError) {
       setSaveState('error');
-      console.error(`${saveLogPrefix} database sync failed`, { guideId: id, reason, error });
+      console.error(`${saveLogPrefix} database sync failed`, { guideId: id, reason, error: saveError });
       if (showToast) toast.error('Failed to save your study guide.');
       return false;
     }
 
-    lastSavedContentRef.current = nextContent;
-    setSavedContent(nextContent);
-    setGuide((currentGuide) => (currentGuide ? { ...currentGuide, content: nextContent } : currentGuide));
+    const savedServerContent = savedItem?.content || sanitizedContent;
+    lastSavedContentRef.current = savedServerContent;
+    setSavedContent(savedServerContent);
+    setContent(savedServerContent);
+    setGuide((currentGuide) => (currentGuide ? { ...currentGuide, content: savedServerContent } : currentGuide));
     setLastSyncedAt(new Date().toISOString());
     setSaveState('saved');
     clearDraftFromLocalCache();
@@ -349,7 +362,7 @@ export default function StudyGuidePage() {
     if (showToast) toast.success('Study guide saved.');
     if (exitEditing) setEditing(false);
     return true;
-  }, [clearDraftFromLocalCache, content, guide, id, savedContent, supabase]);
+  }, [clearDraftFromLocalCache, content, guide, id, savedContent]);
 
   const switchToReadMode = useCallback(async () => {
     const saved = await save({ exitEditing: true, showToast: false });
@@ -489,7 +502,48 @@ export default function StudyGuidePage() {
       range.insertNode(mark);
     }
 
-    const updatedContent = container.innerHTML;
+    const updatedContent = sanitizeHtml(container.innerHTML);
+    setContent(updatedContent);
+    writeDraftToLocalCache(updatedContent);
+    setSaveState('cached');
+    clearSelectionToolbar();
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const removeHighlightSelection = () => {
+    const range = selectionRangeRef.current;
+    const container = articleRef.current;
+
+    if (!range || !container) {
+      clearSelectionToolbar();
+      return;
+    }
+
+    const selectedMarks = Array.from(container.querySelectorAll('mark[data-highlight-color], mark.study-guide-highlight'))
+      .filter((mark) => {
+        try {
+          return range.intersectsNode(mark);
+        } catch {
+          return false;
+        }
+      });
+
+    if (!selectedMarks.length) {
+      clearSelectionToolbar();
+      return;
+    }
+
+    selectedMarks.forEach((mark) => {
+      const parent = mark.parentNode;
+      if (!parent) return;
+      while (mark.firstChild) {
+        parent.insertBefore(mark.firstChild, mark);
+      }
+      parent.removeChild(mark);
+      parent.normalize();
+    });
+
+    const updatedContent = sanitizeHtml(container.innerHTML);
     setContent(updatedContent);
     writeDraftToLocalCache(updatedContent);
     setSaveState('cached');
@@ -784,6 +838,7 @@ export default function StudyGuidePage() {
           selectedText={selectionToolbar.selectedText}
           onHighlight={highlightSelection}
           highlightColors={HIGHLIGHT_COLORS}
+          onRemoveHighlight={removeHighlightSelection}
           onEdit={() => {
             setActiveTab('guide');
             setEditing(true);

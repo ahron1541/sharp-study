@@ -4,6 +4,7 @@ const { z } = require('zod');
 
 const { requireAdmin } = require('../../middleware/auth.middleware');
 const { supabaseAdmin } = require('../../config/supabase');
+const { sanitizeStudyGuideContent } = require('../../utils/studyGuideSanitize');
 
 const router = express.Router();
 
@@ -555,6 +556,8 @@ router.patch('/content/:type/:id', async (req, res) => {
     }
     if (type !== 'study_guides') {
       delete payload.content;
+    } else if (payload.content) {
+      payload.content = sanitizeStudyGuideContent(payload.content);
     }
 
     const { data, error } = await supabaseAdmin

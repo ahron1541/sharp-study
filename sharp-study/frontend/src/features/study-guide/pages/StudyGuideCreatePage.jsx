@@ -4,7 +4,8 @@ import { ArrowLeft, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import Breadcrumb from '../../../shared/components/Breadcrumb';
-import { API_URL } from '../../../config/api';
+import { apiRequest } from '../../../config/api';
+import { sanitizeHtml } from '../../../shared/utils/sanitize';
 import { useAuth } from '../../auth/context/AuthContext';
 import StudyGuideEditor from '../components/StudyGuideEditor';
 import { createInstructionalStudyGuideTemplate } from '../utils/content';
@@ -12,7 +13,7 @@ import { createInstructionalStudyGuideTemplate } from '../utils/content';
 const EMPTY_EDITOR = createInstructionalStudyGuideTemplate();
 
 export default function StudyGuideCreatePage() {
-  const { user, supabase } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState(EMPTY_EDITOR);
@@ -49,30 +50,17 @@ export default function StudyGuideCreatePage() {
 
     setSaving(true);
     try {
-      const { data, error } = await supabase
-        .from('study_guides')
-        .insert({
-          user_id: user.id,
+      const sanitizedContent = sanitizeHtml(content);
+      const response = await apiRequest('/api/study-guides', {
+        method: 'POST',
+        body: JSON.stringify({
           title: cleanTitle,
-          content,
-          document_id: null,
-          is_archived: false,
-        })
-        .select('id')
-        .single();
-
-      if (error) throw error;
-
-      const token = localStorage.getItem('sharp-study-token');
-      if (token) {
-        await fetch(`${API_URL}/api/dashboard/invalidate`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-        }).catch(() => {});
-      }
+          content: sanitizedContent,
+        }),
+      });
 
       toast.success('Study guide created.');
-      navigate(`/study-guide/${data.id}`);
+      navigate(`/study-guide/${response.item.id}`);
     } catch (createError) {
       toast.error(createError.message || 'Failed to create your study guide.');
       setSaving(false);

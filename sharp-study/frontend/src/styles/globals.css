@@ -280,16 +280,44 @@ body {
 .study-guide-editor .ProseMirror ul,
 .study-guide-editor .ProseMirror ol {
   padding-left: 1.5rem;
+  margin: 0.85rem 0 1rem;
+}
+
+.study-guide-editor .ProseMirror ul {
+  list-style: disc;
+}
+
+.study-guide-editor .ProseMirror ol {
+  list-style: decimal;
+}
+
+.study-guide-editor .ProseMirror li {
+  padding-left: 0.2rem;
+  margin-bottom: 0.35rem;
+}
+
+.study-guide-editor .ProseMirror li p {
+  margin: 0;
+}
+
+.study-guide-editor .ProseMirror blockquote {
+  margin: 1.15rem 0;
+  padding: 0.95rem 1.15rem;
+  border-left: 4px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--color-surface-2) 78%, transparent);
+  font-style: italic;
 }
 
 .study-guide-editor .ProseMirror pre,
 .study-guide-content pre {
   margin: 1.2rem 0;
   padding: 1rem 1.1rem;
-  border: 1px solid var(--card-border);
+  border: 1px solid var(--color-border);
   border-radius: 1rem;
-  background: color-mix(in srgb, var(--card-bg) 82%, var(--card-border));
+  background: #f8fafc;
   overflow-x: auto;
+  color: #0f172a;
 }
 
 .study-guide-editor .ProseMirror pre code,
@@ -302,22 +330,55 @@ body {
   line-height: 1.7;
 }
 
+.study-guide-editor .ProseMirror .tableWrapper {
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+
 .study-guide-editor .ProseMirror table {
   width: 100%;
+  min-width: 32rem;
   border-collapse: collapse;
   margin: 1rem 0;
+  table-layout: fixed;
 }
 
 .study-guide-editor .ProseMirror th,
 .study-guide-editor .ProseMirror td {
-  border: 1px solid var(--card-border);
+  position: relative;
+  min-width: 7rem;
+  border: 1px solid var(--color-border);
   padding: 0.8rem 0.9rem;
   vertical-align: top;
   text-align: left;
 }
 
 .study-guide-editor .ProseMirror thead th {
-  background: color-mix(in srgb, var(--card-bg) 74%, var(--card-border));
+  background: color-mix(in srgb, var(--color-surface-2) 88%, var(--color-border));
+}
+
+.study-guide-editor .ProseMirror .selectedCell::after {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  content: "";
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+.study-guide-editor .ProseMirror .column-resize-handle {
+  pointer-events: none;
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  top: 0;
+  width: 4px;
+  background-color: var(--color-accent);
+}
+
+.resize-cursor {
+  cursor: ew-resize;
+  cursor: col-resize;
 }
 
 .study-guide-editor .ProseMirror::selection,
@@ -341,6 +402,22 @@ body {
   color: #f8fafc;
 }
 
+[data-display="dark"] .study-guide-editor .ProseMirror pre,
+[data-display="dark"] .study-guide-content pre {
+  border-color: #334155;
+  background: #0b1220;
+  color: #e2e8f0;
+}
+
+[data-display="dark"] .study-guide-editor .ProseMirror pre code,
+[data-display="dark"] .study-guide-content pre code {
+  color: #e2e8f0;
+}
+
+[data-display="dark"] .study-guide-editor .ProseMirror blockquote {
+  background: rgba(15, 23, 42, 0.76);
+}
+
 [data-display="light"] .study-guide-editor .ProseMirror,
 [data-display="light"] .study-guide-editor .ProseMirror p,
 [data-display="light"] .study-guide-editor .ProseMirror li,
@@ -361,6 +438,7 @@ body {
   color: var(--text-color);
   font-size: 0.975rem;
   line-height: 1.8;
+  overflow-wrap: anywhere;
 }
 
 .study-guide-content h1 {
@@ -404,6 +482,14 @@ body {
 .study-guide-content ol {
   padding-left: 1.5em;
   margin-bottom: 1em;
+}
+
+.study-guide-content ul {
+  list-style: disc;
+}
+
+.study-guide-content ol {
+  list-style: decimal;
 }
 
 .study-guide-content li {
@@ -450,6 +536,7 @@ body {
 
 .study-guide-content table {
   width: 100%;
+  min-width: 32rem;
   border-collapse: collapse;
   margin: 1.25rem 0;
   overflow: hidden;
@@ -529,41 +616,53 @@ body {
   contain: paint;
 }
 
+.study-guide-editor .ProseMirror mark,
 .study-guide-content mark,
 .study-guide-highlight {
   background: color-mix(in srgb, #facc15 65%, white);
-  color: var(--text-color);
+  color: #111827;
   padding: 0 0.15em;
   border-radius: 0.3em;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
 
+.study-guide-editor .ProseMirror mark *,
+.study-guide-content mark * {
+  color: inherit;
+}
+
+.study-guide-editor .ProseMirror mark[data-highlight-color="yellow"],
 .study-guide-content mark[data-highlight-color="yellow"],
 .study-guide-highlight[data-highlight-color="yellow"] {
   background: #fde68a;
 }
 
+.study-guide-editor .ProseMirror mark[data-highlight-color="green"],
 .study-guide-content mark[data-highlight-color="green"],
 .study-guide-highlight[data-highlight-color="green"] {
   background: #bbf7d0;
 }
 
+.study-guide-editor .ProseMirror mark[data-highlight-color="blue"],
 .study-guide-content mark[data-highlight-color="blue"],
 .study-guide-highlight[data-highlight-color="blue"] {
   background: #bfdbfe;
 }
 
+.study-guide-editor .ProseMirror mark[data-highlight-color="pink"],
 .study-guide-content mark[data-highlight-color="pink"],
 .study-guide-highlight[data-highlight-color="pink"] {
   background: #fbcfe8;
 }
 
+.study-guide-editor .ProseMirror mark[data-highlight-color="purple"],
 .study-guide-content mark[data-highlight-color="purple"],
 .study-guide-highlight[data-highlight-color="purple"] {
   background: #ddd6fe;
 }
 
+.study-guide-editor .ProseMirror mark[data-highlight-color="orange"],
 .study-guide-content mark[data-highlight-color="orange"],
 .study-guide-highlight[data-highlight-color="orange"] {
   background: #fed7aa;
@@ -613,5 +712,26 @@ body {
   .study-guide-editor,
   .study-guide-sidebar {
     transition: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .study-guide-editor-shell {
+    height: auto;
+    min-height: 44rem;
+  }
+
+  .study-guide-editor-scroll {
+    max-height: 58vh;
+  }
+
+  .study-guide-editor .ProseMirror table,
+  .study-guide-content table {
+    min-width: 28rem;
+  }
+
+  .study-guide-reader,
+  .study-guide-editor .ProseMirror .tableWrapper {
+    overflow-x: auto;
   }
 }

@@ -3,6 +3,7 @@ const { PDFParse } = require('pdf-parse');
 const mammoth = require('mammoth');
 const AdmZip = require('adm-zip');
 const { supabaseAdmin } = require('../../config/supabase');
+const { sanitizeStudyGuideContent } = require('../../utils/studyGuideSanitize');
 const {
   generateStudyGuide,
   generateKeyReferences,
@@ -328,10 +329,10 @@ async function processGenerationJob(job) {
         console.warn('Discussion question generation fell back to client builder:', discussionError?.message || discussionError);
       }
 
-      const serializedContent = serializeStudyGuideContent(content, {
+      const serializedContent = sanitizeStudyGuideContent(serializeStudyGuideContent(content, {
         keyReferenceGroups,
         discussionQuestions,
-      });
+      }));
 
       const { data: studyGuide, error: studyGuideError } = await supabaseAdmin
         .from('study_guides')

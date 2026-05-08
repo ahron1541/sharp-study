@@ -3,11 +3,17 @@ import { Mark, mergeAttributes } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import CodeBlock from '@tiptap/extension-code-block';
 import Heading from '@tiptap/extension-heading';
+import { Table as TableExtension } from '@tiptap/extension-table';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { TableRow } from '@tiptap/extension-table-row';
 import {
   AlertCircle,
   Bold,
   Check,
   Cloud,
+  Columns3,
+  Eraser,
   FileCode2,
   Eye,
   Heading2,
@@ -17,10 +23,13 @@ import {
   List,
   ListOrdered,
   Minus,
+  PanelTop,
   Quote,
   Redo2,
+  Rows3,
   Save,
-  Table,
+  Table as TableIcon,
+  Trash2,
   Undo2,
   Volume2,
 } from 'lucide-react';
@@ -41,8 +50,12 @@ const Highlight = Mark.create({
 
   addAttributes() {
     return {
-      'data-highlight-color': {
+      color: {
         default: 'yellow',
+        parseHTML: (element) => element.getAttribute('data-highlight-color') || 'yellow',
+        renderHTML: (attributes) => ({
+          'data-highlight-color': attributes.color || 'yellow',
+        }),
       },
     };
   },
@@ -60,6 +73,7 @@ function ToolButton({ onClick, active, disabled = false, label, children }) {
   return (
     <button
       type="button"
+      title={label}
       onMouseDown={(e) => {
         e.preventDefault();
         onClick();
@@ -87,6 +101,8 @@ function ToolbarAction({ label, icon, onClick, variant = 'secondary', disabled =
   return (
     <button
       type="button"
+      title={label}
+      aria-label={label}
       onClick={onClick}
       disabled={disabled}
       className={`inline-flex h-10 items-center justify-center gap-2 rounded-2xl border px-4 text-sm font-bold transition-[transform,background-color,color,border-color,opacity] duration-200 disabled:cursor-not-allowed disabled:opacity-50 ${styles[variant]}`}
@@ -94,6 +110,17 @@ function ToolbarAction({ label, icon, onClick, variant = 'secondary', disabled =
       {icon}
       <span>{label}</span>
     </button>
+  );
+}
+
+function BadgeIcon({ icon, badge }) {
+  return (
+    <span className="relative flex h-5 w-5 items-center justify-center">
+      {icon}
+      <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[color:var(--color-accent)] px-0.5 text-[0.55rem] font-black leading-none text-[color:var(--color-accent-text)]">
+        {badge}
+      </span>
+    </span>
   );
 }
 
@@ -114,13 +141,24 @@ export default function StudyGuideEditor({
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ heading: false }),
+      StarterKit.configure({ heading: false, codeBlock: false }),
       Heading.configure({ levels: [2, 3, 4] }),
       CodeBlock.configure({
+        defaultLanguage: 'python',
         HTMLAttributes: {
           class: 'study-guide-code-block',
         },
       }),
+      TableExtension.configure({
+        resizable: true,
+        allowTableNodeSelection: true,
+        HTMLAttributes: {
+          class: 'study-guide-table',
+        },
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
       Highlight,
     ],
     content: initialContent,
@@ -147,26 +185,7 @@ export default function StudyGuideEditor({
     editor
       .chain()
       .focus()
-      .insertContent(`
-        <table>
-          <thead>
-            <tr>
-              <th>Heading 1</th>
-              <th>Heading 2</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Detail</td>
-              <td>Detail</td>
-            </tr>
-            <tr>
-              <td>Detail</td>
-              <td>Detail</td>
-            </tr>
-          </tbody>
-        </table>
-      `)
+      .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
       .run();
   };
 
@@ -176,15 +195,20 @@ export default function StudyGuideEditor({
       .focus()
       .insertContent({
         type: 'codeBlock',
+        attrs: {
+          language: 'python',
+        },
         content: [
           {
             type: 'text',
-            text: '// Code snippet only. This is displayed as text and never executed.\nSELECT * FROM study_guides WHERE id = "example";',
+            text: '# Python example only - displayed as text\nprint("Hello, world!")',
           },
         ],
       })
       .run();
   };
+
+  const inTable = editor.isActive('table');
 
   const saveStatusMeta = {
     saved: {
@@ -227,7 +251,11 @@ export default function StudyGuideEditor({
       >
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <div className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-bold ${saveStatusMeta.className}`}>
+            <div
+              className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-bold ${saveStatusMeta.className}`}
+              role="status"
+              aria-live="polite"
+            >
               {saveStatusMeta.icon}
               <span>{saveStatusMeta.label}</span>
             </div>
@@ -330,7 +358,7 @@ export default function StudyGuideEditor({
                   active={false}
                   disabled={saving}
                 >
-                  <Table size={16} />
+                  <TableIcon size={16} />
                 </ToolButton>
                 <ToolButton
                   label="Insert code snippet"
@@ -342,8 +370,69 @@ export default function StudyGuideEditor({
                 </ToolButton>
               </div>
 
+              {inTable ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-[1.35rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]/70 p-2">
+                  <div className="inline-flex items-center gap-2 px-2 text-xs font-bold text-[color:var(--color-text-muted)]">
+                    <TableIcon size={14} />
+                    <span>Table</span>
+                  </div>
+                  <ToolButton
+                    label="Add row below"
+                    onClick={() => editor.chain().focus().addRowAfter().run()}
+                    active={false}
+                    disabled={saving}
+                  >
+                    <BadgeIcon icon={<Rows3 size={16} />} badge="+" />
+                  </ToolButton>
+                  <ToolButton
+                    label="Add column right"
+                    onClick={() => editor.chain().focus().addColumnAfter().run()}
+                    active={false}
+                    disabled={saving}
+                  >
+                    <BadgeIcon icon={<Columns3 size={16} />} badge="+" />
+                  </ToolButton>
+                  <ToolButton
+                    label="Delete current row"
+                    onClick={() => editor.chain().focus().deleteRow().run()}
+                    active={false}
+                    disabled={saving}
+                  >
+                    <BadgeIcon icon={<Rows3 size={16} />} badge="-" />
+                  </ToolButton>
+                  <ToolButton
+                    label="Delete current column"
+                    onClick={() => editor.chain().focus().deleteColumn().run()}
+                    active={false}
+                    disabled={saving}
+                  >
+                    <BadgeIcon icon={<Columns3 size={16} />} badge="-" />
+                  </ToolButton>
+                  <ToolButton
+                    label="Toggle header row"
+                    onClick={() => editor.chain().focus().toggleHeaderRow().run()}
+                    active={false}
+                    disabled={saving}
+                  >
+                    <PanelTop size={16} />
+                  </ToolButton>
+                  <ToolButton
+                    label="Delete table"
+                    onClick={() => editor.chain().focus().deleteTable().run()}
+                    active={false}
+                    disabled={saving}
+                  >
+                    <Trash2 size={16} />
+                  </ToolButton>
+                </div>
+              ) : null}
+
               <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex items-center gap-2 rounded-2xl bg-[color:var(--color-surface-2)] px-3 py-2 text-xs font-bold text-[color:var(--color-text-muted)]">
+                <div
+                  className="inline-flex items-center gap-2 rounded-2xl bg-[color:var(--color-surface-2)] px-3 py-2 text-xs font-bold text-[color:var(--color-text-muted)]"
+                  role="group"
+                  aria-label="Highlight color tools"
+                >
                   <Highlighter size={14} />
                   <span>Highlight</span>
                 </div>
@@ -354,15 +443,23 @@ export default function StudyGuideEditor({
                       type="button"
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        editor.chain().focus().setMark('highlight', { 'data-highlight-color': color.value }).run();
+                        editor.chain().focus().setMark('highlight', { color: color.value }).run();
                       }}
                       disabled={saving}
                       className="h-9 w-9 rounded-2xl border border-black/10 transition hover:-translate-y-0.5 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-40"
-                      aria-label={`Highlight with ${color.name}`}
-                      title={color.name}
+                      aria-label={`Highlight selected text with ${color.name}`}
+                      title={`Highlight selected text with ${color.name}`}
                       style={{ backgroundColor: color.swatch }}
                     />
                   ))}
+                  <ToolButton
+                    label="Remove highlight"
+                    onClick={() => editor.chain().focus().unsetMark('highlight').run()}
+                    active={editor.isActive('highlight')}
+                    disabled={saving}
+                  >
+                    <Eraser size={16} />
+                  </ToolButton>
                 </div>
               </div>
             </div>
