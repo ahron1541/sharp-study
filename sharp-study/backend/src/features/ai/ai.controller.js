@@ -450,7 +450,7 @@ async function processGenerationJob(job) {
         throw new Error('The AI response did not contain enough lesson-supported flashcards. Please try again with clearer lesson content.');
       }
 
-      const { data: set } = await supabaseAdmin
+      const { data: set, error: setError } = await supabaseAdmin
         .from('flashcard_sets')
         .insert({
           user_id: userId,
@@ -461,10 +461,16 @@ async function processGenerationJob(job) {
         .select()
         .single();
 
+      if (setError) throw setError;
+
       if (set && cards && cards.length > 0) {
-        await supabaseAdmin.from('flashcards').insert(
+        const { error: cardsError } = await supabaseAdmin.from('flashcards').insert(
           cards.map((c) => ({ set_id: set.id, front: c.front, back: c.back, hint: c.hint || null }))
         );
+        if (cardsError) {
+          await supabaseAdmin.from('flashcard_sets').delete().eq('id', set.id);
+          throw cardsError;
+        }
       }
 
       createdRecords.flashcards = set ? { id: set.id, title: set.title } : null;

@@ -4,13 +4,34 @@ import { ArrowLeft, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import Breadcrumb from '../../../shared/components/Breadcrumb';
+import Modal from '../../../shared/components/Modal';
 import { apiRequest } from '../../../config/api';
-import { sanitizeHtml } from '../../../shared/utils/sanitize';
+import { sanitizeHtml, sanitizePlainText } from '../../../shared/utils/sanitize';
 import { useAuth } from '../../auth/context/AuthContext';
 import StudyGuideEditor from '../components/StudyGuideEditor';
 import { createInstructionalStudyGuideTemplate } from '../utils/content';
 
 const EMPTY_EDITOR = createInstructionalStudyGuideTemplate();
+const draftStorageKey = (userId) => `sharp-study-manual-study-guide-draft:${userId || 'guest'}`;
+
+function hasDraftContent(draft) {
+  return Boolean(draft?.title?.trim()) || Boolean(draft?.content && draft.content !== EMPTY_EDITOR);
+}
+
+function saveDraftToLocalStorage(userId, draft) {
+  const sanitizedDraft = {
+    title: sanitizePlainText(draft.title || '').slice(0, 180),
+    content: sanitizeHtml(draft.content || EMPTY_EDITOR),
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (!hasDraftContent(sanitizedDraft)) {
+    localStorage.removeItem(draftStorageKey(userId));
+    return;
+  }
+
+  localStorage.setItem(draftStorageKey(userId), JSON.stringify(sanitizedDraft));
+}
 
 export default function StudyGuideCreatePage() {
   const { user } = useAuth();
@@ -18,11 +39,52 @@ export default function StudyGuideCreatePage() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState(EMPTY_EDITOR);
   const [saving, setSaving] = useState(false);
+  const [restoredDraft, setRestoredDraft] = useState(null);
+  const [draftAction, setDraftAction] = useState(null);
+  const [draftReady, setDraftReady] = useState(false);
 
   const hasChanges = useMemo(
     () => title.trim().length > 0 || content !== EMPTY_EDITOR,
     [content, title]
   );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const rawDraft = localStorage.getItem(draftStorageKey(user?.id));
+        if (!rawDraft) {
+          setDraftReady(true);
+          return;
+        }
+
+        const parsedDraft = JSON.parse(rawDraft);
+        const sanitizedDraft = {
+          title: sanitizePlainText(parsedDraft?.title || '').slice(0, 180),
+          content: sanitizeHtml(parsedDraft?.content || EMPTY_EDITOR),
+          updatedAt: parsedDraft?.updatedAt || null,
+        };
+
+        if (hasDraftContent(sanitizedDraft)) {
+          setRestoredDraft(sanitizedDraft);
+        }
+      } catch {
+        localStorage.removeItem(draftStorageKey(user?.id));
+      } finally {
+        setDraftReady(true);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!draftReady || restoredDraft || draftAction || saving) return;
+    try {
+      saveDraftToLocalStorage(user?.id, { title, content });
+    } catch (error) {
+      console.warn('[StudyGuideCreateDraft] Failed to save local draft.', error);
+    }
+  }, [content, draftAction, draftReady, restoredDraft, saving, title, user?.id]);
 
   useEffect(() => {
     const handleBeforeUnload = (event) => {
@@ -60,6 +122,7 @@ export default function StudyGuideCreatePage() {
       });
 
       toast.success('Study guide created.');
+      localStorage.removeItem(draftStorageKey(user.id));
       navigate(`/study-guide/${response.item.id}`);
     } catch (createError) {
       toast.error(createError.message || 'Failed to create your study guide.');
@@ -67,7 +130,38 @@ export default function StudyGuideCreatePage() {
     }
   };
 
+  const continueDraft = () => {
+    if (!restoredDraft) return;
+    setDraftAction({
+      title: 'Restoring your draft',
+      detail: 'Loading the locally saved title and editor content back into this page.',
+    });
+    window.setTimeout(() => {
+      setTitle(restoredDraft.title || '');
+      setContent(restoredDraft.content || EMPTY_EDITOR);
+      setRestoredDraft(null);
+      setDraftAction(null);
+      toast.success('Draft restored.');
+    }, 450);
+  };
+
+  const discardDraft = () => {
+    setDraftAction({
+      title: 'Discarding local draft',
+      detail: 'Removing the saved browser draft and preparing a blank study guide.',
+    });
+    window.setTimeout(() => {
+      localStorage.removeItem(draftStorageKey(user?.id));
+      setTitle('');
+      setContent(EMPTY_EDITOR);
+      setRestoredDraft(null);
+      setDraftAction(null);
+      toast.success('Local draft discarded.');
+    }, 450);
+  };
+
   return (
+    <>
     <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
       <Breadcrumb
         items={[
@@ -112,6 +206,7 @@ export default function StudyGuideCreatePage() {
             <input
               value={title}
               onChange={(event) => setTitle(event.target.value)}
+              disabled={saving || Boolean(restoredDraft) || Boolean(draftAction)}
               placeholder="Ex. Biology Chapter 4 Reviewer"
               className="w-full rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] px-4 py-3 font-bold text-[color:var(--color-text)] outline-none transition-colors duration-200 focus:border-[color:var(--color-accent)]"
             />
@@ -136,7 +231,7 @@ export default function StudyGuideCreatePage() {
           <button
             type="button"
             onClick={() => navigate('/library')}
-            disabled={saving}
+            disabled={saving || Boolean(draftAction)}
             className="rounded-2xl px-5 py-3 font-bold text-[color:var(--color-text-muted)] transition-colors duration-200 hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Cancel
@@ -144,7 +239,7 @@ export default function StudyGuideCreatePage() {
           <button
             type="button"
             onClick={handleCreate}
-            disabled={saving}
+            disabled={saving || Boolean(restoredDraft) || Boolean(draftAction)}
             className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-6 py-3 font-bold text-[color:var(--color-accent-text)] transition-transform duration-200 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
@@ -167,5 +262,64 @@ export default function StudyGuideCreatePage() {
         </div>
       </section>
     </main>
+    <Modal
+      isOpen={Boolean(restoredDraft) || Boolean(draftAction)}
+      onClose={() => {}}
+      title={draftAction ? draftAction.title : 'Continue your unsaved draft?'}
+      size="md"
+      closeOnBackdrop={false}
+      closeOnEscape={false}
+      showCloseButton={false}
+    >
+      {draftAction ? (
+        <LocalDraftLoading title={draftAction.title} detail={draftAction.detail} />
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm leading-7 text-[color:var(--color-text-muted)]">
+            A study guide draft was saved only in this browser. You can continue where you left off or discard it and start fresh.
+          </p>
+          <div className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4">
+            <p className="text-sm font-black text-[color:var(--color-text)]">{restoredDraft?.title || 'Untitled study guide'}</p>
+            <p className="mt-1 text-xs font-semibold text-[color:var(--color-text-muted)]">
+              Local draft {restoredDraft?.updatedAt ? new Date(restoredDraft.updatedAt).toLocaleString() : 'saved recently'}
+            </p>
+          </div>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={discardDraft}
+              className="rounded-2xl border border-[color:var(--color-border)] px-5 py-3 font-bold text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface-2)]"
+            >
+              Discard
+            </button>
+            <button
+              type="button"
+              onClick={continueDraft}
+              className="rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-bold text-[color:var(--color-accent-text)] transition hover:-translate-y-0.5"
+            >
+              Continue draft
+            </button>
+          </div>
+        </div>
+      )}
+    </Modal>
+    </>
+  );
+}
+
+function LocalDraftLoading({ title, detail }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <Loader2 className="animate-spin text-[color:var(--color-accent)]" size={20} />
+        <div>
+          <p className="font-black text-[color:var(--color-text)]">{title}</p>
+          <p className="text-sm leading-6 text-[color:var(--color-text-muted)]">{detail}</p>
+        </div>
+      </div>
+      <div className="h-3 overflow-hidden rounded-full bg-[color:var(--color-surface-2)]">
+        <div className="h-full w-2/3 animate-pulse rounded-full bg-[color:var(--color-accent)]" />
+      </div>
+    </div>
   );
 }

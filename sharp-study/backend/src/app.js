@@ -8,11 +8,11 @@ const authRoutes = require('./features/auth/auth.routes');
 const aiRoutes = require('./features/ai/ai.routes');
 const adminRoutes = require('./features/admin/admin.routes');
 const dashboardRoutes = require('./features/dashboard/dashboard.routes');
+const flashcardRoutes = require('./features/flashcards/flashcards.routes');
 const studyGuideRoutes = require('./features/study-guides/studyGuide.routes');
 
 // --- Temporarily commented out until we build these folders! ---
 // const documentRoutes = require('./features/documents/documents.routes');
-// const flashcardRoutes = require('./features/flashcards/flashcards.routes');
 // const quizRoutes = require('./features/quizzes/quizzes.routes');
 
 const app = express();
@@ -56,11 +56,11 @@ app.use('/api/auth', authRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/flashcards', flashcardRoutes);
 app.use('/api/study-guides', studyGuideRoutes);
 
 // --- Temporarily disabled routes ---
 // app.use('/api/documents', documentRoutes);
-// app.use('/api/flashcards', flashcardRoutes);
 // app.use('/api/quizzes', quizRoutes);
 
 // Health check route
