@@ -113,6 +113,47 @@ function hasEnoughSourceOverlap(answer, supportSnippet, sourceText) {
   return overlapCount >= Math.min(3, answerTokens.length);
 }
 
+function sanitizeGeneratedPlainText(value = '', maxLength = 600) {
+  return String(value || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function normalizeGeneratedFlashcards(items = [], sourceText = '') {
+  const seen = new Set();
+
+  return items
+    .map((item) => {
+      const front = sanitizeGeneratedPlainText(item?.front, 260);
+      const back = sanitizeGeneratedPlainText(item?.back, 520);
+      const hint = sanitizeGeneratedPlainText(item?.hint, 180);
+      const supportSnippet = sanitizeGeneratedPlainText(item?.support_snippet, 260);
+      if (!front || !back) return null;
+      if (!front.endsWith('?')) return null;
+      if (/review the lesson|cannot determine|not provided|not mentioned|image|diagram/i.test(`${front} ${back}`)) {
+        return null;
+      }
+      if (supportSnippet && !hasEnoughSourceOverlap(back, supportSnippet, sourceText)) {
+        return null;
+      }
+
+      const key = normalizeForMatch(front);
+      if (!key || seen.has(key)) return null;
+      seen.add(key);
+
+      return {
+        front,
+        back,
+        hint: hint || `Think about the part of the lesson connected to ${front.replace(/\?$/, '').slice(0, 80)}.`,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 16);
+}
+
 function normalizeGeneratedDiscussionQuestions(items = [], sourceText = '') {
   return items
     .map((item, index) => {
@@ -254,18 +295,58 @@ async function extractText(file) {
 }
 
 async function processGenerationJob(job) {
-  const { file, generateOptions, userId } = job.payload;
-  const docTitle = file.originalname.replace(/\.[^.]+$/, '');
+  const { file, generateOptions, userId, sourceStudyGuideId } = job.payload;
+  const docTitle = file?.originalname ? file.originalname.replace(/\.[^.]+$/, '') : '';
   let documentId = null;
+  let sourceStudyGuide = null;
 
   console.log(`[AI Queue] Starting job ${job.id} for user ${userId}`);
   updateJob(job.id, {
     message: 'Extracting readable text',
-    detail: 'Looking for usable content from your document.',
+    detail: sourceStudyGuideId ? 'Reading the saved study guide before creating flashcards.' : 'Looking for usable content from your document.',
     progressValue: 32,
   });
 
-  const extractedText = await extractText(file);
+  let extractedText = '';
+  if (sourceStudyGuideId) {
+    const { data: guide, error: guideError } = await supabaseAdmin
+      .from('study_guides')
+      .select('id, user_id, document_id, title, content, document:documents(title, extracted_text)')
+      .eq('id', sourceStudyGuideId)
+      .eq('user_id', userId)
+      .single();
+
+    if (guideError || !guide) {
+      throw new Error('Study guide not found.');
+    }
+
+    let existingSetQuery = supabaseAdmin
+      .from('flashcard_sets')
+      .select('id, title')
+      .eq('user_id', userId)
+      .eq('is_archived', false);
+
+    existingSetQuery = guide.document_id
+      ? existingSetQuery.eq('document_id', guide.document_id)
+      : existingSetQuery.eq('title', `Flashcards: ${guide.title}`);
+
+    const { data: existingSet, error: existingSetError } = await existingSetQuery.maybeSingle();
+    if (existingSetError) throw existingSetError;
+    if (existingSet) {
+      return {
+        success: true,
+        generated: ['flashcards'],
+        created: { flashcards: existingSet },
+        alreadyExists: true,
+      };
+    }
+
+    sourceStudyGuide = guide;
+    extractedText = guide.document?.extracted_text || guide.content || '';
+  } else {
+    extractedText = await extractText(file);
+  }
+
   const cleanedExtractedText = String(extractedText || '').replace(/\s+/g, ' ').trim();
 
   if (!cleanedExtractedText) {
@@ -276,26 +357,33 @@ async function processGenerationJob(job) {
     throw new Error('Only a very small amount of readable text was found in this file. Please upload a clearer file with more selectable text.');
   }
 
-  const resolvedType = resolveUploadKind(file);
+  const resolvedType = file ? resolveUploadKind(file) : null;
   const fileType = resolvedType === 'pdf' || resolvedType === 'docx' || resolvedType === 'pptx'
     ? resolvedType
     : null;
 
-  const { data: doc, error: docError } = await supabaseAdmin
-    .from('documents')
-    .insert({
-      user_id: userId,
-      title: docTitle,
-      file_type: fileType,
-      file_size_bytes: file.size,
-      extracted_text: cleanedExtractedText.substring(0, 50000),
-      status: 'processing',
-    })
-    .select()
-    .single();
+  let doc = sourceStudyGuide?.document_id
+    ? { id: sourceStudyGuide.document_id, title: sourceStudyGuide.document?.title || sourceStudyGuide.title }
+    : null;
 
-  if (docError) throw docError;
-  documentId = doc.id;
+  if (!sourceStudyGuideId) {
+    const { data: insertedDoc, error: docError } = await supabaseAdmin
+      .from('documents')
+      .insert({
+        user_id: userId,
+        title: docTitle,
+        file_type: fileType,
+        file_size_bytes: file.size,
+        extracted_text: cleanedExtractedText.substring(0, 50000),
+        status: 'processing',
+      })
+      .select()
+      .single();
+
+    if (docError) throw docError;
+    doc = insertedDoc;
+    documentId = doc.id;
+  }
 
   const requestOptions = { signal: job.abortController.signal };
   const createdRecords = {};
@@ -352,14 +440,23 @@ async function processGenerationJob(job) {
     if (generateOptions.includes('flashcards')) {
       updateJob(job.id, {
         message: 'Generating flashcards',
-        detail: 'Gemini AI is turning your lesson into flashcards.',
+        detail: 'Gemini AI is drafting question and answer cards, then the server checks support against the lesson.',
         progressValue: 64,
       });
 
-      const cards = await generateFlashcards(cleanedExtractedText, requestOptions);
+      const generatedCards = await generateFlashcards(cleanedExtractedText, requestOptions);
+      const cards = normalizeGeneratedFlashcards(generatedCards, cleanedExtractedText);
+      if (!cards.length) {
+        throw new Error('The AI response did not contain enough lesson-supported flashcards. Please try again with clearer lesson content.');
+      }
+
       const { data: set } = await supabaseAdmin
         .from('flashcard_sets')
-        .insert({ user_id: userId, document_id: doc.id, title: `Flashcards: ${docTitle}` })
+        .insert({
+          user_id: userId,
+          document_id: doc?.id || null,
+          title: `Flashcards: ${sourceStudyGuide?.title || docTitle}`,
+        })
         .select()
         .single();
 
@@ -400,7 +497,9 @@ async function processGenerationJob(job) {
       createdRecords.quiz = quiz ? { id: quiz.id, title: quiz.title } : null;
     }
 
-    await supabaseAdmin.from('documents').update({ status: 'done' }).eq('id', doc.id);
+    if (!sourceStudyGuideId && doc?.id) {
+      await supabaseAdmin.from('documents').update({ status: 'done' }).eq('id', doc.id);
+    }
 
     if (typeof invalidateDashboardCache === 'function') {
       invalidateDashboardCache(userId);
@@ -477,6 +576,37 @@ const generateMaterials = [
   },
 ];
 
+async function generateFlashcardsFromStudyGuide(req, res) {
+  try {
+    const sourceStudyGuideId = String(req.params.id || '').trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sourceStudyGuideId)) {
+      return res.status(400).json({ error: 'Invalid study guide id.' });
+    }
+
+    const abortController = new AbortController();
+    const job = enqueueJob({
+      userId: req.user.id,
+      type: 'flashcards',
+      payload: {
+        file: null,
+        generateOptions: ['flashcards'],
+        userId: req.user.id,
+        sourceStudyGuideId,
+        abortController,
+      },
+    });
+
+    return res.status(202).json({ success: true, job });
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ error: err.message, job: err.job || null });
+    }
+
+    console.error('[AI] Could not queue study guide flashcards:', err.message);
+    return res.status(500).json({ error: 'Could not queue flashcard generation for this study guide.' });
+  }
+}
+
 async function getGenerationStatus(req, res) {
   const job = getJob(req.params.jobId);
   if (!job || job.userId !== req.user.id) {
@@ -497,6 +627,7 @@ async function cancelGeneration(req, res) {
 
 module.exports = {
   cancelGeneration,
+  generateFlashcardsFromStudyGuide,
   generateMaterials,
   getGenerationStatus,
 };

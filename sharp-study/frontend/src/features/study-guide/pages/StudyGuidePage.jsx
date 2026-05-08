@@ -1,10 +1,10 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Edit2, Loader2, PanelLeftClose, PanelLeftOpen, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, Edit2, Layers3, Loader2, PanelLeftClose, PanelLeftOpen, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useAuth } from '../../auth/context/AuthContext';
-import { apiRequest } from '../../../config/api';
+import { API_URL, apiRequest } from '../../../config/api';
 import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { sanitizeHtml } from '../../../shared/utils/sanitize';
@@ -70,6 +70,9 @@ export default function StudyGuidePage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeSectionId, setActiveSectionId] = useState('');
   const [speaking, setSpeaking] = useState(false);
+  const [flashcardSetId, setFlashcardSetId] = useState('');
+  const [flashcardGeneration, setFlashcardGeneration] = useState(null);
+  const [flashcardProgress, setFlashcardProgress] = useState({ value: 0, title: '', detail: '' });
   const [pendingNavigation, setPendingNavigation] = useState(null);
   const [selectionToolbar, setSelectionToolbar] = useState({
     visible: false,
@@ -136,6 +139,20 @@ export default function StudyGuidePage() {
       setLastSyncedAt(data.updated_at || data.created_at || null);
       setSaveState(nextContent === normalizedContent ? 'saved' : 'cached');
       setLoading(false);
+
+      if (data.document_id) {
+        const { data: existingSet } = await supabase
+          .from('flashcard_sets')
+          .select('id')
+          .eq('user_id', data.user_id)
+          .eq('document_id', data.document_id)
+          .eq('is_archived', false)
+          .limit(1)
+          .maybeSingle();
+        if (isMounted) setFlashcardSetId(existingSet?.id || '');
+      } else if (isMounted) {
+        setFlashcardSetId('');
+      }
     };
 
     loadGuide();
@@ -264,6 +281,75 @@ export default function StudyGuidePage() {
     utteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
   }, [plainTextContent, speaking, stopReading]);
+
+  const handleCreateFlashcards = useCallback(async () => {
+    if (flashcardSetId) {
+      navigate(`/flashcards/${flashcardSetId}`);
+      return;
+    }
+
+    setFlashcardGeneration({ status: 'starting' });
+    setFlashcardProgress({
+      value: 12,
+      title: 'Preparing flashcards',
+      detail: 'Reading this study guide and checking whether a set already exists.',
+    });
+
+    try {
+      const response = await apiRequest(`/api/ai/study-guide/${id}/flashcards`, { method: 'POST' });
+      const queuedJob = response.job;
+      if (!queuedJob?.id) throw new Error('The AI queue did not return a valid job id.');
+
+      setFlashcardGeneration(queuedJob);
+      setFlashcardProgress({
+        value: queuedJob.progressValue || 12,
+        title: queuedJob.message || 'Queued for flashcards',
+        detail: queuedJob.detail || 'Your flashcard set is waiting for generation.',
+      });
+
+      const token = localStorage.getItem('sharp-study-token');
+      const pollTimer = window.setInterval(async () => {
+        try {
+          const statusResponse = await fetch(`${API_URL}/api/ai/generate/${queuedJob.id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const body = await statusResponse.json().catch(() => ({}));
+          if (!statusResponse.ok) throw new Error(body.error || 'Failed to check flashcard generation.');
+          const nextJob = body.job;
+          setFlashcardGeneration(nextJob);
+          setFlashcardProgress({
+            value: nextJob?.progressValue || 20,
+            title: nextJob?.message || 'Generating flashcards',
+            detail: nextJob?.detail || 'The AI is working through the lesson.',
+          });
+
+          if (nextJob?.status === 'completed') {
+            window.clearInterval(pollTimer);
+            const createdSet = nextJob?.result?.created?.flashcards;
+            if (createdSet?.id) {
+              setFlashcardSetId(createdSet.id);
+              setFlashcardGeneration(null);
+              toast.success(nextJob?.result?.alreadyExists ? 'Opening your existing flashcards.' : 'Flashcards are ready.');
+              navigate(`/flashcards/${createdSet.id}`);
+            }
+          }
+
+          if (nextJob?.status === 'failed' || nextJob?.status === 'cancelled') {
+            window.clearInterval(pollTimer);
+            setFlashcardGeneration(null);
+            throw new Error(nextJob?.error || 'Flashcard generation failed.');
+          }
+        } catch (error) {
+          window.clearInterval(pollTimer);
+          setFlashcardGeneration(null);
+          toast.error(error.message || 'Flashcard generation failed.');
+        }
+      }, 2000);
+    } catch (error) {
+      setFlashcardGeneration(null);
+      toast.error(error.message || 'Could not start flashcard generation.');
+    }
+  }, [flashcardSetId, id, navigate]);
 
   useEffect(() => {
     return () => stopReading();
@@ -802,12 +888,12 @@ export default function StudyGuidePage() {
 
         {!editing && (
           <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
-            <div className="pointer-events-auto w-full max-w-md rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/94 p-3 shadow-[0_24px_64px_rgba(15,23,42,0.18)] backdrop-blur-xl">
-              <div className="flex items-center gap-2">
+            <div className="pointer-events-auto w-full max-w-3xl rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/94 p-3 shadow-[0_24px_64px_rgba(15,23,42,0.18)] backdrop-blur-xl">
+              <div className="grid gap-2 sm:grid-cols-3">
                 <button
                   type="button"
                   onClick={handleReadAloud}
-                  className={`inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl border px-4 text-sm font-bold transition-all duration-200 ${
+                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-2xl border px-4 text-sm font-bold transition-all duration-200 ${
                     speaking
                       ? 'border-rose-500/40 bg-rose-500/10 text-rose-500'
                       : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text)] hover:bg-[color:var(--color-surface-2)]'
@@ -818,11 +904,20 @@ export default function StudyGuidePage() {
                 </button>
                 <button
                   type="button"
+                  onClick={handleCreateFlashcards}
+                  disabled={Boolean(flashcardGeneration)}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 text-sm font-bold text-[color:var(--color-text)] transition-all duration-200 hover:bg-[color:var(--color-surface-2)] disabled:cursor-wait disabled:opacity-60"
+                >
+                  {flashcardGeneration ? <Loader2 className="animate-spin" size={18} /> : flashcardSetId ? <Layers3 size={18} /> : <Sparkles size={18} />}
+                  <span>{flashcardSetId ? 'Open flashcards' : flashcardGeneration ? 'Creating cards' : 'Create flashcards'}</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     setActiveTab('guide');
                     setEditing(true);
                   }}
-                  className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 text-sm font-bold text-[color:var(--color-accent-text)] transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 text-sm font-bold text-[color:var(--color-accent-text)] transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95"
                 >
                   <Edit2 size={18} />
                   <span>Edit</span>
@@ -846,6 +941,39 @@ export default function StudyGuidePage() {
           onClose={clearSelectionToolbar}
         />
       </main>
+
+      <Modal
+        isOpen={Boolean(flashcardGeneration)}
+        onClose={() => {}}
+        title="Creating flashcards"
+        size="md"
+        closeOnBackdrop={false}
+        closeOnEscape={false}
+        showCloseButton={false}
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Loader2 className="animate-spin text-[color:var(--color-accent)]" size={20} />
+            <div>
+              <p className="font-bold text-[color:var(--color-text)]">{flashcardProgress.title || 'Generating flashcards'}</p>
+              <p className="text-sm leading-6 text-[color:var(--color-text-muted)]">
+                {flashcardProgress.detail || 'The lesson is being turned into supported question and answer cards.'}
+              </p>
+            </div>
+          </div>
+          <div className="h-3 overflow-hidden rounded-full bg-[color:var(--color-surface-2)]">
+            <div className="h-full rounded-full bg-[color:var(--color-accent)] transition-[width] duration-500" style={{ width: `${flashcardProgress.value || 10}%` }} />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[1, 2, 3].map((item) => (
+              <div key={item} className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
+                <div className="h-3 w-20 animate-pulse rounded-full bg-[color:var(--color-surface)]" />
+                <div className="mt-3 h-3 w-full animate-pulse rounded-full bg-[color:var(--color-surface)]" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={Boolean(pendingNavigation)}

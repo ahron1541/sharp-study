@@ -14,6 +14,7 @@ import {
 import toast from 'react-hot-toast';
 
 import Modal from '../../../shared/components/Modal';
+import { sanitizePlainText } from '../../../shared/utils/sanitize';
 import { API_URL } from '../../../config/api';
 import { useAuth } from '../../auth/context/AuthContext';
 import MaterialTypeIcon from '../components/MaterialTypeIcon';
@@ -39,9 +40,25 @@ const GENERATION_STEPS = [
 const GENERATION_CANCEL_DELAY_MS = 60000;
 
 function createDefaultManualText(selectedType) {
-  if (selectedType === 'flashcards') return 'Front | Back';
+  if (selectedType === 'flashcards') return 'What is the key idea? | The direct answer goes here.\nWhy does it matter? | Add the answer here.';
   if (selectedType === 'quiz') return 'Write your question here';
   return '';
+}
+
+function parseManualFlashcards(text = '') {
+  return String(text)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [front, ...rest] = line.split('|');
+      return {
+        front: sanitizePlainText(front?.trim() || ''),
+        back: sanitizePlainText(rest.join('|').trim()),
+      };
+    })
+    .filter((card) => card.front && card.back)
+    .slice(0, 50);
 }
 
 export default function LibraryPage() {
@@ -287,8 +304,18 @@ export default function LibraryPage() {
     }
 
     setSaving(true);
+    setProgress({
+      value: 24,
+      title: `Creating ${MATERIAL_TYPES[selectedType].label.toLowerCase()}`,
+      detail: 'Sanitizing your input and preparing the saved record.',
+    });
     try {
       if (selectedType === 'flashcards') {
+        const parsedCards = parseManualFlashcards(manualText);
+        if (!parsedCards.length) {
+          throw new Error('Add at least one flashcard using Question | Answer on each line.');
+        }
+
         const { data: set, error: setError } = await supabase
           .from('flashcard_sets')
           .insert({ user_id: user.id, title: cleanTitle, document_id: null, is_archived: false })
@@ -296,17 +323,26 @@ export default function LibraryPage() {
           .single();
         if (setError) throw setError;
 
-        const [front = 'Question', back = manualText] = manualText
-          .split('|')
-          .map((part) => part.trim())
-          .filter(Boolean);
-
-        const { error: cardError } = await supabase.from('flashcards').insert({
-          set_id: set.id,
-          front,
-          back: back || 'Answer',
+        setProgress({
+          value: 68,
+          title: 'Saving flashcards',
+          detail: 'Creating the cards and linking them to this set.',
         });
+
+        const { error: cardError } = await supabase.from('flashcards').insert(
+          parsedCards.map((card) => ({
+            set_id: set.id,
+            front: card.front,
+            back: card.back,
+          }))
+        );
         if (cardError) throw cardError;
+
+        await invalidateDashboardCache();
+        toast.success('Flashcards created.');
+        closeWizard(true);
+        navigate(`/flashcards/${set.id}`);
+        return;
       }
 
       if (selectedType === 'quiz') {
@@ -334,6 +370,7 @@ export default function LibraryPage() {
       toast.error(manualError.message || 'Failed to create material.');
     } finally {
       setSaving(false);
+      setProgress({ value: 0, title: '', detail: '' });
     }
   };
 
@@ -1036,20 +1073,43 @@ function CreateWizard({
 
         {selectedType && creationMode === 'manual' ? (
           <div className="space-y-5">
+            {saving ? (
+              <div className="rounded-[2rem] border border-border bg-surface p-5">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="animate-spin text-accent" size={20} />
+                  <div>
+                    <p className="font-bold text-text">{progress.title || 'Creating your material'}</p>
+                    <p className="text-sm text-text-muted">{progress.detail || 'Saving your sanitized content now.'}</p>
+                  </div>
+                </div>
+                <div className="mt-4 h-3 overflow-hidden rounded-full bg-surface-2">
+                  <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${progress.value || 20}%` }} />
+                </div>
+              </div>
+            ) : null}
+
             <input
               value={title}
               onChange={(event) => onTitleChange(event.target.value)}
               placeholder={`${selectedMeta.label} title`}
+              disabled={saving}
               className="w-full rounded-2xl border border-border bg-surface px-4 py-3 font-bold text-text outline-none focus:border-accent"
             />
 
             <textarea
               value={manualText}
               onChange={(event) => onManualTextChange(event.target.value)}
-              placeholder={selectedType === 'flashcards' ? 'Front | Back' : 'Write your question here'}
+              placeholder={selectedType === 'flashcards' ? 'Question | Answer\nAnother question | Another answer' : 'Write your question here'}
               rows={8}
+              disabled={saving}
               className="w-full rounded-[2rem] border border-border bg-surface px-4 py-4 text-sm leading-7 text-text outline-none focus:border-accent"
             />
+
+            {selectedType === 'flashcards' ? (
+              <p className="text-sm leading-6 text-text-muted">
+                Add one card per line using Question | Answer. Images are not included in this flashcard version.
+              </p>
+            ) : null}
 
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button onClick={onClose} disabled={saving} className="rounded-2xl px-5 py-3 font-bold text-text-muted disabled:opacity-50">

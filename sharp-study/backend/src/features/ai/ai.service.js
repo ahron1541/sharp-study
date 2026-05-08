@@ -427,13 +427,24 @@ ${extractedText.substring(0, 7000)}
 
 function buildFlashcardsPrompt(extractedText) {
   return `
-Create 10 flashcards from the text below.
+Create 12 high-accuracy flashcards from the lesson text below.
 Respond ONLY with a valid JSON array, no markdown, no explanation.
-Format: [{ "front": "Question?", "back": "Short answer" }]
+Format: [{ "front": "Question?", "back": "Short answer", "hint": "Brief clue", "support_snippet": "Exact supporting phrase from the lesson" }]
+
+Rules:
+- Every front must be a direct question ending in a question mark.
+- Every back must be a concise answer supported only by the lesson text.
+- Do not invent facts, dates, names, definitions, or examples.
+- Do not include images, HTML, markdown, labels, numbering, or advice like "review the lesson".
+- Prefer important names, terms, steps, dates, causes, effects, examples, definitions, and comparisons.
+- Avoid duplicate questions or questions that ask the same fact in different words.
+- The hint must help recall the answer without revealing the full answer.
+- The support_snippet must copy a short phrase from the lesson that supports the answer.
+- If the lesson cannot support 12 flashcards, return fewer accurate cards instead of filler.
 
 Text:
 """
-${extractedText.substring(0, 6000)}
+${extractedText.substring(0, 10000)}
 """
   `;
 }
