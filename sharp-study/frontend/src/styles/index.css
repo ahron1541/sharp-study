@@ -241,3 +241,98 @@ body {
 }
 .skip-link:focus { top: 0; }
 
+.admin-form-control {
+  width: 100%;
+  border-radius: 1rem;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface-2);
+  color: var(--color-text);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  outline: none;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.admin-form-control::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.9;
+}
+
+.admin-form-control:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+.admin-form-control:-webkit-autofill,
+.admin-form-control:-webkit-autofill:hover,
+.admin-form-control:-webkit-autofill:focus,
+.admin-form-control:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--color-text);
+  caret-color: var(--color-text);
+  border-color: var(--color-border);
+  box-shadow: 0 0 0 1000px var(--color-surface-2) inset;
+  transition: background-color 9999s ease-out 0s;
+}
+
+.admin-form-control option {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+}
+
+.admin-search-control {
+  padding-left: 2.75rem;
+  padding-right: 1rem;
+}
+
+.admin-primary-button {
+  border-radius: 1rem !important;
+  background: var(--color-accent) !important;
+  color: var(--color-accent-text) !important;
+  font-weight: 700 !important;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.admin-primary-button:hover {
+  background: var(--color-accent-hover) !important;
+}
+
+.admin-secondary-button,
+.admin-action-button {
+  border-radius: 0.875rem !important;
+  border-color: var(--color-border) !important;
+  background: color-mix(in srgb, var(--color-surface) 86%, var(--color-surface-2)) !important;
+  color: var(--color-text) !important;
+  font-weight: 600 !important;
+}
+
+.admin-action-button {
+  min-height: 2.5rem;
+  padding-inline: 0.8rem !important;
+  justify-content: center;
+  color: var(--color-text-muted) !important;
+}
+
+.admin-action-button svg {
+  color: currentColor;
+}
+
+.admin-secondary-button:hover,
+.admin-action-button:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border)) !important;
+  background: color-mix(in srgb, var(--color-accent) 9%, var(--color-surface)) !important;
+  color: var(--color-text) !important;
+}
+
+[data-display="dark"] .admin-form-control {
+  background-color: color-mix(in srgb, var(--color-surface-2) 82%, var(--color-bg));
+}
+
+[data-display="dark"] .admin-form-control:-webkit-autofill,
+[data-display="dark"] .admin-form-control:-webkit-autofill:hover,
+[data-display="dark"] .admin-form-control:-webkit-autofill:focus,
+[data-display="dark"] .admin-form-control:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--color-text);
+  box-shadow: 0 0 0 1000px color-mix(in srgb, var(--color-surface-2) 82%, var(--color-bg)) inset;
+}
+

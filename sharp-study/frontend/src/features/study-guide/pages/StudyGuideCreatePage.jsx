@@ -55,6 +55,8 @@ export default function StudyGuideCreatePage() {
           user_id: user.id,
           title: cleanTitle,
           content,
+          document_id: null,
+          is_archived: false,
         })
         .select('id')
         .single();

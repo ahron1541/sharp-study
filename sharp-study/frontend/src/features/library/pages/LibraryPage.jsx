@@ -291,7 +291,7 @@ export default function LibraryPage() {
       if (selectedType === 'flashcards') {
         const { data: set, error: setError } = await supabase
           .from('flashcard_sets')
-          .insert({ user_id: user.id, title: cleanTitle })
+          .insert({ user_id: user.id, title: cleanTitle, document_id: null, is_archived: false })
           .select('id')
           .single();
         if (setError) throw setError;
@@ -312,7 +312,7 @@ export default function LibraryPage() {
       if (selectedType === 'quiz') {
         const { data: quiz, error: quizError } = await supabase
           .from('quizzes')
-          .insert({ user_id: user.id, title: cleanTitle })
+          .insert({ user_id: user.id, title: cleanTitle, document_id: null, is_archived: false })
           .select('id')
           .single();
         if (quizError) throw quizError;

@@ -102,7 +102,7 @@ async function fetchOverview() {
     auditResult,
   ] = await Promise.all([
     supabaseAdmin.from('profiles').select('id, role, is_blocked', { count: 'exact' }),
-    supabaseAdmin.from('documents').select('id, status', { count: 'exact' }),
+    supabaseAdmin.from('documents').select('id, status, is_archived', { count: 'exact' }),
     supabaseAdmin.from('study_guides').select('id, is_archived', { count: 'exact' }),
     supabaseAdmin.from('flashcard_sets').select('id, is_archived', { count: 'exact' }),
     supabaseAdmin.from('quizzes').select('id, is_archived', { count: 'exact' }),
@@ -396,7 +396,7 @@ async function fetchContentPage({ type, search, page, pageSize, archived = 'all'
 
   for (const queryType of queries) {
     const fields = queryType === 'documents'
-      ? 'id, user_id, title, created_at, is_archived, file_type, status'
+      ? 'id, user_id, title, created_at, is_archived, file_type, status, file_url'
       : queryType === 'study_guides'
         ? 'id, user_id, title, created_at, is_archived, document_id, content'
         : 'id, user_id, title, created_at, is_archived, document_id';
@@ -502,7 +502,7 @@ router.get('/content', async (req, res) => {
       ? String(req.query.archived || 'all')
       : 'all';
     const page = parsePositiveInt(req.query.page, 1);
-    const pageSize = parsePositiveInt(req.query.pageSize, CONTENT_PAGE_SIZE, 25);
+    const pageSize = parsePositiveInt(req.query.pageSize, CONTENT_PAGE_SIZE, 100);
     const result = await fetchContentPage({ type, search, page, pageSize, archived, ownerSearch, ownerId });
 
     res.json({

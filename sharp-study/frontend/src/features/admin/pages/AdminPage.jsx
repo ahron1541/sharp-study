@@ -175,6 +175,7 @@ export default function AdminPage() {
       const data = await fetchAdminContent({
         ...contentFilters,
         archived: archivedState,
+        pageSize: 100,
       });
       setContentItems(data.items || []);
       setContentPagination(data.pagination || { page: 1, totalPages: 1, totalCount: 0 });
@@ -534,7 +535,12 @@ export default function AdminPage() {
               pagination={contentPagination}
               metrics={metrics}
               onFilterChange={updateContentFilter}
-              onClearOwner={() => updateContentFilter('owner', null) || updateContentFilter('owner_id', null)}
+              onViewOwner={(group) => mergeSearchParams({
+                owner_id: group.ownerId,
+                owner: group.ownerEmail === 'No email available' ? null : group.ownerEmail,
+                page: null,
+              })}
+              onClearOwner={() => mergeSearchParams({ owner: null, owner_id: null, page: null })}
               onPreviewContent={openContentPreview}
               onDeleteContent={(item) => setConfirmState({ open: true, mode: 'delete-content', target: item })}
             />
@@ -562,22 +568,22 @@ export default function AdminPage() {
         <form className="space-y-4" onSubmit={handleUserSubmit}>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="First name">
-              <input required value={userModal.form.first_name} onChange={(event) => setUserModal((current) => ({ ...current, form: { ...current.form, first_name: event.target.value } }))} className="w-full rounded-2xl border border-border bg-surface-2 px-4 py-3 text-sm text-text outline-none focus:border-accent" />
+              <input required value={userModal.form.first_name} onChange={(event) => setUserModal((current) => ({ ...current, form: { ...current.form, first_name: event.target.value } }))} className="admin-form-control" />
             </Field>
             <Field label="Last name">
-              <input required value={userModal.form.last_name} onChange={(event) => setUserModal((current) => ({ ...current, form: { ...current.form, last_name: event.target.value } }))} className="w-full rounded-2xl border border-border bg-surface-2 px-4 py-3 text-sm text-text outline-none focus:border-accent" />
+              <input required value={userModal.form.last_name} onChange={(event) => setUserModal((current) => ({ ...current, form: { ...current.form, last_name: event.target.value } }))} className="admin-form-control" />
             </Field>
             <Field label="Middle name">
-              <input value={userModal.form.middle_name} onChange={(event) => setUserModal((current) => ({ ...current, form: { ...current.form, middle_name: event.target.value } }))} className="w-full rounded-2xl border border-border bg-surface-2 px-4 py-3 text-sm text-text outline-none focus:border-accent" />
+              <input value={userModal.form.middle_name} onChange={(event) => setUserModal((current) => ({ ...current, form: { ...current.form, middle_name: event.target.value } }))} className="admin-form-control" />
             </Field>
             <Field label="Username">
-              <input required value={userModal.form.username} onChange={(event) => setUserModal((current) => ({ ...current, form: { ...current.form, username: event.target.value.toLowerCase() } }))} className="w-full rounded-2xl border border-border bg-surface-2 px-4 py-3 text-sm text-text outline-none focus:border-accent" />
+              <input required value={userModal.form.username} onChange={(event) => setUserModal((current) => ({ ...current, form: { ...current.form, username: event.target.value.toLowerCase() } }))} className="admin-form-control" />
             </Field>
             <Field label="Email">
-              <input required type="email" disabled={userModal.mode === 'edit'} value={userModal.form.email} onChange={(event) => setUserModal((current) => ({ ...current, form: { ...current.form, email: event.target.value } }))} className="w-full rounded-2xl border border-border bg-surface-2 px-4 py-3 text-sm text-text outline-none focus:border-accent disabled:opacity-60" />
+              <input required type="email" disabled={userModal.mode === 'edit'} value={userModal.form.email} onChange={(event) => setUserModal((current) => ({ ...current, form: { ...current.form, email: event.target.value } }))} className="admin-form-control disabled:opacity-60" />
             </Field>
             <Field label="Role">
-              <select value={userModal.form.role} onChange={(event) => setUserModal((current) => ({ ...current, form: { ...current.form, role: event.target.value } }))} className="w-full rounded-2xl border border-border bg-surface-2 px-4 py-3 text-sm text-text outline-none focus:border-accent">
+              <select value={userModal.form.role} onChange={(event) => setUserModal((current) => ({ ...current, form: { ...current.form, role: event.target.value } }))} className="admin-form-control cursor-pointer">
                 <option value="student">Student</option>
                 <option value="admin">Admin</option>
               </select>
@@ -586,7 +592,7 @@ export default function AdminPage() {
 
           {userModal.mode === 'create' ? (
             <Field label="Temporary password">
-              <input required type="password" value={userModal.form.password} onChange={(event) => setUserModal((current) => ({ ...current, form: { ...current.form, password: event.target.value } }))} className="w-full rounded-2xl border border-border bg-surface-2 px-4 py-3 text-sm text-text outline-none focus:border-accent" />
+              <input required type="password" value={userModal.form.password} onChange={(event) => setUserModal((current) => ({ ...current, form: { ...current.form, password: event.target.value } }))} className="admin-form-control" />
               <p className="mt-2 text-xs leading-6 text-text-muted">Must include uppercase, lowercase, number, and special character.</p>
             </Field>
           ) : (
@@ -596,9 +602,9 @@ export default function AdminPage() {
             </label>
           )}
 
-          <div className="flex flex-wrap gap-3">
-            <Button type="submit">{userModal.mode === 'create' ? 'Create account' : 'Save changes'}</Button>
-            <Button type="button" variant="secondary" onClick={() => setUserModal({ mode: 'create', open: false, form: USER_EMPTY, target: null })}>Cancel</Button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <Button type="submit" className="admin-primary-button">{userModal.mode === 'create' ? 'Create account' : 'Save changes'}</Button>
+            <Button type="button" variant="secondary" className="admin-secondary-button" onClick={() => setUserModal({ mode: 'create', open: false, form: USER_EMPTY, target: null })}>Cancel</Button>
           </div>
         </form>
       </Modal>
@@ -758,7 +764,7 @@ function OverviewSection({ loading, metrics, activeMaterialTotal, archivedMateri
             ]} />
           </div>
 
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
             <MiniMetric icon={FolderKanban} label="Documents" value={metrics.documents || 0} />
             <MiniMetric icon={BookOpen} label="Study guides" value={metrics.study_guides || 0} />
             <MiniMetric icon={Layers3} label="Flashcard sets" value={metrics.flashcard_sets || 0} />
@@ -820,32 +826,32 @@ function UsersSection({ users, loading, filters, pagination, onFilterChange, onC
   return (
     <section className="rounded-[1.7rem] border border-border bg-surface shadow-card sm:rounded-[2rem]">
       <div className="border-b border-border p-4 sm:p-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div>
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+          <div className="max-w-2xl">
             <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">User management</p>
             <h2 className="mt-2 text-2xl font-black text-text sm:text-3xl">Accounts, roles, and access history.</h2>
             <p className="mt-2 text-sm leading-7 text-text-muted">Create accounts here, then inspect each user’s active and archived content without leaving this workspace.</p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(15rem,1fr)_10rem_10rem_auto]">
+          <div className="grid w-full gap-3 sm:grid-cols-2 xl:w-auto xl:grid-cols-[minmax(18rem,21rem)_11rem_11rem_auto]">
             <FilterInput value={filters.search} onChange={(value) => onFilterChange('search', value)} placeholder="Search email, name, or username" />
-            <select value={filters.role} onChange={(event) => onFilterChange('role', event.target.value)} className="cursor-pointer rounded-2xl border border-border bg-surface-2 px-4 py-3 text-sm text-text outline-none focus:border-accent">
+            <select value={filters.role} onChange={(event) => onFilterChange('role', event.target.value)} className="admin-form-control cursor-pointer">
               <option value="all">All roles</option>
               <option value="student">Students</option>
               <option value="admin">Admins</option>
             </select>
-            <select value={filters.status} onChange={(event) => onFilterChange('status', event.target.value)} className="cursor-pointer rounded-2xl border border-border bg-surface-2 px-4 py-3 text-sm text-text outline-none focus:border-accent">
+            <select value={filters.status} onChange={(event) => onFilterChange('status', event.target.value)} className="admin-form-control cursor-pointer">
               <option value="all">All statuses</option>
               <option value="active">Active</option>
               <option value="blocked">Blocked</option>
             </select>
-            <Button className="w-full sm:w-auto" icon={<UserPlus size={16} />} onClick={onCreateUser}>Create account</Button>
+            <Button className="admin-primary-button w-full sm:col-span-2 xl:col-span-1 xl:w-auto" icon={<UserPlus size={16} />} onClick={onCreateUser}>Create account</Button>
           </div>
         </div>
       </div>
 
       {loading ? (
-        <AdminTableSkeleton rows={6} />
+        <UserCardSkeleton rows={6} />
       ) : users.length === 0 ? (
         <EmptyPanel icon={Users} title="No users matched this filter." body="Try a broader search or create a new account directly from this management panel." actionLabel="Create account" onAction={onCreateUser} />
       ) : (
@@ -855,16 +861,16 @@ function UsersSection({ users, loading, filters, pagination, onFilterChange, onC
               const displayId = String(((pagination.page - 1) * pageSize) + index + 1).padStart(3, '0');
 
               return (
-              <article key={user.id} className="rounded-[1.5rem] border border-border bg-surface-2 p-4 sm:rounded-[1.8rem] sm:p-5">
-                <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="grid flex-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                    <div>
-                      <p className="text-lg font-black text-text">{user.full_name || 'Unnamed user'}</p>
+              <article key={user.id} className="rounded-[1.35rem] border border-border bg-surface-2 p-4 sm:rounded-[1.6rem] sm:p-5">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="grid min-w-0 flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(14rem,0.85fr)]">
+                    <div className="min-w-0">
+                      <p className="truncate text-base font-semibold text-text">{user.full_name || 'Unnamed user'}</p>
                       <p className="mt-1 text-sm text-text-muted">@{user.username || 'no-username'}</p>
                     </div>
-                    <div>
-                      <p className="text-sm font-semibold text-text">{user.email}</p>
-                      <p className="mt-1 text-xs uppercase tracking-[0.16em] text-text-muted">Joined {formatShortDate(user.created_at)}</p>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-text">{user.email}</p>
+                      <p className="mt-1 text-xs uppercase tracking-[0.14em] text-text-muted">Joined {formatShortDate(user.created_at)}</p>
                     </div>
                   </div>
 
@@ -875,19 +881,19 @@ function UsersSection({ users, loading, filters, pagination, onFilterChange, onC
                   </div>
                 </div>
 
-                <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    <InfoPill label="Admin ID" value={`User ${displayId}`} />
-                    <InfoPill label="Workspace access" value={user.role === 'admin' ? 'Administrative access' : 'Student access'} />
-                    <InfoPill label="Archive access" value={user.is_blocked ? 'Disabled while blocked' : 'Available'} />
+                <div className="mt-5 grid gap-4 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-start">
+                  <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(9rem,1fr))]">
+                    <InfoPill label="User ID" value={`User ${displayId}`} />
+                    <InfoPill label="Workspace" value={user.role === 'admin' ? 'Administrative access' : 'Student access'} />
+                    <InfoPill label="Archive" value={user.is_blocked ? 'Disabled while blocked' : 'Available'} />
                   </div>
 
-                  <div className="grid gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:justify-end">
-                    <Button size="sm" variant="secondary" className="border-border bg-surface text-text hover:bg-bg" icon={<FileText size={14} />} onClick={() => onViewUserContent(user, false)}>Open content</Button>
-                    <Button size="sm" variant="secondary" className="border-border bg-surface text-text hover:bg-bg" icon={<Archive size={14} />} onClick={() => onViewUserContent(user, true)}>Open archive</Button>
-                    <Button size="sm" variant="secondary" className="border-border bg-surface text-text hover:bg-bg" icon={<UserCog size={14} />} onClick={() => onEditUser(user)}>Edit profile</Button>
-                    <Button size="sm" variant="secondary" className="border-border bg-surface text-text hover:bg-bg" icon={<AlertTriangle size={14} />} onClick={() => onToggleBlock(user)}>{user.is_blocked ? 'Unblock' : 'Block access'}</Button>
-                    <Button size="sm" variant="danger" icon={<Trash2 size={14} />} onClick={() => onDeleteUser(user)}>Delete</Button>
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5 2xl:max-w-none">
+                    <Button size="sm" variant="secondary" className="admin-action-button" icon={<FileText size={14} />} onClick={() => onViewUserContent(user, false)}>Open content</Button>
+                    <Button size="sm" variant="secondary" className="admin-action-button" icon={<Archive size={14} />} onClick={() => onViewUserContent(user, true)}>Open archive</Button>
+                    <Button size="sm" variant="secondary" className="admin-action-button" icon={<UserCog size={14} />} onClick={() => onEditUser(user)}>Edit profile</Button>
+                    <Button size="sm" variant="secondary" className="admin-action-button" icon={<AlertTriangle size={14} />} onClick={() => onToggleBlock(user)}>{user.is_blocked ? 'Unblock' : 'Block access'}</Button>
+                    <Button size="sm" variant="danger" className="rounded-xl font-semibold sm:col-span-2 xl:col-span-1" icon={<Trash2 size={14} />} onClick={() => onDeleteUser(user)}>Delete</Button>
                   </div>
                 </div>
               </article>
@@ -900,11 +906,14 @@ function UsersSection({ users, loading, filters, pagination, onFilterChange, onC
   );
 }
 
-function ContentSection({ archived, items, loading, filters, pagination, metrics, onFilterChange, onClearOwner, onPreviewContent, onDeleteContent }) {
+function ContentSection({ archived, items, loading, filters, pagination, metrics, onFilterChange, onViewOwner, onClearOwner, onPreviewContent, onDeleteContent }) {
   const sectionLabel = archived ? 'Archived content' : 'Active content';
   const totalBySection = archived
     ? Number(metrics.documents_archived || 0) + Number(metrics.study_guides_archived || 0) + Number(metrics.flashcard_sets_archived || 0) + Number(metrics.quizzes_archived || 0)
     : Number(metrics.documents_active || 0) + Number(metrics.study_guides_active || 0) + Number(metrics.flashcard_sets_active || 0) + Number(metrics.quizzes_active || 0);
+  const ownerScoped = Boolean(filters.owner || filters.owner_id);
+  const groupedOwners = useMemo(() => groupContentByOwner(items), [items]);
+  const scopedItems = useMemo(() => [...items].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()), [items]);
 
   return (
     <section className="space-y-6">
@@ -922,8 +931,14 @@ function ContentSection({ archived, items, loading, filters, pagination, metrics
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">{sectionLabel}</p>
-              <h2 className="mt-2 text-2xl font-black text-text sm:text-3xl">{archived ? 'Stored and restorable materials.' : 'Live materials users can reach now.'}</h2>
-              <p className="mt-2 text-sm leading-7 text-text-muted">{totalBySection} items in this section. Filter by owner, type, or title to moderate specific content.</p>
+              <h2 className="mt-2 text-2xl font-black text-text sm:text-3xl">
+                {ownerScoped ? 'Viewing one user’s materials.' : archived ? 'Stored materials grouped by user.' : 'Live materials grouped by user.'}
+              </h2>
+              <p className="mt-2 text-sm leading-7 text-text-muted">
+                {ownerScoped
+                  ? `${items.length} ${archived ? 'archived' : 'active'} items for this user.`
+                  : `${totalBySection} items in this section. Open a user to review their content list.`}
+              </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(15rem,1fr)_minmax(15rem,1fr)_12rem]">
@@ -943,7 +958,7 @@ function ContentSection({ archived, items, loading, filters, pagination, metrics
             <div className="mt-4 flex flex-wrap items-center gap-3 rounded-[1.4rem] border border-border bg-surface-2 px-4 py-3">
               <Chip tone="accent">Owner scoped</Chip>
               <p className="text-sm text-text">Showing content for <span className="font-bold">{filters.owner || filters.owner_id}</span></p>
-              <Button size="sm" variant="secondary" onClick={onClearOwner}>Clear owner filter</Button>
+              <Button size="sm" variant="secondary" className="admin-action-button" onClick={onClearOwner}>Back to users</Button>
             </div>
           ) : null}
         </div>
@@ -952,20 +967,72 @@ function ContentSection({ archived, items, loading, filters, pagination, metrics
           <AdminTableSkeleton rows={6} />
         ) : items.length === 0 ? (
           <EmptyPanel icon={archived ? Archive : FileText} title={`No ${archived ? 'archived' : 'active'} content matched this filter.`} body="Try another content type, a different owner filter, or a broader title search." />
+        ) : !ownerScoped ? (
+          <>
+            <div className="grid gap-4 p-4 sm:p-5 xl:grid-cols-2">
+              {groupedOwners.map((group) => (
+                <article key={group.ownerKey} className="rounded-[1.4rem] border border-border bg-surface-2 p-4 sm:rounded-[1.7rem] sm:p-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-start gap-3">
+                        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface text-accent">
+                          <Users size={20} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-lg font-semibold text-text">{group.ownerName}</p>
+                          <p className="truncate text-sm text-text-muted">{group.ownerEmail}</p>
+                          <p className="mt-1 truncate text-sm text-text-muted">@{group.ownerUsername}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Chip tone={archived ? 'neutral' : 'success'}>{archived ? 'Archived' : 'Active'}</Chip>
+                      <Chip tone="accent">{group.items.length} items</Chip>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(8rem,1fr))]">
+                    {Object.entries(CONTENT_TYPE_META).map(([type, meta]) => (
+                      <InfoPill key={type} label={meta.label} value={group.counts[type] || 0} />
+                    ))}
+                  </div>
+
+                  <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-text-muted">Latest update {formatShortDate(group.latestAt)}</p>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="admin-action-button"
+                      icon={<Search size={14} />}
+                      onClick={() => onViewOwner(group)}
+                      disabled={!group.ownerId}
+                    >
+                      View contents
+                    </Button>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <PaginationBar page={pagination.page} totalPages={pagination.totalPages} totalCount={pagination.totalCount} onPrev={() => onFilterChange('page', Math.max(1, pagination.page - 1))} onNext={() => onFilterChange('page', Math.min(pagination.totalPages, pagination.page + 1))} />
+          </>
         ) : (
           <>
           <div className="space-y-4 p-4 sm:p-5">
-            {items.map((item) => (
+            {scopedItems.map((item, index) => {
+              const typeOrdinal = scopedItems.slice(0, index + 1).filter((candidate) => candidate.type === item.type).length;
+
+              return (
                 <article key={`${item.type}:${item.id}`} className="rounded-[1.5rem] border border-border bg-surface-2 p-4 sm:rounded-[1.8rem] sm:p-5">
-                  <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-                    <div className="grid flex-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                      <div>
+                  <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-start">
+                    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(13rem,0.7fr)]">
+                      <div className="min-w-0">
                         <div className="flex items-center gap-3">
-                          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-surface text-accent">
+                          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface text-accent">
                             {createElement(CONTENT_TYPE_META[item.type]?.icon || FileText, { size: 18 })}
                           </span>
-                          <div>
-                            <p className="text-lg font-black text-text">{item.title}</p>
+                          <div className="min-w-0">
+                            <p className="break-words text-lg font-semibold leading-6 text-text">{item.title}</p>
                             <p className="text-sm text-text-muted">{CONTENT_TYPE_META[item.type]?.singular || item.type}</p>
                           </div>
                         </div>
@@ -981,33 +1048,34 @@ function ContentSection({ archived, items, loading, filters, pagination, metrics
                         )}
                       </div>
 
-                      <div>
+                      <div className="min-w-0">
                         <p className="text-sm font-semibold text-text">{item.owner?.full_name || item.owner?.email || 'Unknown owner'}</p>
                         <p className="mt-1 text-sm text-text-muted">{item.owner?.email || 'No email available'}</p>
                         <p className="mt-1 text-sm text-text-muted">@{item.owner?.username || 'no-username'}</p>
                       </div>
 
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-2 xl:col-span-2">
                         <Chip tone={archived ? 'neutral' : 'success'}>{archived ? 'Archived' : 'Active'}</Chip>
                         {item.type === 'documents' ? <Chip tone={item.status === 'done' ? 'success' : item.status === 'error' ? 'danger' : 'warning'}>{item.status}</Chip> : null}
                         <Chip tone="accent">{CONTENT_TYPE_META[item.type]?.singular || item.type}</Chip>
                       </div>
                     </div>
 
-                    <div className="grid gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:justify-end">
-                      <Button size="sm" variant="secondary" className="border-border bg-surface text-text hover:bg-bg" icon={<Eye size={14} />} onClick={() => onPreviewContent(item)}>Open review</Button>
-                      <Button size="sm" variant="secondary" className="border-border bg-surface text-text hover:bg-bg" icon={<Search size={14} />} onClick={() => onFilterChange('owner_id', item.user_id)}>More from owner</Button>
+                    <div className="grid gap-2 sm:grid-cols-2 2xl:w-[24rem]">
+                      <Button size="sm" variant="secondary" className="admin-action-button" icon={<Eye size={14} />} onClick={() => onPreviewContent(item)}>Open review</Button>
+                      <Button size="sm" variant="secondary" className="admin-action-button" icon={<Search size={14} />} onClick={() => onFilterChange('owner_id', item.user_id)}>Refresh owner</Button>
                       <Button size="sm" variant="danger" icon={<Trash2 size={14} />} onClick={() => onDeleteContent(item)}>Delete</Button>
                     </div>
                   </div>
 
-                  <div className="mt-4 flex flex-wrap gap-3 text-sm text-text-muted">
+                  <div className="mt-4 grid gap-3 text-sm text-text-muted sm:grid-cols-2 xl:grid-cols-3">
                     <span>Created {formatShortDate(item.created_at)}</span>
-                    <span>ID {truncateMiddle(item.id)}</span>
-                    {item.document_id ? <span>Document link {truncateMiddle(item.document_id)}</span> : null}
+                    <span>Content ID {buildUserContentCode(item, typeOrdinal)}</span>
+                    <span className="min-w-0 break-words">{renderDocumentLink(item)}</span>
                   </div>
                 </article>
-              ))}
+              );
+            })}
             </div>
             <PaginationBar page={pagination.page} totalPages={pagination.totalPages} totalCount={pagination.totalCount} onPrev={() => onFilterChange('page', Math.max(1, pagination.page - 1))} onNext={() => onFilterChange('page', Math.min(pagination.totalPages, pagination.page + 1))} />
           </>
@@ -1227,18 +1295,82 @@ function MetricPanel({ title, meta, items }) {
 
 function ContentTypeCard({ icon, label, value, active, onClick }) {
   return (
-    <button type="button" onClick={onClick} className={`cursor-pointer rounded-[1.5rem] border p-4 text-left shadow-card transition-all duration-200 hover:-translate-y-0.5 sm:rounded-[1.8rem] sm:p-5 ${active ? 'border-accent bg-surface' : 'border-border bg-surface hover:bg-surface-2'}`}>
-      <div className="flex items-center gap-4">
-        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-2 text-accent">
+    <button type="button" onClick={onClick} className={`min-h-32 cursor-pointer rounded-[1.5rem] border p-4 text-left shadow-card transition-all duration-200 hover:-translate-y-0.5 sm:rounded-[1.8rem] sm:p-5 ${active ? 'border-accent bg-surface' : 'border-border bg-surface hover:bg-surface-2'}`}>
+      <div className="grid h-full grid-cols-[3rem_minmax(0,1fr)] items-center gap-4">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface-2 text-accent">
           {createElement(icon, { size: 20 })}
         </span>
-        <div>
+        <div className="min-w-0">
           <p className="text-2xl font-black text-text">{value}</p>
-          <p className="text-sm font-semibold text-text-muted">{label}</p>
+          <p className="text-sm font-semibold leading-5 text-text-muted [overflow-wrap:normal] [word-break:normal]">{label}</p>
         </div>
       </div>
     </button>
   );
+}
+
+function groupContentByOwner(items) {
+  const groups = new Map();
+
+  items.forEach((item) => {
+    const ownerKey = item.user_id || item.owner?.email || 'unknown-owner';
+    const existing = groups.get(ownerKey) || {
+      ownerKey,
+      ownerId: item.user_id || '',
+      ownerName: item.owner?.full_name || item.owner?.email || 'Unknown owner',
+      ownerEmail: item.owner?.email || 'No email available',
+      ownerUsername: item.owner?.username || 'no-username',
+      latestAt: item.created_at,
+      counts: {},
+      items: [],
+    };
+
+    existing.items.push(item);
+    existing.counts[item.type] = (existing.counts[item.type] || 0) + 1;
+    if (new Date(item.created_at).getTime() > new Date(existing.latestAt).getTime()) {
+      existing.latestAt = item.created_at;
+    }
+    groups.set(ownerKey, existing);
+  });
+
+  return [...groups.values()].sort((a, b) => new Date(b.latestAt).getTime() - new Date(a.latestAt).getTime());
+}
+
+function buildUserContentCode(item, ordinal) {
+  const typeCodes = {
+    documents: 'DOC',
+    study_guides: 'SG',
+    flashcard_sets: 'FC',
+    quizzes: 'QZ',
+  };
+  const ownerCode = String(item.user_id || item.owner?.email || 'unknown')
+    .replace(/[^a-z0-9]/gi, '')
+    .slice(0, 8)
+    .toUpperCase()
+    .padEnd(8, '0');
+  return `USR-${ownerCode}-${typeCodes[item.type] || 'CT'}${String(ordinal).padStart(3, '0')}`;
+}
+
+function renderDocumentLink(item) {
+  if (item.type === 'documents') {
+    if (item.file_url) {
+      return (
+        <>
+          Document link{' '}
+          <a className="font-semibold text-accent hover:text-accent-hover" href={item.file_url} target="_blank" rel="noreferrer">
+            Open file
+          </a>
+        </>
+      );
+    }
+    return 'Document link not available';
+  }
+
+  if (item.document_id) {
+    return `Document link ${truncateMiddle(item.document_id)}`;
+  }
+
+  return 'No source document linked';
 }
 
 function QuickActionCard({ icon, title, body, onClick }) {
@@ -1260,7 +1392,7 @@ function FilterInput({ value, onChange, placeholder }) {
   return (
     <label className="relative block">
       <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" />
-      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-2xl border border-border bg-surface-2 py-3 pl-11 pr-4 text-sm text-text outline-none transition-colors focus:border-accent" />
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="admin-form-control admin-search-control" />
     </label>
   );
 }
@@ -1291,12 +1423,12 @@ function ThemeChoiceCard({ active, icon, title, body, tone, onClick }) {
 
 function MiniMetric({ icon, label, value }) {
   return (
-    <div className="rounded-[1.2rem] border border-border bg-surface-2 p-4 transition-transform duration-200 hover:-translate-y-0.5 sm:rounded-[1.4rem]">
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-surface text-accent">{createElement(icon, { size: 18 })}</span>
-        <div>
-          <p className="text-sm font-semibold text-text-muted">{label}</p>
-          <p className="text-xl font-black text-text">{value}</p>
+    <div className="min-h-24 rounded-[1.2rem] border border-border bg-surface-2 p-4 transition-transform duration-200 hover:-translate-y-0.5 sm:rounded-[1.4rem]">
+      <div className="grid h-full grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-3">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-surface text-accent">{createElement(icon, { size: 19 })}</span>
+        <div className="min-w-0">
+          <p className="max-w-full whitespace-normal text-[0.82rem] font-semibold leading-5 text-text-muted [overflow-wrap:normal] [word-break:normal] sm:text-sm">{label}</p>
+          <p className="mt-1 text-lg font-black leading-6 text-text">{value}</p>
         </div>
       </div>
     </div>
@@ -1305,9 +1437,51 @@ function MiniMetric({ icon, label, value }) {
 
 function InfoPill({ label, value }) {
   return (
-    <div className="rounded-[1.1rem] border border-border bg-surface px-4 py-3 sm:rounded-[1.2rem]">
-      <p className="text-xs font-black uppercase tracking-[0.16em] text-text-muted">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-text">{value}</p>
+    <div className="min-w-0 rounded-[1rem] border border-border bg-surface px-4 py-3 sm:rounded-[1.1rem]">
+      <p className="break-words text-[0.68rem] font-bold uppercase tracking-[0.08em] text-text-muted">{label}</p>
+      <p className="mt-1 break-words text-sm font-medium leading-6 text-text">{value}</p>
+    </div>
+  );
+}
+
+function UserCardSkeleton({ rows = 5 }) {
+  return (
+    <div className="space-y-4 p-4 sm:p-5">
+      {Array.from({ length: rows }).map((_, index) => (
+        <article key={index} className="rounded-[1.35rem] border border-border bg-surface-2 p-4 sm:rounded-[1.6rem] sm:p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="grid min-w-0 flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(14rem,0.85fr)]">
+              <div className="space-y-2">
+                <div className="h-5 w-40 animate-pulse rounded bg-surface" />
+                <div className="h-4 w-28 animate-pulse rounded bg-surface" />
+              </div>
+              <div className="space-y-2">
+                <div className="h-5 w-full max-w-56 animate-pulse rounded bg-surface" />
+                <div className="h-4 w-36 animate-pulse rounded bg-surface" />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <div className="h-7 w-24 animate-pulse rounded-full bg-surface" />
+              <div className="h-7 w-20 animate-pulse rounded-full bg-surface" />
+              <div className="h-7 w-20 animate-pulse rounded-full bg-surface" />
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-start">
+            <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(9rem,1fr))]">
+              <div className="h-24 animate-pulse rounded-[1rem] bg-surface" />
+              <div className="h-24 animate-pulse rounded-[1rem] bg-surface" />
+              <div className="h-24 animate-pulse rounded-[1rem] bg-surface" />
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+              {Array.from({ length: 5 }).map((__, actionIndex) => (
+                <div key={actionIndex} className="h-10 min-w-28 animate-pulse rounded-xl bg-surface" />
+              ))}
+            </div>
+          </div>
+        </article>
+      ))}
     </div>
   );
 }
@@ -1352,7 +1526,7 @@ function Chip({ children, tone = 'neutral' }) {
 function Field({ label, children }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-sm font-bold text-text">{label}</span>
+      <span className="mb-2 block text-sm font-semibold text-text">{label}</span>
       {children}
     </label>
   );
@@ -1363,9 +1537,9 @@ function PaginationBar({ page, totalPages, totalCount, onPrev, onNext }) {
     <div className="flex flex-col gap-3 border-t border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
       <p className="text-sm text-text-muted">{totalCount} total records</p>
       <div className="flex items-center gap-3">
-        <Button size="sm" variant="secondary" onClick={onPrev} disabled={page <= 1}>Previous</Button>
+        <Button size="sm" variant="secondary" className="admin-secondary-button" onClick={onPrev} disabled={page <= 1}>Previous</Button>
         <span className="text-sm font-bold text-text">Page {page} of {totalPages}</span>
-        <Button size="sm" variant="secondary" onClick={onNext} disabled={page >= totalPages}>Next</Button>
+        <Button size="sm" variant="secondary" className="admin-secondary-button" onClick={onNext} disabled={page >= totalPages}>Next</Button>
       </div>
     </div>
   );
