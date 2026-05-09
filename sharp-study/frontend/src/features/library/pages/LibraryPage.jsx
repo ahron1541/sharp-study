@@ -400,13 +400,45 @@ export default function LibraryPage() {
           elapsedTimerRef.current = null;
           setSaving(false);
           await invalidateDashboardCache();
-          await loadPage({ nextType: activeType, nextPage: 1, nextSearch: deferredSearch });
+          await loadPage({ nextType: selectedType || activeType, nextPage: 1, nextSearch: deferredSearch });
           toast.success('Generated successfully.');
-          closeWizard(true);
 
           const createdStudyGuideId = nextJob?.result?.created?.study_guide?.id;
+          const createdFlashcardsId = nextJob?.result?.created?.flashcards?.id;
+          const createdQuizId = nextJob?.result?.created?.quiz?.id;
           if (selectedType === 'study_guide' && createdStudyGuideId) {
-            navigate(`/study-guide/${createdStudyGuideId}`);
+            setProgress({
+              value: 100,
+              title: 'Opening your study guide',
+              detail: 'Your generated material is ready. Taking you there now.',
+            });
+            window.setTimeout(() => {
+              closeWizard(true);
+              navigate(`/study-guide/${createdStudyGuideId}`);
+            }, 550);
+          } else if (selectedType === 'flashcards' && createdFlashcardsId) {
+            setProgress({
+              value: 100,
+              title: 'Opening your flashcards',
+              detail: 'Your generated flashcard set is ready. Taking you there now.',
+            });
+            window.setTimeout(() => {
+              closeWizard(true);
+              navigate(`/flashcards/${createdFlashcardsId}`);
+            }, 550);
+          } else if (selectedType === 'quiz' && createdQuizId) {
+            setProgress({
+              value: 100,
+              title: 'Opening your quiz',
+              detail: 'Your generated quiz is ready. Taking you there now.',
+            });
+            window.setTimeout(() => {
+              closeWizard(true);
+              navigate(`/quiz/${createdQuizId}`);
+            }, 550);
+          } else {
+            closeWizard(true);
+            setLibraryParams({ tab: selectedType || activeType, page: null });
           }
           return true;
         }

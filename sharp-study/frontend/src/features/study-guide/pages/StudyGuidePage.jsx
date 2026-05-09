@@ -29,7 +29,40 @@ const HIGHLIGHT_COLORS = [
 
 const DRAFT_SYNC_DELAY_MS = 2 * 60 * 1000;
 const draftStorageKey = (guideId) => `sharp-study-guide-draft:${guideId}`;
+const contentCacheKey = (guideId) => `sharp-study-guide-content:${guideId}`;
 const saveLogPrefix = '[StudyGuideDraft]';
+
+function readStudyGuideContentCache(guideId) {
+  try {
+    const raw = localStorage.getItem(contentCacheKey(guideId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.guide?.id || typeof parsed?.content !== 'string') return null;
+    const content = sanitizeHtml(normalizeStudyGuideHtml(parsed.content));
+    return {
+      guide: { ...parsed.guide, content },
+      content,
+      savedContent: sanitizeHtml(normalizeStudyGuideHtml(parsed.savedContent || content)),
+      flashcardSetId: typeof parsed.flashcardSetId === 'string' ? parsed.flashcardSetId : '',
+      lastSyncedAt: parsed.lastSyncedAt || parsed.cachedAt || null,
+      cachedAt: parsed.cachedAt || null,
+    };
+  } catch {
+    localStorage.removeItem(contentCacheKey(guideId));
+    return null;
+  }
+}
+
+function writeStudyGuideContentCache(guideId, payload) {
+  try {
+    localStorage.setItem(contentCacheKey(guideId), JSON.stringify({
+      ...payload,
+      cachedAt: new Date().toISOString(),
+    }));
+  } catch (error) {
+    console.warn('[StudyGuideCache] Failed to write local content cache.', error);
+  }
+}
 
 function formatRelativeSyncTime(timestamp) {
   if (!timestamp) return 'Not synced yet';
@@ -55,22 +88,23 @@ export default function StudyGuidePage() {
   const { id } = useParams();
   const { supabase } = useAuth();
   const navigate = useNavigate();
+  const cachedContent = useMemo(() => readStudyGuideContentCache(id), [id]);
 
-  const [guide, setGuide] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [guide, setGuide] = useState(() => cachedContent?.guide || null);
+  const [loading, setLoading] = useState(() => !cachedContent);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveState, setSaveState] = useState('saved');
-  const [lastSyncedAt, setLastSyncedAt] = useState(null);
-  const [savedContent, setSavedContent] = useState('');
-  const [content, setContent] = useState('');
+  const [lastSyncedAt, setLastSyncedAt] = useState(() => cachedContent?.lastSyncedAt || null);
+  const [savedContent, setSavedContent] = useState(() => cachedContent?.savedContent || '');
+  const [content, setContent] = useState(() => cachedContent?.content || '');
   const [activeTab, setActiveTab] = useState('guide');
   const [showLoadingSkeleton, setShowLoadingSkeleton] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeSectionId, setActiveSectionId] = useState('');
   const [speaking, setSpeaking] = useState(false);
-  const [flashcardSetId, setFlashcardSetId] = useState('');
+  const [flashcardSetId, setFlashcardSetId] = useState(() => cachedContent?.flashcardSetId || '');
   const [flashcardGeneration, setFlashcardGeneration] = useState(null);
   const [flashcardProgress, setFlashcardProgress] = useState({ value: 0, title: '', detail: '' });
   const [pendingNavigation, setPendingNavigation] = useState(null);
@@ -96,7 +130,21 @@ export default function StudyGuidePage() {
     }, 250);
 
     const loadGuide = async () => {
-      setLoading(true);
+      const cached = readStudyGuideContentCache(id);
+      if (cached) {
+        setGuide(cached.guide);
+        setContent(cached.content);
+        setSavedContent(cached.savedContent);
+        setLastSyncedAt(cached.lastSyncedAt);
+        setFlashcardSetId(cached.flashcardSetId || '');
+        lastSavedContentRef.current = cached.savedContent;
+        setLoading(false);
+        window.clearTimeout(skeletonTimer);
+        setShowLoadingSkeleton(false);
+      } else {
+        setLoading(true);
+      }
+
       const { data, error } = await supabase
         .from('study_guides')
         .select('*, document:documents(title, extracted_text)')
@@ -140,6 +188,7 @@ export default function StudyGuidePage() {
       setSaveState(nextContent === normalizedContent ? 'saved' : 'cached');
       setLoading(false);
 
+      let nextFlashcardSetId = '';
       if (data.document_id) {
         const { data: existingSet } = await supabase
           .from('flashcard_sets')
@@ -149,10 +198,19 @@ export default function StudyGuidePage() {
           .eq('is_archived', false)
           .limit(1)
           .maybeSingle();
-        if (isMounted) setFlashcardSetId(existingSet?.id || '');
+        nextFlashcardSetId = existingSet?.id || '';
+        if (isMounted) setFlashcardSetId(nextFlashcardSetId);
       } else if (isMounted) {
         setFlashcardSetId('');
       }
+
+      writeStudyGuideContentCache(id, {
+        guide: { ...data, content: nextContent },
+        content: nextContent,
+        savedContent: normalizedContent,
+        flashcardSetId: nextFlashcardSetId,
+        lastSyncedAt: data.updated_at || data.created_at || null,
+      });
     };
 
     loadGuide();
@@ -170,6 +228,17 @@ export default function StudyGuidePage() {
 
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!guide?.id || !content) return;
+    writeStudyGuideContentCache(id, {
+      guide: { ...guide, content },
+      content,
+      savedContent: savedContent || content,
+      flashcardSetId,
+      lastSyncedAt,
+    });
+  }, [content, flashcardSetId, guide, id, lastSyncedAt, savedContent]);
 
   const sections = useMemo(() => extractStudyGuideSections(deferredContent), [deferredContent]);
   const lessonText = useMemo(

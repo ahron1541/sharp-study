@@ -29,9 +29,8 @@ import { sanitizePlainText } from '../../../shared/utils/sanitize';
 const HINT_DELAY_MS = 45000;
 const SYNC_DELAY_MS = 20000;
 const progressKey = (setId) => `sharp-study-flashcards-progress:${setId}`;
+const contentCacheKey = (setId) => `sharp-study-flashcards-content:${setId}`;
 const tutorialKey = 'sharp-study-flashcards-tutorial-seen';
-const MotionButton = motion.button;
-const MotionP = motion.p;
 const MotionDiv = motion.div;
 
 function createInitialProgress(cards = []) {
@@ -97,16 +96,52 @@ function isNewerProgress(candidate, current) {
   return Number.isFinite(candidateTime) && candidateTime > currentTime;
 }
 
+function readFlashcardsContentCache(setId) {
+  try {
+    const raw = localStorage.getItem(contentCacheKey(setId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.set?.id || !Array.isArray(parsed?.cards)) return null;
+    return {
+      set: parsed.set,
+      cards: parsed.cards.map((card) => ({
+        ...card,
+        front: sanitizePlainText(card.front),
+        back: sanitizePlainText(card.back),
+        hint: sanitizePlainText(card.hint || ''),
+      })),
+      relatedStudyGuideId: sanitizePlainText(parsed.relatedStudyGuideId || ''),
+      relatedQuizId: sanitizePlainText(parsed.relatedQuizId || ''),
+      cachedAt: parsed.cachedAt || null,
+    };
+  } catch {
+    localStorage.removeItem(contentCacheKey(setId));
+    return null;
+  }
+}
+
+function writeFlashcardsContentCache(setId, payload) {
+  try {
+    localStorage.setItem(contentCacheKey(setId), JSON.stringify({
+      ...payload,
+      cachedAt: new Date().toISOString(),
+    }));
+  } catch (error) {
+    console.warn('[FlashcardsCache] Failed to write local content cache.', error);
+  }
+}
+
 export default function FlashcardsPage() {
   const { id } = useParams();
   const { user, supabase } = useAuth();
   const navigate = useNavigate();
+  const cachedContent = useMemo(() => readFlashcardsContentCache(id), [id]);
 
-  const [set, setSet] = useState(null);
-  const [cards, setCards] = useState([]);
-  const [relatedStudyGuideId, setRelatedStudyGuideId] = useState('');
-  const [relatedQuizId, setRelatedQuizId] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [set, setSet] = useState(() => cachedContent?.set || null);
+  const [cards, setCards] = useState(() => cachedContent?.cards || []);
+  const [relatedStudyGuideId, setRelatedStudyGuideId] = useState(() => cachedContent?.relatedStudyGuideId || '');
+  const [relatedQuizId, setRelatedQuizId] = useState(() => cachedContent?.relatedQuizId || '');
+  const [loading, setLoading] = useState(() => !cachedContent);
   const [saving, setSaving] = useState(false);
   const [actionLock, setActionLock] = useState(false);
   const [progress, setProgress] = useState(() => createInitialProgress());
@@ -257,7 +292,17 @@ export default function FlashcardsPage() {
     let mounted = true;
 
     const load = async () => {
-      setLoading(true);
+      const cached = readFlashcardsContentCache(id);
+      if (cached) {
+        setSet(cached.set);
+        setCards(cached.cards);
+        setRelatedStudyGuideId(cached.relatedStudyGuideId || '');
+        setRelatedQuizId(cached.relatedQuizId || '');
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
       const [{ data: setData, error: setError }, { data: cardData, error: cardsError }] = await Promise.all([
         supabase.from('flashcard_sets').select('*').eq('id', id).single(),
         supabase.from('flashcards').select('*').eq('set_id', id).order('created_at'),
@@ -311,16 +356,27 @@ export default function FlashcardsPage() {
       setShowTutorial(!localStorage.getItem(tutorialKey));
       setLoading(false);
 
+      let nextRelatedStudyGuideId = '';
+      let nextRelatedQuizId = '';
       if (setData.document_id) {
         const [{ data: guideData }, { data: quizData }] = await Promise.all([
           supabase.from('study_guides').select('id').eq('document_id', setData.document_id).eq('is_archived', false).limit(1).maybeSingle(),
           supabase.from('quizzes').select('id').eq('document_id', setData.document_id).eq('is_archived', false).limit(1).maybeSingle(),
         ]);
+        nextRelatedStudyGuideId = guideData?.id || '';
+        nextRelatedQuizId = quizData?.id || '';
         if (mounted) {
-          setRelatedStudyGuideId(guideData?.id || '');
-          setRelatedQuizId(quizData?.id || '');
+          setRelatedStudyGuideId(nextRelatedStudyGuideId);
+          setRelatedQuizId(nextRelatedQuizId);
         }
       }
+
+      writeFlashcardsContentCache(id, {
+        set: setData,
+        cards: nextCards,
+        relatedStudyGuideId: nextRelatedStudyGuideId,
+        relatedQuizId: nextRelatedQuizId,
+      });
     };
 
     load();
@@ -337,6 +393,16 @@ export default function FlashcardsPage() {
   useEffect(() => {
     cardStartedAtRef.current = Date.now();
   }, [currentCard?.id]);
+
+  useEffect(() => {
+    if (!set?.id) return;
+    writeFlashcardsContentCache(id, {
+      set,
+      cards,
+      relatedStudyGuideId,
+      relatedQuizId,
+    });
+  }, [cards, id, relatedQuizId, relatedStudyGuideId, set]);
 
   useEffect(() => {
     if (!currentCard || flipped || completed) return undefined;
@@ -532,27 +598,27 @@ export default function FlashcardsPage() {
 
   return (
     <>
-      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-5 lg:px-6">
         <Breadcrumb items={[{ label: 'Library', href: '/library?tab=flashcards' }, { label: set.title }]} />
 
-        <section className="flashcards-shell mt-4 rounded-[2.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 shadow-[0_20px_65px_rgba(15,23,42,0.1)] sm:p-6">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <section className="flashcards-shell mt-3 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-[color:var(--color-text-muted)]">Flashcards</p>
-              <h1 className="mt-2 text-3xl font-black leading-tight text-[color:var(--color-text)] sm:text-4xl">{set.title}</h1>
-              <p className="mt-2 text-sm text-[color:var(--color-text-muted)]">
+              <p className="text-[0.68rem] font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">Flashcards</p>
+              <h1 className="mt-1 truncate text-2xl font-black leading-tight text-[color:var(--color-text)] sm:text-3xl">{set.title}</h1>
+              <p className="mt-1 text-xs text-[color:var(--color-text-muted)] sm:text-sm">
                 {orderedCards.length} cards in this set. Progress saves locally first, then syncs to your account.
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-2 text-center sm:min-w-80">
+            <div className="grid grid-cols-3 gap-2 rounded-[1.1rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-1.5 text-center sm:min-w-72">
               <Stat label="Known" value={knownCount} tone="success" />
               <Stat label="Learning" value={learningCount} tone="warning" />
               <Stat label="Progress" value={`${percent}%`} tone="accent" />
             </div>
           </div>
 
-          <div className="mt-5 h-3 overflow-hidden rounded-full bg-[color:var(--color-surface-2)]" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} aria-label="Flashcard mastery progress">
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-[color:var(--color-surface-2)]" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} aria-label="Flashcard mastery progress">
             <div className="h-full rounded-full bg-[color:var(--color-accent)] transition-[width] duration-500" style={{ width: `${percent}%` }} />
           </div>
         </section>
@@ -579,8 +645,8 @@ export default function FlashcardsPage() {
             onQuiz={() => relatedQuizId ? navigate(`/quiz/${relatedQuizId}`) : navigate('/library?tab=quiz')}
           />
         ) : (
-          <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]">
-            <div className="space-y-4">
+          <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_16rem]">
+            <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-3 text-sm font-bold">
                   <Badge tone="warning" label="Still learning" value={learningCount} />
@@ -589,80 +655,127 @@ export default function FlashcardsPage() {
                 <p className="text-sm font-bold text-[color:var(--color-text-muted)]">{currentIndex + 1} / {orderedCards.length}</p>
               </div>
 
-              <MotionButton
+              <MotionDiv
                 key={currentCard?.id}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={flipCard}
-                className="flashcards-card relative flex min-h-[30rem] w-full flex-col overflow-hidden rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-5 text-left shadow-[0_18px_60px_rgba(15,23,42,0.12)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-[color:var(--color-accent)] sm:min-h-[34rem] sm:p-8"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    flipCard();
+                  }
+                }}
+                className="flashcards-card relative h-[min(58vh,30rem)] min-h-[22rem] w-full cursor-pointer rounded-[1.5rem] text-left outline-none sm:h-[min(60vh,31rem)]"
                 initial={{ opacity: 0, y: 12, scale: 0.99 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ duration: 0.28 }}
                 aria-label={flipped ? 'Answer side shown. Press space or click to return to the question.' : 'Question side shown. Press space or click to reveal the answer.'}
+                style={{ perspective: '1400px' }}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-sm font-bold text-[color:var(--color-text-muted)]">
-                    {!flipped && (
+                <div
+                  className="flashcards-card-inner relative h-full w-full rounded-[1.5rem] transition-transform duration-500 ease-out"
+                  style={{
+                    transformStyle: 'preserve-3d',
+                    transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+                  }}
+                >
+                  <div
+                    className="absolute inset-0 flex flex-col overflow-hidden rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4 shadow-[0_14px_44px_rgba(15,23,42,0.1)] ring-0 transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-[color:var(--color-accent)] sm:p-5"
+                    style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-sm font-bold text-[color:var(--color-text-muted)]">
                       <button
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
                           setHintVisible(true);
                         }}
-                        className="inline-flex items-center gap-2 rounded-full px-3 py-2 transition hover:bg-[color:var(--color-surface)]"
+                        className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm transition hover:bg-[color:var(--color-surface)]"
                       >
                         <HelpCircle size={16} />
                         Hint
                       </button>
-                    )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          readVisibleSide();
+                        }}
+                        className="rounded-full p-2 text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface)] hover:text-[color:var(--color-text)]"
+                        aria-label={speaking ? 'Stop reading this question' : 'Read question aloud'}
+                      >
+                        {speaking && !flipped ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                      </button>
+                    </div>
+
+                    <div className="flex flex-1 items-center justify-center px-2 py-6">
+                      <p className="max-w-4xl text-center text-xl font-bold leading-relaxed text-[color:var(--color-text)] sm:text-2xl lg:text-3xl">
+                        {currentCard.front}
+                      </p>
+                    </div>
+
+                    <AnimatePresence>
+                      {hintVisible ? (
+                        <MotionDiv
+                          initial={{ opacity: 0, y: 12 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 12 }}
+                          className="mx-auto mb-3 max-w-lg rounded-[1rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3 text-sm leading-6 text-[color:var(--color-text-muted)]"
+                        >
+                          {currentCard.hint || summarizeForHint(currentCard.back)}
+                        </MotionDiv>
+                      ) : null}
+                    </AnimatePresence>
+
+                    <div className="rounded-[1rem] bg-[color:var(--color-surface)] px-3 py-2 text-center text-xs font-semibold text-[color:var(--color-text-muted)] sm:text-sm">
+                      <Keyboard className="mx-auto mb-0.5 inline-block" size={15} />
+                      Front. Press Space or click to flip.
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      readVisibleSide();
+
+                  <div
+                    className="absolute inset-0 flex flex-col overflow-hidden rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4 shadow-[0_14px_44px_rgba(15,23,42,0.1)] sm:p-5"
+                    style={{
+                      backfaceVisibility: 'hidden',
+                      WebkitBackfaceVisibility: 'hidden',
+                      transform: 'rotateY(180deg)',
                     }}
-                    className="rounded-full p-2 text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface)] hover:text-[color:var(--color-text)]"
-                    aria-label={speaking ? 'Stop reading this card' : 'Read visible side aloud'}
                   >
-                    {speaking ? <VolumeX size={18} /> : <Volume2 size={18} />}
-                  </button>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="rounded-full bg-[color:var(--color-surface)] px-3 py-1.5 text-sm font-black text-[color:var(--color-text-muted)]">
+                        Back
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          readVisibleSide();
+                        }}
+                        className="rounded-full p-2 text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface)] hover:text-[color:var(--color-text)]"
+                        aria-label={speaking ? 'Stop reading this answer' : 'Read answer aloud'}
+                      >
+                        {speaking && flipped ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                      </button>
+                    </div>
+
+                    <div className="flex flex-1 items-center justify-center px-2 py-6">
+                      <p className="max-w-4xl text-center text-xl font-bold leading-relaxed text-[color:var(--color-text)] sm:text-2xl lg:text-3xl">
+                        {currentCard.back}
+                      </p>
+                    </div>
+
+                    <div className="rounded-[1rem] bg-[color:var(--color-surface)] px-3 py-2 text-center text-xs font-semibold text-[color:var(--color-text-muted)] sm:text-sm">
+                      <Keyboard className="mx-auto mb-0.5 inline-block" size={15} />
+                      Back. Press ArrowLeft for still learning or ArrowRight for know.
+                    </div>
+                  </div>
                 </div>
+              </MotionDiv>
 
-                <div className="flex flex-1 items-center justify-center px-2 py-10">
-                  <AnimatePresence mode="wait">
-                    <MotionP
-                      key={`${currentCard?.id}-${flipped ? 'back' : 'front'}`}
-                      initial={{ opacity: 0, rotateX: -8, y: 10 }}
-                      animate={{ opacity: 1, rotateX: 0, y: 0 }}
-                      exit={{ opacity: 0, rotateX: 8, y: -10 }}
-                      transition={{ duration: 0.22 }}
-                      className={`max-w-4xl text-center font-bold leading-relaxed text-[color:var(--color-text)] ${flipped ? 'text-2xl sm:text-3xl' : 'text-2xl sm:text-4xl'}`}
-                    >
-                      {flipped ? currentCard.back : currentCard.front}
-                    </MotionP>
-                  </AnimatePresence>
-                </div>
-
-                <AnimatePresence>
-                  {!flipped && hintVisible ? (
-                    <MotionDiv
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 12 }}
-                      className="mx-auto mb-4 max-w-lg rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 text-sm leading-6 text-[color:var(--color-text-muted)]"
-                    >
-                      {currentCard.hint || summarizeForHint(currentCard.back)}
-                    </MotionDiv>
-                  ) : null}
-                </AnimatePresence>
-
-                <div className="rounded-[1.25rem] bg-[color:var(--color-surface)] px-4 py-3 text-center text-sm font-semibold text-[color:var(--color-text-muted)]">
-                  <Keyboard className="mx-auto mb-1 inline-block" size={16} />
-                  Press Space to flip. ArrowLeft means still learning, ArrowRight means know.
-                </div>
-              </MotionButton>
-
-              <div className="flex flex-wrap items-center justify-center gap-3">
+              <div className="flex flex-wrap items-center justify-center gap-2">
                 <IconButton label="Previous card" onClick={() => goToIndex(currentIndex - 1)} disabled={currentIndex === 0 || saving} icon={<ChevronLeft size={20} />} />
                 <ActionButton label="Still learning" tone="warning" onClick={() => markCard('learning')} disabled={saving} icon={<X size={22} />} />
                 <ActionButton label="Know" tone="success" onClick={() => markCard('known')} disabled={saving} icon={<Check size={22} />} />
@@ -671,20 +784,20 @@ export default function FlashcardsPage() {
               </div>
             </div>
 
-            <aside className="space-y-3 rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
-              <button onClick={() => setEditModal({ front: '', back: '' })} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 py-3 font-bold text-[color:var(--color-accent-text)]">
+            <aside className="space-y-2 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3">
+              <button onClick={() => setEditModal({ front: '', back: '' })} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[color:var(--color-accent)] px-3 py-2.5 text-sm font-bold text-[color:var(--color-accent-text)]">
                 <Plus size={18} />
                 Add card
               </button>
-              <button onClick={() => setEditModal({ id: currentCard.id, front: currentCard.front, back: currentCard.back })} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-3 font-bold text-[color:var(--color-text)]">
+              <button onClick={() => setEditModal({ id: currentCard.id, front: currentCard.front, back: currentCard.back })} className="flex w-full items-center justify-center gap-2 rounded-xl border border-[color:var(--color-border)] px-3 py-2.5 text-sm font-bold text-[color:var(--color-text)]">
                 <BookOpen size={18} />
                 Edit current
               </button>
-              <button onClick={() => setDeleteTarget(currentCard)} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-500/30 px-4 py-3 font-bold text-red-500">
+              <button onClick={() => setDeleteTarget(currentCard)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/30 px-3 py-2.5 text-sm font-bold text-red-500">
                 <Trash2 size={18} />
                 Delete current
               </button>
-              <button onClick={() => navigate('/library?tab=flashcards')} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-3 font-bold text-[color:var(--color-text-muted)]">
+              <button onClick={() => navigate('/library?tab=flashcards')} className="flex w-full items-center justify-center gap-2 rounded-xl border border-[color:var(--color-border)] px-3 py-2.5 text-sm font-bold text-[color:var(--color-text-muted)]">
                 <Library size={18} />
                 Library
               </button>
@@ -760,9 +873,9 @@ export default function FlashcardsPage() {
 function Stat({ label, value, tone }) {
   const color = tone === 'success' ? '#10b981' : tone === 'warning' ? '#f97316' : 'var(--color-accent)';
   return (
-    <div className="rounded-[1.1rem] bg-[color:var(--color-surface)] p-3">
-      <p className="text-xl font-black" style={{ color }}>{value}</p>
-      <p className="text-xs font-bold text-[color:var(--color-text-muted)]">{label}</p>
+    <div className="rounded-[0.9rem] bg-[color:var(--color-surface)] p-2">
+      <p className="text-lg font-black leading-tight" style={{ color }}>{value}</p>
+      <p className="text-[0.68rem] font-bold leading-tight text-[color:var(--color-text-muted)]">{label}</p>
     </div>
   );
 }
@@ -779,7 +892,7 @@ function Badge({ label, value, tone }) {
 
 function IconButton({ label, icon, onClick, disabled }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label} className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text)] transition hover:-translate-y-0.5 hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50">
+    <button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text)] transition hover:-translate-y-0.5 hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50">
       {icon}
     </button>
   );
@@ -788,7 +901,7 @@ function IconButton({ label, icon, onClick, disabled }) {
 function ActionButton({ label, icon, onClick, tone, disabled }) {
   const color = tone === 'success' ? '#10b981' : '#f97316';
   return (
-    <button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label} className="inline-flex h-12 min-w-20 items-center justify-center rounded-full border bg-[color:var(--color-surface)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50" style={{ borderColor: color, color }}>
+    <button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label} className="inline-flex h-10 min-w-16 items-center justify-center rounded-full border bg-[color:var(--color-surface)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50" style={{ borderColor: color, color }}>
       {icon}
     </button>
   );
