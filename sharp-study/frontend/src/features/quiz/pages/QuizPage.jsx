@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
+  AlertTriangle,
   ArrowLeft,
   BookOpen,
   Check,
@@ -8,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Edit3,
   FileQuestion,
   Flame,
   HelpCircle,
@@ -43,6 +45,20 @@ const DEFAULT_SETTINGS = {
   itemCount: 10,
   timeMinutes: 15,
 };
+const WRONG_FEEDBACK_MESSAGES = [
+  'No problem. You are still learning.',
+  'Good attempt. This is part of locking it in.',
+  'Keep going. Missed items are useful review signals.',
+  'You are building recall. Review this one once more.',
+  'Not yet, but this is exactly how practice helps.',
+];
+const STREAK_MESSAGES = [
+  'Three correct answers in a row starts a streak.',
+  'Good rhythm. Stay steady and keep reading carefully.',
+  'Nice streak. Keep the focus on accuracy.',
+  'You are on a roll. Keep the pace calm.',
+  'Strong run. One question at a time.',
+];
 
 function contentCacheKey(quizId) {
   return `${CONTENT_STORAGE_PREFIX}:${quizId}`;
@@ -272,6 +288,16 @@ function getResultMessage(percent, sessionType) {
   return 'This is still workable. Start with the missed items, then try a shorter practice round.';
 }
 
+function getWrongFeedbackMessage(questionId = '') {
+  const seed = String(questionId).split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return WRONG_FEEDBACK_MESSAGES[seed % WRONG_FEEDBACK_MESSAGES.length];
+}
+
+function getStreakMessage(streak) {
+  if (streak < 3) return STREAK_MESSAGES[0];
+  return STREAK_MESSAGES[Math.min(STREAK_MESSAGES.length - 1, streak - 2)];
+}
+
 export default function QuizPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -296,6 +322,9 @@ export default function QuizPage() {
   const [bestStreak, setBestStreak] = useState(0);
   const [savedSession, setSavedSession] = useState(() => readSavedSession(id));
   const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem(TUTORIAL_KEY));
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [exitConfirm, setExitConfirm] = useState({ open: false, target: 'preview' });
+  const [expandedExplanations, setExpandedExplanations] = useState({});
 
   const submitLockRef = useRef(false);
   const warningToastRef = useRef(false);
@@ -418,13 +447,39 @@ export default function QuizPage() {
       questionIds: activeQuestions.map((question) => question.id),
       answers,
       feedback,
+      expandedExplanations,
       currentPage,
       startedAt,
       timeLeft,
       streak,
       bestStreak,
     });
-  }, [activeQuestions, answers, bestStreak, currentPage, feedback, id, phase, settings, startedAt, streak, timeLeft]);
+  }, [activeQuestions, answers, bestStreak, currentPage, expandedExplanations, feedback, id, phase, settings, startedAt, streak, timeLeft]);
+
+  useEffect(() => {
+    if (phase !== 'taking') return undefined;
+
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase !== 'taking') return undefined;
+
+    window.history.pushState({ sharpStudyQuizGuard: true }, '', window.location.href);
+    const handlePopState = () => {
+      setExitConfirm({ open: true, target: 'library' });
+      window.history.pushState({ sharpStudyQuizGuard: true }, '', window.location.href);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [phase]);
 
   const submitAttempt = useCallback(async (timedOut = false) => {
     if (!quiz || !activeQuestions.length || submitLockRef.current) return;
@@ -547,9 +602,7 @@ export default function QuizPage() {
       return;
     }
 
-    const selected = questionIds
-      ? pool
-      : shuffleQuestions(pool).slice(0, Math.min(effectiveSettings.itemCount, pool.length));
+    const selected = shuffleQuestions(pool).slice(0, Math.min(effectiveSettings.itemCount, pool.length));
     const startTime = Date.now();
 
     if (overrideSettings) {
@@ -558,6 +611,7 @@ export default function QuizPage() {
     setActiveQuestions(selected);
     setAnswers({});
     setFeedback({});
+    setExpandedExplanations({});
     setCurrentPage(0);
     setStartedAt(startTime);
     setTimeLeft(effectiveSettings.timeMinutes * 60);
@@ -585,6 +639,7 @@ export default function QuizPage() {
     setActiveQuestions(selected);
     setAnswers(savedSession.answers || {});
     setFeedback(savedSession.feedback || {});
+    setExpandedExplanations(savedSession.expandedExplanations || {});
     setCurrentPage(Number(savedSession.currentPage || 0));
     setStartedAt(Number(savedSession.startedAt || Date.now()));
     setTimeLeft(Number(savedSession.timeLeft || DEFAULT_SETTINGS.timeMinutes * 60));
@@ -611,8 +666,11 @@ export default function QuizPage() {
       [question.id]: {
         isCorrect,
         selectedIndex: question.type === 'multiple_choice' && Number.isInteger(rawAnswer) ? rawAnswer : null,
+        message: isCorrect ? 'Brilliant work.' : getWrongFeedbackMessage(question.id),
       },
     }));
+
+    setExpandedExplanations((current) => ({ ...current, [question.id]: false }));
 
     setStreak((current) => {
       const next = isCorrect ? current + 1 : 0;
@@ -627,6 +685,36 @@ export default function QuizPage() {
 
   const previousPage = () => {
     setCurrentPage((current) => Math.max(0, current - 1));
+  };
+
+  const requestSubmit = () => {
+    setShowSubmitConfirm(true);
+  };
+
+  const requestExit = (target = 'preview') => {
+    if (phase === 'taking') {
+      setExitConfirm({ open: true, target });
+      return;
+    }
+    if (target === 'library') {
+      navigate('/library?tab=quiz');
+    } else {
+      setPhase('preview');
+    }
+  };
+
+  const discardAndExit = () => {
+    clearSavedSession(id);
+    setSavedSession(null);
+    setExitConfirm({ open: false, target: 'preview' });
+    setPhase('preview');
+    if (exitConfirm.target === 'library') {
+      navigate('/library?tab=quiz');
+    }
+  };
+
+  const toggleExplanation = (questionId) => {
+    setExpandedExplanations((current) => ({ ...current, [questionId]: !current[questionId] }));
   };
 
   const retakeMissed = () => {
@@ -684,6 +772,7 @@ export default function QuizPage() {
             maxItemCount={maxItemCount}
             savedSession={savedSession}
             onBack={() => navigate('/library?tab=quiz')}
+            onEdit={() => navigate(`/quiz/${quiz.id}/edit`)}
             onUpdateSetting={updateSetting}
             onStart={() => startSession()}
             onResume={resumeSession}
@@ -706,13 +795,15 @@ export default function QuizPage() {
             urgentTime={urgentTime}
             streak={streak}
             bestStreak={bestStreak}
+            expandedExplanations={expandedExplanations}
             submitting={submitting}
-            onBackToPreview={() => setPhase('preview')}
+            onExit={() => requestExit('preview')}
             onAnswer={setAnswer}
             onRevealFeedback={revealFeedback}
+            onToggleExplanation={toggleExplanation}
             onPrevious={previousPage}
             onNext={nextPage}
-            onSubmit={() => submitAttempt(false)}
+            onSubmit={requestSubmit}
           />
         ) : null}
 
@@ -761,6 +852,71 @@ export default function QuizPage() {
           </div>
         </div>
       </Modal>
+
+      <Modal
+        isOpen={showSubmitConfirm}
+        onClose={() => setShowSubmitConfirm(false)}
+        title="Submit quiz?"
+        size="md"
+      >
+        <div className="space-y-4 text-sm leading-7 text-[color:var(--color-text-muted)]">
+          <div className="flex gap-3 rounded-[1.25rem] border border-amber-500/30 bg-amber-500/10 p-4">
+            <AlertTriangle className="mt-1 shrink-0 text-amber-500" size={20} aria-hidden="true" />
+            <p>
+              You answered <strong className="text-[color:var(--color-text)]">{answeredCount}</strong> of <strong className="text-[color:var(--color-text)]">{activeQuestions.length}</strong> questions.
+              Once submitted, this attempt will be scored and added to your history.
+            </p>
+          </div>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setShowSubmitConfirm(false)}
+              className="rounded-2xl border border-[color:var(--color-border)] px-5 py-3 font-bold text-[color:var(--color-text-muted)]"
+            >
+              Keep answering
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowSubmitConfirm(false);
+                submitAttempt(false);
+              }}
+              disabled={submitting}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-bold text-[color:var(--color-accent-text)] disabled:opacity-60"
+            >
+              {submitting ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
+              Submit now
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={exitConfirm.open}
+        onClose={() => setExitConfirm({ open: false, target: 'preview' })}
+        title="Leave this quiz?"
+        size="md"
+      >
+        <div className="space-y-4 text-sm leading-7 text-[color:var(--color-text-muted)]">
+          <p>Your progress is saved in this browser, but discarding will clear the current attempt and return you to the quiz preview.</p>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={discardAndExit}
+              className="rounded-2xl border border-rose-500/40 px-5 py-3 font-bold text-rose-500"
+            >
+              Discard progress
+            </button>
+            <button
+              type="button"
+              onClick={() => setExitConfirm({ open: false, target: 'preview' })}
+              className="inline-flex items-center justify-center rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-bold text-[color:var(--color-accent-text)]"
+            >
+              Stay on page
+            </button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }
@@ -775,6 +931,7 @@ function PreviewScreen({
   maxItemCount,
   savedSession,
   onBack,
+  onEdit,
   onUpdateSetting,
   onStart,
   onResume,
@@ -786,10 +943,16 @@ function PreviewScreen({
       <section className="rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 shadow-[0_20px_65px_rgba(15,23,42,0.1)] sm:p-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <button type="button" onClick={onBack} className="mb-4 inline-flex items-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-2 text-sm font-bold text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface-2)]">
-              <ArrowLeft size={16} />
-              Library
-            </button>
+            <div className="mb-4 flex flex-wrap gap-2">
+              <button type="button" onClick={onBack} className="inline-flex items-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-2 text-sm font-bold text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface-2)]">
+                <ArrowLeft size={16} />
+                Library
+              </button>
+              <button type="button" onClick={onEdit} className="inline-flex items-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-2 text-sm font-bold text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface-2)]">
+                <Edit3 size={16} />
+                Edit quiz
+              </button>
+            </div>
             <div className="flex items-center gap-3">
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/12 text-emerald-500">
                 <FileQuestion size={24} />
@@ -962,10 +1125,12 @@ function TakingScreen({
   urgentTime,
   streak,
   bestStreak,
+  expandedExplanations,
   submitting,
-  onBackToPreview,
+  onExit,
   onAnswer,
   onRevealFeedback,
+  onToggleExplanation,
   onPrevious,
   onNext,
   onSubmit,
@@ -978,23 +1143,23 @@ function TakingScreen({
     : `Question ${currentPage + 1} of ${questions.length}`;
 
   return (
-    <div className="space-y-5">
-      <section className="sticky top-0 z-20 -mx-4 border-b border-[color:var(--color-border)] bg-[color:var(--color-bg)]/94 px-4 py-3 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3">
+    <div className="space-y-4">
+      <section className="sticky top-0 z-20 -mx-4 border-b border-[color:var(--color-border)] bg-[color:var(--color-bg)]/94 px-4 py-2 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="mx-auto flex max-w-7xl flex-col gap-2">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">{settings.sessionType === 'practice' ? 'Practice quiz' : 'Test mode'}</p>
-              <h1 className="truncate text-xl font-black text-[color:var(--color-text)] sm:text-2xl">{quiz?.title}</h1>
+              <p className="text-[0.68rem] font-black uppercase tracking-[0.18em] text-[color:var(--color-text-muted)]">{settings.sessionType === 'practice' ? 'Practice quiz' : 'Test mode'}</p>
+              <h1 className="truncate text-lg font-black text-[color:var(--color-text)] sm:text-xl">{quiz?.title}</h1>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <div className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-black ${urgentTime ? 'border-rose-500/40 bg-rose-500/10 text-rose-500' : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text)]'}`} aria-live="polite">
+              <div className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-black ${urgentTime ? 'border-rose-500/40 bg-rose-500/10 text-rose-500' : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text)]'}`} aria-live="polite">
                 <Clock size={17} />
                 {formatTimer(timeLeft)}
               </div>
-              <button type="button" onClick={onBackToPreview} disabled={submitting} className="rounded-2xl border border-[color:var(--color-border)] px-4 py-2 text-sm font-bold text-[color:var(--color-text-muted)] disabled:opacity-50">
+              <button type="button" onClick={onExit} disabled={submitting} className="rounded-2xl border border-[color:var(--color-border)] px-3 py-2 text-sm font-bold text-[color:var(--color-text-muted)] disabled:opacity-50">
                 Exit
               </button>
-              <button type="button" onClick={onSubmit} disabled={submitting} className="inline-flex items-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 py-2 text-sm font-black text-[color:var(--color-accent-text)] disabled:opacity-50">
+              <button type="button" onClick={onSubmit} disabled={submitting} className="inline-flex items-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-3 py-2 text-sm font-black text-[color:var(--color-accent-text)] disabled:opacity-50">
                 {submitting ? <Loader2 className="animate-spin" size={17} /> : <Send size={17} />}
                 Submit
               </button>
@@ -1002,11 +1167,11 @@ function TakingScreen({
           </div>
 
           <div>
-            <div className="mb-2 flex items-center justify-between gap-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">
+            <div className="mb-1.5 flex items-center justify-between gap-3 text-[0.68rem] font-black uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">
               <span>{pageLabel}</span>
               <span>{answeredCount}/{questions.length} answered</span>
             </div>
-            <div className="h-3 overflow-hidden rounded-full bg-[color:var(--color-surface-2)]" role="progressbar" aria-valuenow={progressPercent} aria-valuemin={0} aria-valuemax={100}>
+            <div className="h-2 overflow-hidden rounded-full bg-[color:var(--color-surface-2)]" role="progressbar" aria-valuenow={progressPercent} aria-valuemin={0} aria-valuemax={100}>
               <div className="h-full rounded-full bg-[color:var(--color-accent)] transition-[width] duration-500" style={{ width: `${progressPercent}%` }} />
             </div>
           </div>
@@ -1014,7 +1179,7 @@ function TakingScreen({
           {settings.sessionType === 'practice' ? (
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <StreakBadge streak={streak} bestStreak={bestStreak} />
-              <span className="text-[color:var(--color-text-muted)]">{streak >= 3 ? 'You are on a roll. Keep the rhythm steady.' : 'Three correct answers in a row starts a streak.'}</span>
+              <span className="text-[color:var(--color-text-muted)]">{getStreakMessage(streak)}</span>
             </div>
           ) : null}
         </div>
@@ -1028,15 +1193,17 @@ function TakingScreen({
             index={settings.layout === 'page' ? currentPage * PAGE_SIZE + index : currentPage}
             answer={answers[question.id]}
             feedback={feedback[question.id]}
+            explanationOpen={Boolean(expandedExplanations[question.id])}
             practice={settings.sessionType === 'practice'}
             onAnswer={(answer) => onAnswer(question, answer)}
             onReveal={() => onRevealFeedback(question)}
+            onToggleExplanation={() => onToggleExplanation(question.id)}
           />
         ))}
       </section>
 
-      <nav className="flex flex-col gap-3 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3 sm:flex-row sm:items-center sm:justify-between">
-        <button type="button" onClick={onPrevious} disabled={currentPage === 0 || submitting} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-5 py-3 font-bold text-[color:var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50">
+      <nav className="flex flex-col gap-3 rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3 sm:flex-row sm:items-center sm:justify-between">
+        <button type="button" onClick={onPrevious} disabled={currentPage === 0 || submitting} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-2.5 font-bold text-[color:var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50">
           <ChevronLeft size={18} />
           Previous
         </button>
@@ -1045,12 +1212,12 @@ function TakingScreen({
           Progress saves in this browser while you answer.
         </div>
         {isLastPage ? (
-          <button type="button" onClick={onSubmit} disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-black text-[color:var(--color-accent-text)] disabled:opacity-50">
+          <button type="button" onClick={onSubmit} disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 py-2.5 font-black text-[color:var(--color-accent-text)] disabled:opacity-50">
             {submitting ? <Loader2 className="animate-spin" size={18} /> : <Trophy size={18} />}
             Finish
           </button>
         ) : (
-          <button type="button" onClick={onNext} disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-black text-[color:var(--color-accent-text)] disabled:opacity-50">
+          <button type="button" onClick={onNext} disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 py-2.5 font-black text-[color:var(--color-accent-text)] disabled:opacity-50">
             Next
             <ChevronRight size={18} />
           </button>
@@ -1060,30 +1227,30 @@ function TakingScreen({
   );
 }
 
-function QuestionCard({ question, index, answer, feedback, practice, onAnswer, onReveal }) {
+function QuestionCard({ question, index, answer, feedback, explanationOpen, practice, onAnswer, onReveal, onToggleExplanation }) {
   const locked = practice && Boolean(feedback);
 
   return (
-    <article className="rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 shadow-[0_16px_52px_rgba(15,23,42,0.08)] sm:p-6">
+    <article className="quiz-fade-up rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3 shadow-[0_12px_38px_rgba(15,23,42,0.08)] sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm font-black text-[color:var(--color-text-muted)]">
-          <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[color:var(--color-surface-2)] text-[color:var(--color-text)]">{index + 1}</span>
+        <div className="flex items-center gap-2 text-xs font-black text-[color:var(--color-text-muted)] sm:text-sm">
+          <span className="flex h-8 w-8 items-center justify-center rounded-2xl bg-[color:var(--color-surface-2)] text-[color:var(--color-text)]">{index + 1}</span>
           <span>{question.type === 'identification' ? 'Identification' : 'Multiple choice'}</span>
         </div>
         {feedback ? (
-          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-black ${feedback.isCorrect ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
+          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black sm:text-sm ${feedback.isCorrect ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
             {feedback.isCorrect ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
             {feedback.isCorrect ? 'Correct' : 'Review this'}
           </span>
         ) : null}
       </div>
 
-      <h2 className="mt-5 text-xl font-black leading-relaxed text-[color:var(--color-text)] sm:text-2xl">{question.question}</h2>
+      <h2 className="mt-4 text-lg font-black leading-snug text-[color:var(--color-text)] sm:text-xl">{question.question}</h2>
 
       {question.type === 'multiple_choice' ? (
-        <fieldset className="mt-6">
+        <fieldset className="mt-4">
           <legend className="sr-only">Choose one answer</legend>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-2 md:grid-cols-2">
             {question.choices.map((choice, choiceIndex) => {
               const selected = answer === choiceIndex;
               const isCorrectChoice = feedback && question.correct_index === choiceIndex;
@@ -1096,7 +1263,7 @@ function QuestionCard({ question, index, answer, feedback, practice, onAnswer, o
                   onClick={() => onAnswer(choiceIndex)}
                   disabled={locked}
                   aria-pressed={selected}
-                  className={`min-h-16 rounded-[1.25rem] border px-4 py-3 text-left transition-all duration-200 disabled:cursor-default ${
+                  className={`min-h-12 rounded-[1rem] border px-3 py-2.5 text-left transition-all duration-200 disabled:cursor-default ${
                     isCorrectChoice
                       ? 'border-emerald-500 bg-emerald-500/10 text-[color:var(--color-text)]'
                       : isWrongChoice
@@ -1106,9 +1273,9 @@ function QuestionCard({ question, index, answer, feedback, practice, onAnswer, o
                           : 'border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] text-[color:var(--color-text)] hover:border-[color:var(--color-accent)]'
                   }`}
                 >
-                  <span className="flex items-start gap-3">
-                    <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-current text-sm font-black">{choiceIndex + 1}</span>
-                    <span className="font-bold leading-6">{choice}</span>
+                  <span className="flex items-start gap-2.5">
+                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current text-xs font-black">{choiceIndex + 1}</span>
+                    <span className="text-sm font-bold leading-6 sm:text-base">{choice}</span>
                   </span>
                 </button>
               );
@@ -1116,7 +1283,7 @@ function QuestionCard({ question, index, answer, feedback, practice, onAnswer, o
           </div>
         </fieldset>
       ) : (
-        <div className="mt-6">
+        <div className="mt-4">
           <label className="block">
             <span className="sr-only">Type your answer</span>
             <input
@@ -1124,11 +1291,11 @@ function QuestionCard({ question, index, answer, feedback, practice, onAnswer, o
               onChange={(event) => onAnswer(event.target.value)}
               disabled={locked}
               placeholder="Type your answer"
-              className="h-14 w-full rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] px-4 font-bold text-[color:var(--color-text)] outline-none focus:border-[color:var(--color-accent)] disabled:opacity-70"
+              className="h-12 w-full rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] px-4 font-bold text-[color:var(--color-text)] outline-none focus:border-[color:var(--color-accent)] disabled:opacity-70"
             />
           </label>
           {practice && !feedback ? (
-            <button type="button" onClick={onReveal} className="mt-3 inline-flex items-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-black text-[color:var(--color-accent-text)]">
+            <button type="button" onClick={onReveal} className="mt-3 inline-flex items-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 py-2.5 font-black text-[color:var(--color-accent-text)]">
               <Check size={18} />
               Check answer
             </button>
@@ -1137,32 +1304,58 @@ function QuestionCard({ question, index, answer, feedback, practice, onAnswer, o
       )}
 
       {feedback ? (
-        <FeedbackPanel question={question} selectedIndex={feedback.selectedIndex} isCorrect={feedback.isCorrect} />
+        <FeedbackPanel
+          question={question}
+          selectedIndex={feedback.selectedIndex}
+          isCorrect={feedback.isCorrect}
+          message={feedback.message}
+          expanded={explanationOpen}
+          onToggle={onToggleExplanation}
+        />
       ) : null}
     </article>
   );
 }
 
-function FeedbackPanel({ question, selectedIndex, isCorrect }) {
+function FeedbackPanel({ question, selectedIndex, isCorrect, message, expanded, onToggle }) {
   const pickedWrong = selectedIndex !== null && selectedIndex !== undefined && selectedIndex !== question.correct_index;
   const wrongExplanation = pickedWrong ? question.wrong_explanations?.[selectedIndex] : '';
 
   return (
-    <div className={`mt-5 rounded-[1.5rem] border p-4 ${isCorrect ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
+    <div className={`mt-4 rounded-[1.25rem] border p-3 ${isCorrect ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
       <p className={`font-black ${isCorrect ? 'text-emerald-500' : 'text-amber-500'}`}>
-        {isCorrect ? 'Brilliant work.' : 'No problem. You are still learning.'}
+        {isCorrect ? 'Brilliant work.' : message || 'No problem. You are still learning.'}
       </p>
       <p className="mt-2 text-sm leading-7 text-[color:var(--color-text-muted)]">
         <strong className="text-[color:var(--color-text)]">Correct answer:</strong> {question.correct_answer}
       </p>
-      <p className="mt-2 text-sm leading-7 text-[color:var(--color-text-muted)]">{question.explanation}</p>
-      {!isCorrect && wrongExplanation ? (
-        <p className="mt-2 text-sm leading-7 text-[color:var(--color-text-muted)]">{wrongExplanation}</p>
+
+      {!isCorrect ? (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            className="quiz-attention-glow inline-flex items-center gap-2 rounded-2xl border border-amber-400/70 bg-amber-400/15 px-4 py-2 text-sm font-black text-amber-500"
+          >
+            <HelpCircle size={17} />
+            {expanded ? 'Hide explanation' : 'View explanation'}
+          </button>
+        </div>
       ) : null}
-      {question.support_snippet ? (
-        <p className="mt-3 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-xs font-semibold leading-6 text-[color:var(--color-text-muted)]">
-          Lesson support: {question.support_snippet}
-        </p>
+
+      {!isCorrect && expanded ? (
+        <div className="mt-3 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3">
+          <p className="text-sm leading-7 text-[color:var(--color-text-muted)]">{question.explanation}</p>
+          {wrongExplanation ? (
+            <p className="mt-2 text-sm leading-7 text-[color:var(--color-text-muted)]">{wrongExplanation}</p>
+          ) : null}
+          {question.support_snippet ? (
+            <p className="mt-3 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] px-3 py-2 text-xs font-semibold leading-6 text-[color:var(--color-text-muted)]">
+              Lesson support: {question.support_snippet}
+            </p>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
@@ -1329,7 +1522,10 @@ function AnswerPill({ label, value, tone }) {
 function QuizSkeleton() {
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <div className="h-4 w-52 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
+      <div className="flex items-center gap-3">
+        <div className="quiz-donut" aria-hidden="true" />
+        <p className="text-sm font-black text-[color:var(--color-text-muted)]">Loading quiz and restoring saved progress...</p>
+      </div>
       <section className="mt-4 rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
         <div className="h-5 w-32 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
         <div className="mt-4 h-10 w-3/4 animate-pulse rounded-2xl bg-[color:var(--color-surface-2)]" />

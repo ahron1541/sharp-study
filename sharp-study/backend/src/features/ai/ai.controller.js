@@ -21,6 +21,9 @@ const {
   updateJob,
 } = require('./ai.queue');
 
+const AI_QUIZ_GENERATED_EVENT = 'ai.quiz.generated';
+const AI_QUIZ_FAILED_EVENT = 'ai.quiz.failed';
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 150 * 1024 * 1024 },
@@ -122,6 +125,18 @@ function sanitizeGeneratedPlainText(value = '', maxLength = 600) {
     .slice(0, maxLength);
 }
 
+async function logAiQuizEvent(userId, event, metadata = {}) {
+  try {
+    await supabaseAdmin.from('audit_logs').insert({
+      user_id: userId,
+      event,
+      metadata,
+    });
+  } catch (error) {
+    console.error('[AI] Failed to record quiz generation audit event:', error.message);
+  }
+}
+
 function normalizeGeneratedFlashcards(items = [], sourceText = '') {
   const seen = new Set();
 
@@ -158,15 +173,19 @@ function normalizeGeneratedQuiz(items = [], sourceText = '') {
   const seen = new Set();
 
   return (Array.isArray(items) ? items : [])
-    .map((item) => {
+    .map((item, index) => {
       const type = item?.type === 'identification' ? 'identification' : 'multiple_choice';
-      const question = sanitizeGeneratedPlainText(item?.question, 420);
+      let question = sanitizeGeneratedPlainText(item?.question, 420);
       const correctAnswer = sanitizeGeneratedPlainText(
         item?.correct_answer || (Array.isArray(item?.choices) ? item.choices[item?.correct_index] : ''),
         220
       );
       const explanation = sanitizeGeneratedPlainText(item?.explanation, 720);
       const supportSnippet = sanitizeGeneratedPlainText(item?.support_snippet, 300);
+
+      if (type === 'identification' && /^(identify|what is being described|name the term|term described)/i.test(question)) {
+        question = supportSnippet || `Definition or clue from the lesson for ${correctAnswer}.`;
+      }
 
       if (!question || !correctAnswer) return null;
       if (/review the lesson|cannot determine|not provided|not mentioned|image|diagram/i.test(`${question} ${correctAnswer}`)) {
@@ -181,6 +200,8 @@ function normalizeGeneratedQuiz(items = [], sourceText = '') {
       seen.add(key);
 
       if (type === 'identification') {
+        if (correctAnswer.split(/\s+/).filter(Boolean).length > 8) return null;
+
         const acceptedAnswers = Array.from(new Set([
           correctAnswer,
           ...(Array.isArray(item?.accepted_answers) ? item.accepted_answers : []),
@@ -196,6 +217,7 @@ function normalizeGeneratedQuiz(items = [], sourceText = '') {
             accepted_answers: acceptedAnswers.length ? acceptedAnswers : [correctAnswer],
             explanation: explanation || `The lesson supports "${correctAnswer}" as the answer.`,
             support_snippet: supportSnippet,
+            order: index,
           },
         };
       }
@@ -228,6 +250,7 @@ function normalizeGeneratedQuiz(items = [], sourceText = '') {
               : wrongExplanations[index] || `${choice} does not match the supporting lesson detail for this question.`
           )),
           support_snippet: supportSnippet,
+          order: index,
         },
       };
     })
@@ -623,6 +646,13 @@ async function processGenerationJob(job) {
       }
 
       createdRecords.quiz = quiz ? { id: quiz.id, title: quiz.title } : null;
+      await logAiQuizEvent(userId, AI_QUIZ_GENERATED_EVENT, {
+        quiz_id: quiz?.id || null,
+        quiz_title: quiz?.title || null,
+        question_count: questions.length,
+        source_study_guide_id: sourceStudyGuide?.id || null,
+        document_id: doc?.id || null,
+      });
     }
 
     if (!sourceStudyGuideId && doc?.id) {
@@ -643,6 +673,15 @@ async function processGenerationJob(job) {
     return { success: true, generated: generateOptions, created: createdRecords };
   } catch (err) {
     console.error('AI generation error:', err);
+
+    if (generateOptions.includes('quiz')) {
+      await logAiQuizEvent(userId, AI_QUIZ_FAILED_EVENT, {
+        source_study_guide_id: sourceStudyGuide?.id || sourceStudyGuideId || null,
+        document_id: documentId || null,
+        message: sanitizeGeneratedPlainText(err.message || 'Quiz generation failed.', 500),
+        job_id: job.id,
+      });
+    }
 
     if (documentId) {
       await supabaseAdmin.from('documents').update({ status: 'error' }).eq('id', documentId);

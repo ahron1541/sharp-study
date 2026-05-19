@@ -4,13 +4,16 @@ const { z } = require('zod');
 
 const { requireAdmin } = require('../../middleware/auth.middleware');
 const { supabaseAdmin } = require('../../config/supabase');
-const { sanitizeStudyGuideContent } = require('../../utils/studyGuideSanitize');
+const { sanitizePlainText, sanitizeStudyGuideContent } = require('../../utils/studyGuideSanitize');
 
 const router = express.Router();
 
 const USER_PAGE_SIZE = 10;
 const CONTENT_PAGE_SIZE = 10;
 const CONTENT_TYPES = new Set(['documents', 'study_guides', 'flashcard_sets', 'quizzes']);
+const QUIZ_ATTEMPT_EVENT = 'quiz_attempt_submitted';
+const AI_QUIZ_GENERATED_EVENT = 'ai.quiz.generated';
+const AI_QUIZ_FAILED_EVENT = 'ai.quiz.failed';
 const ADMIN_PASSWORD_RULES = [
   { test: (value) => value.length >= 8, message: 'Password must be at least 8 characters long.' },
   { test: (value) => /[A-Z]/.test(value), message: 'Password must include at least one uppercase letter.' },
@@ -156,6 +159,154 @@ async function fetchOverview() {
   };
 }
 
+function getAttemptPercent(metadata = {}) {
+  const explicitPercent = Number(metadata.percent);
+  if (Number.isFinite(explicitPercent)) return Math.max(0, Math.min(100, Math.round(explicitPercent)));
+
+  const score = Number(metadata.score || 0);
+  const total = Number(metadata.total || 0);
+  return total > 0 ? Math.round((score / total) * 100) : 0;
+}
+
+function sanitizeAuditText(value = '', maxLength = 300) {
+  return sanitizePlainText(value).slice(0, maxLength);
+}
+
+async function fetchLearningInsights() {
+  const [attemptsResult, generationResult] = await Promise.all([
+    supabaseAdmin
+      .from('audit_logs')
+      .select('id, user_id, event, metadata, created_at')
+      .eq('event', QUIZ_ATTEMPT_EVENT)
+      .order('created_at', { ascending: false })
+      .limit(500),
+    supabaseAdmin
+      .from('audit_logs')
+      .select('id, user_id, event, metadata, created_at')
+      .in('event', [AI_QUIZ_GENERATED_EVENT, AI_QUIZ_FAILED_EVENT])
+      .order('created_at', { ascending: false })
+      .limit(200),
+  ]);
+
+  if (attemptsResult.error) throw attemptsResult.error;
+  if (generationResult.error) throw generationResult.error;
+
+  const attempts = attemptsResult.data || [];
+  const generationEvents = generationResult.data || [];
+  const userIds = [...new Set([
+    ...attempts.map((row) => row.user_id),
+    ...generationEvents.map((row) => row.user_id),
+  ].filter(Boolean))];
+  const profilesMap = await fetchProfilesMap(userIds);
+
+  const attemptPercents = attempts.map((row) => getAttemptPercent(row.metadata || {}));
+  const averageScore = attemptPercents.length
+    ? Math.round(attemptPercents.reduce((sum, value) => sum + value, 0) / attemptPercents.length)
+    : 0;
+
+  const lowScoreUsers = new Map();
+  const missedQuestions = new Map();
+
+  attempts.forEach((row) => {
+    const metadata = row.metadata || {};
+    const percent = getAttemptPercent(metadata);
+    const profile = profilesMap.get(row.user_id) || {};
+
+    if (percent < 60) {
+      const current = lowScoreUsers.get(row.user_id) || {
+        user_id: row.user_id,
+        user_name: sanitizeAuditText(profile.full_name || profile.username || profile.email || 'Unknown user', 120),
+        email: sanitizeAuditText(profile.email || '', 180),
+        attempts: 0,
+        latest_score: percent,
+        latest_at: row.created_at,
+        total_percent: 0,
+      };
+      current.attempts += 1;
+      current.total_percent += percent;
+      if (new Date(row.created_at).getTime() > new Date(current.latest_at).getTime()) {
+        current.latest_score = percent;
+        current.latest_at = row.created_at;
+      }
+      lowScoreUsers.set(row.user_id, current);
+    }
+
+    (Array.isArray(metadata.answers) ? metadata.answers : []).forEach((answer) => {
+      if (answer?.is_correct) return;
+      const key = answer?.question_id || sanitizeAuditText(answer?.question || '', 180);
+      if (!key) return;
+      const current = missedQuestions.get(key) || {
+        question_id: answer?.question_id || null,
+        question: sanitizeAuditText(answer?.question || '', 220),
+        correct_answer: sanitizeAuditText(answer?.correct_answer || '', 160),
+        quiz_id: metadata.quiz_id || null,
+        quiz_title: sanitizeAuditText(metadata.quiz_title || '', 180),
+        missed_count: 0,
+      };
+      current.missed_count += 1;
+      missedQuestions.set(key, current);
+    });
+  });
+
+  const recentAttempts = attempts.slice(0, 12).map((row) => {
+    const metadata = row.metadata || {};
+    const profile = profilesMap.get(row.user_id) || {};
+    return {
+      id: row.id,
+      user_id: row.user_id,
+      user_name: sanitizeAuditText(profile.full_name || profile.username || profile.email || 'Unknown user', 120),
+      quiz_id: metadata.quiz_id || null,
+      quiz_title: sanitizeAuditText(metadata.quiz_title || 'Quiz', 180),
+      score: Number(metadata.score || 0),
+      total: Number(metadata.total || 0),
+      percent: getAttemptPercent(metadata),
+      duration_seconds: Number(metadata.duration_seconds || 0),
+      session_type: metadata.session_type === 'practice' ? 'practice' : 'test',
+      timed_out: Boolean(metadata.timed_out),
+      created_at: row.created_at,
+    };
+  });
+
+  const failures = generationEvents
+    .filter((row) => row.event === AI_QUIZ_FAILED_EVENT)
+    .slice(0, 12)
+    .map((row) => {
+      const metadata = row.metadata || {};
+      const profile = profilesMap.get(row.user_id) || {};
+      return {
+        id: row.id,
+        user_id: row.user_id,
+        user_name: sanitizeAuditText(profile.full_name || profile.username || profile.email || 'Unknown user', 120),
+        message: sanitizeAuditText(metadata.message || 'Quiz generation failed.', 280),
+        source_study_guide_id: metadata.source_study_guide_id || null,
+        document_id: metadata.document_id || null,
+        created_at: row.created_at,
+      };
+    });
+
+  return {
+    metrics: {
+      attempt_count: attempts.length,
+      average_score: averageScore,
+      low_score_attempts: attempts.filter((row) => getAttemptPercent(row.metadata || {}) < 60).length,
+      quiz_generation_successes: generationEvents.filter((row) => row.event === AI_QUIZ_GENERATED_EVENT).length,
+      quiz_generation_failures: generationEvents.filter((row) => row.event === AI_QUIZ_FAILED_EVENT).length,
+    },
+    low_score_users: [...lowScoreUsers.values()]
+      .map(({ total_percent: totalPercent, ...entry }) => ({
+        ...entry,
+        average_score: entry.attempts ? Math.round(totalPercent / entry.attempts) : 0,
+      }))
+      .sort((a, b) => b.attempts - a.attempts || a.average_score - b.average_score)
+      .slice(0, 10),
+    most_missed_questions: [...missedQuestions.values()]
+      .sort((a, b) => b.missed_count - a.missed_count)
+      .slice(0, 10),
+    recent_attempts: recentAttempts,
+    generation_failures: failures,
+  };
+}
+
 router.get('/overview', async (req, res) => {
   try {
     const overview = await fetchOverview();
@@ -163,6 +314,16 @@ router.get('/overview', async (req, res) => {
   } catch (error) {
     console.error('[ADMIN] Failed to fetch overview:', error.message);
     res.status(500).json({ error: 'Failed to load admin overview.' });
+  }
+});
+
+router.get('/learning-insights', async (req, res) => {
+  try {
+    const insights = await fetchLearningInsights();
+    res.json(insights);
+  } catch (error) {
+    console.error('[ADMIN] Failed to fetch learning insights:', error.message);
+    res.status(500).json({ error: 'Failed to load learning insights.' });
   }
 });
 

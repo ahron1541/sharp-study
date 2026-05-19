@@ -243,6 +243,12 @@ export default function LibraryPage() {
       return;
     }
 
+    if (selectedType === 'quiz' && nextMode === 'manual') {
+      closeWizard(true);
+      navigate('/quiz/new');
+      return;
+    }
+
     setCreationModeState(nextMode);
     setLibraryParams({ mode: nextMode });
   };
@@ -305,20 +311,9 @@ export default function LibraryPage() {
       }
 
       if (selectedType === 'quiz') {
-        const { data: quiz, error: quizError } = await supabase
-          .from('quizzes')
-          .insert({ user_id: user.id, title: cleanTitle, document_id: null, is_archived: false })
-          .select('id')
-          .single();
-        if (quizError) throw quizError;
-
-        const { error: questionError } = await supabase.from('quiz_questions').insert({
-          quiz_id: quiz.id,
-          question: manualText.trim() || 'Write your question here',
-          options: ['Option A', 'Option B', 'Option C', 'Option D'],
-          correct_index: 0,
-        });
-        if (questionError) throw questionError;
+        closeWizard(true);
+        navigate('/quiz/new');
+        return;
       }
 
       await invalidateDashboardCache();

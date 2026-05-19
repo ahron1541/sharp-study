@@ -1,5 +1,5 @@
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Archive, ArrowLeft, ArrowRight, BookOpen, Eye, FileText, FolderKanban, GraduationCap, Layers3, LoaderCircle, MonitorCog, Moon, Search, Shield, Sparkles, Sun, Trash2, UserCog, UserPlus, Users } from 'lucide-react';
+import { Activity, AlertTriangle, Archive, ArrowLeft, ArrowRight, BarChart3, BookOpen, Check, Eye, FileText, FolderKanban, GraduationCap, Layers3, LoaderCircle, MonitorCog, Moon, Search, Shield, Sparkles, Sun, Trash2, TrendingDown, UserCog, UserPlus, Users } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -19,6 +19,7 @@ import {
   deleteAdminUser,
   fetchAdminContent,
   fetchAdminContentItem,
+  fetchAdminLearningInsights,
   fetchAdminOverview,
   fetchAdminUsers,
   updateAdminContent,
@@ -60,6 +61,7 @@ const CONTENT_TYPE_META = {
 const SECTION_TITLES = {
   overview: 'See the platform clearly.',
   users: 'Manage who gets access and why.',
+  insights: 'See how students are learning.',
   content: 'Moderate what users can actively access.',
   archived: 'Review materials that are stored away.',
   settings: 'Tune the admin workspace.',
@@ -69,11 +71,13 @@ export default function AdminPage() {
   const { profile } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [overview, setOverview] = useState(null);
+  const [learningInsights, setLearningInsights] = useState(null);
   const [users, setUsers] = useState([]);
   const [usersPagination, setUsersPagination] = useState({ page: 1, totalPages: 1, totalCount: 0 });
   const [contentItems, setContentItems] = useState([]);
   const [contentPagination, setContentPagination] = useState({ page: 1, totalPages: 1, totalCount: 0 });
   const [overviewLoading, setOverviewLoading] = useState(true);
+  const [insightsLoading, setInsightsLoading] = useState(false);
   const [usersLoading, setUsersLoading] = useState(false);
   const [contentLoading, setContentLoading] = useState(false);
   const [actionState, setActionState] = useState({ active: false, label: '', progress: 0 });
@@ -94,7 +98,7 @@ export default function AdminPage() {
 
   const section = useMemo(() => {
     const value = searchParams.get('section') || 'overview';
-    return ['overview', 'users', 'content', 'archived', 'settings'].includes(value) ? value : 'overview';
+    return ['overview', 'users', 'insights', 'content', 'archived', 'settings'].includes(value) ? value : 'overview';
   }, [searchParams]);
   const userFilters = useMemo(() => ({
     ...DEFAULT_USER_FILTERS,
@@ -156,6 +160,18 @@ export default function AdminPage() {
     }
   }, []);
 
+  const loadInsights = useCallback(async () => {
+    setInsightsLoading(true);
+    try {
+      const data = await fetchAdminLearningInsights();
+      setLearningInsights(data);
+    } catch (error) {
+      toast.error(error.message || 'Failed to load learning insights.');
+    } finally {
+      setInsightsLoading(false);
+    }
+  }, []);
+
   const loadUsers = useCallback(async () => {
     setUsersLoading(true);
     try {
@@ -202,6 +218,16 @@ export default function AdminPage() {
     }
     return undefined;
   }, [section, loadUsers]);
+
+  useEffect(() => {
+    if (section === 'insights') {
+      const timer = window.setTimeout(() => {
+        void loadInsights();
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    return undefined;
+  }, [section, loadInsights]);
 
   useEffect(() => {
     if (section === 'content' || section === 'archived') {
@@ -464,6 +490,8 @@ export default function AdminPage() {
                   ? 'Track account access, content flow, and moderation activity from one cleaner control surface.'
                   : section === 'users'
                     ? 'Create, edit, block, and review users without mixing that work into the content panel.'
+                    : section === 'insights'
+                      ? 'Review quiz attempts, low-score patterns, missed questions, and AI generation health without mixing analytics into moderation.'
                     : section === 'content'
                       ? 'Review active materials by owner and content type so moderation stays tied to real users.'
                       : section === 'archived'
@@ -474,7 +502,7 @@ export default function AdminPage() {
             <div className="rounded-[1.4rem] border border-border bg-surface-2 px-4 py-4 sm:rounded-[1.6rem] sm:px-5">
               <p className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Current focus</p>
               <p className="mt-2 text-lg font-black text-text">
-                {section === 'overview' ? 'System overview' : section === 'users' ? 'User management' : section === 'content' ? 'Active content' : section === 'archived' ? 'Archived content' : 'Admin settings'}
+                {section === 'overview' ? 'System overview' : section === 'users' ? 'User management' : section === 'insights' ? 'Learning analytics' : section === 'content' ? 'Active content' : section === 'archived' ? 'Archived content' : 'Admin settings'}
               </p>
               <p className="mt-1 text-sm text-text-muted">
                 {actionState.active ? `${actionState.label}...` : section === 'settings' ? 'Preferences sync to your saved account settings.' : 'Protected by backend role checks and audit logs.'}
@@ -492,6 +520,14 @@ export default function AdminPage() {
             recentActivity={recentActivity}
             contentStatusBreakdown={contentStatusBreakdown}
             onJump={(targetSection, updates = {}) => mergeSearchParams({ section: targetSection, ...updates })}
+          />
+        ) : null}
+
+        {section === 'insights' ? (
+          <LearningInsightsSection
+            loading={insightsLoading}
+            insights={learningInsights}
+            onRefresh={loadInsights}
           />
         ) : null}
 
@@ -817,6 +853,149 @@ function OverviewSection({ loading, metrics, activeMaterialTotal, archivedMateri
         </section>
       </div>
     </div>
+  );
+}
+
+function LearningInsightsSection({ loading, insights, onRefresh }) {
+  const metrics = insights?.metrics || {};
+  const lowScoreUsers = insights?.low_score_users || [];
+  const missedQuestions = insights?.most_missed_questions || [];
+  const recentAttempts = insights?.recent_attempts || [];
+  const failures = insights?.generation_failures || [];
+
+  if (loading && !insights) {
+    return (
+      <div className="space-y-5">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-32 animate-pulse rounded-[1.5rem] border border-border bg-surface" />)}
+        </div>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="h-80 animate-pulse rounded-[1.5rem] border border-border bg-surface" />
+          <div className="h-80 animate-pulse rounded-[1.5rem] border border-border bg-surface" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <section className="space-y-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <AdminStatCard label="Quiz Attempts" value={metrics.attempt_count || 0} hint="Submitted practice and test attempts." tone="accent" />
+        <AdminStatCard label="Average Score" value={`${metrics.average_score || 0}%`} hint="Mean score from recorded attempts." tone="success" />
+        <AdminStatCard label="Low Scores" value={metrics.low_score_attempts || 0} hint="Attempts below 60 percent." tone="warning" />
+        <AdminStatCard label="Generation Issues" value={metrics.quiz_generation_failures || 0} hint={`${metrics.quiz_generation_successes || 0} successful quiz generations logged.`} tone="neutral" />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(21rem,0.85fr)]">
+        <section className="rounded-[1.6rem] border border-border bg-surface p-4 shadow-card sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Learning signals</p>
+              <h2 className="mt-2 text-2xl font-black text-text">Questions students miss most.</h2>
+              <p className="mt-2 text-sm leading-7 text-text-muted">Use this to spot weak lesson areas, not to moderate users.</p>
+            </div>
+            <Button variant="secondary" size="sm" icon={<Activity size={15} />} loading={loading} onClick={onRefresh}>
+              Refresh
+            </Button>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {missedQuestions.length ? missedQuestions.map((item, index) => (
+              <article key={`${item.question_id || item.question}-${index}`} className="rounded-[1.35rem] border border-border bg-surface-2 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-text-muted">{item.quiz_title || 'Quiz'}</p>
+                    <h3 className="mt-2 text-base font-black leading-7 text-text">{item.question || 'Question text unavailable'}</h3>
+                    <p className="mt-2 text-sm text-text-muted">Correct answer: <strong className="text-text">{item.correct_answer || 'Unavailable'}</strong></p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-rose-500/10 px-3 py-1.5 text-sm font-black text-rose-500">{item.missed_count} missed</span>
+                </div>
+              </article>
+            )) : (
+              <EmptyInsight icon={BarChart3} title="No missed-question data yet" body="Submitted quiz attempts will populate this section." />
+            )}
+          </div>
+        </section>
+
+        <div className="space-y-5">
+          <section className="rounded-[1.6rem] border border-border bg-surface p-4 shadow-card sm:p-6">
+            <div className="flex items-center gap-2">
+              <TrendingDown className="text-amber-500" size={20} />
+              <h2 className="text-xl font-black text-text">Students to support</h2>
+            </div>
+            <div className="mt-4 space-y-3">
+              {lowScoreUsers.length ? lowScoreUsers.map((user) => (
+                <article key={user.user_id} className="rounded-[1.25rem] border border-border bg-surface-2 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black text-text">{user.user_name || 'Unknown user'}</p>
+                      <p className="mt-1 truncate text-xs font-semibold text-text-muted">{user.email || 'No email available'}</p>
+                    </div>
+                    <span className="rounded-full bg-amber-500/10 px-3 py-1 text-sm font-black text-amber-500">{user.average_score}% avg</span>
+                  </div>
+                  <p className="mt-3 text-xs font-semibold text-text-muted">{user.attempts} low-score attempt{user.attempts === 1 ? '' : 's'} • latest {formatDateTime(user.latest_at)}</p>
+                </article>
+              )) : (
+                <EmptyInsight icon={Users} title="No low-score pattern yet" body="This appears when attempts below 60 percent are recorded." />
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-[1.6rem] border border-border bg-surface p-4 shadow-card sm:p-6">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="text-rose-500" size={20} />
+              <h2 className="text-xl font-black text-text">AI generation failures</h2>
+            </div>
+            <div className="mt-4 space-y-3">
+              {failures.length ? failures.map((failure) => (
+                <article key={failure.id} className="rounded-[1.25rem] border border-border bg-surface-2 p-3">
+                  <p className="text-sm font-black text-text">{failure.user_name || 'Unknown user'}</p>
+                  <p className="mt-1 text-sm leading-6 text-text-muted">{failure.message}</p>
+                  <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-text-muted">{formatDateTime(failure.created_at)}</p>
+                </article>
+              )) : (
+                <EmptyInsight icon={Check} title="No recent quiz generation failures" body="Failures from the AI quiz generator will appear here." />
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <section className="rounded-[1.6rem] border border-border bg-surface p-4 shadow-card sm:p-6">
+        <div className="flex items-center gap-2">
+          <Activity className="text-accent" size={20} />
+          <h2 className="text-xl font-black text-text">Recent quiz activity</h2>
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="text-xs uppercase tracking-[0.16em] text-text-muted">
+              <tr>
+                <th className="px-3 py-3">Student</th>
+                <th className="px-3 py-3">Quiz</th>
+                <th className="px-3 py-3">Score</th>
+                <th className="px-3 py-3">Time</th>
+                <th className="px-3 py-3">Taken</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentAttempts.length ? recentAttempts.map((attempt) => (
+                <tr key={attempt.id} className="border-t border-border">
+                  <td className="px-3 py-3 font-bold text-text">{attempt.user_name}</td>
+                  <td className="px-3 py-3 text-text-muted">{attempt.quiz_title}</td>
+                  <td className="px-3 py-3 font-black text-text">{attempt.score}/{attempt.total} • {attempt.percent}%</td>
+                  <td className="px-3 py-3 text-text-muted">{formatDuration(attempt.duration_seconds)}</td>
+                  <td className="px-3 py-3 text-text-muted">{formatDateTime(attempt.created_at)}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan="5" className="px-3 py-8 text-center text-text-muted">No quiz attempts recorded yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
   );
 }
 
@@ -1531,6 +1710,18 @@ function MiniMetric({ icon, label, value }) {
   );
 }
 
+function EmptyInsight({ icon, title, body }) {
+  return (
+    <div className="rounded-[1.25rem] border border-dashed border-border bg-surface-2 p-4 text-sm">
+      <div className="flex items-center gap-2 text-text">
+        {createElement(icon, { size: 18, 'aria-hidden': true })}
+        <p className="font-black">{title}</p>
+      </div>
+      <p className="mt-2 leading-6 text-text-muted">{body}</p>
+    </div>
+  );
+}
+
 function InfoPill({ label, value }) {
   return (
     <div className="min-w-0 rounded-[1rem] border border-border bg-surface px-4 py-3 sm:rounded-[1.1rem]">
@@ -1683,6 +1874,14 @@ function formatBytes(value) {
   const unitIndex = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
   const normalized = size / (1024 ** unitIndex);
   return `${normalized.toFixed(normalized >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function formatDuration(totalSeconds = 0) {
+  const safeSeconds = Math.max(0, Number(totalSeconds) || 0);
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+  if (minutes < 1) return `${seconds}s`;
+  return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
 }
 
 function formatDateTime(value) {

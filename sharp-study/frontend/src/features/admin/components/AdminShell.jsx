@@ -1,4 +1,4 @@
-import { Archive, ChevronLeft, ChevronRight, FileText, LogOut, Menu, MonitorCog, Shield, Users, X } from 'lucide-react';
+import { Archive, BarChart3, ChevronLeft, ChevronRight, FileText, LogOut, Menu, MonitorCog, Shield, Users, X } from 'lucide-react';
 import { Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 
@@ -9,6 +9,7 @@ import versoLogo from '../../../assets/logo/verso_w_name.svg';
 const NAV_ITEMS = [
   { id: 'overview', label: 'Overview', icon: Shield },
   { id: 'users', label: 'User Management', icon: Users },
+  { id: 'insights', label: 'Learning Insights', icon: BarChart3 },
   { id: 'content', label: 'Active Content', icon: FileText },
   { id: 'archived', label: 'Archived Content', icon: Archive },
   { id: 'settings', label: 'Settings', icon: MonitorCog },
@@ -126,7 +127,7 @@ export default function AdminShell() {
                 <span>
                   <span className="block text-sm font-black">{item.label}</span>
                   <span className={`block text-xs ${active ? 'text-white/80' : 'text-text-muted'}`}>
-                    {item.id === 'overview' ? 'System health' : item.id === 'users' ? 'Roles and accounts' : item.id === 'content' ? 'Current materials' : 'Stored and archived'}
+                    {item.id === 'overview' ? 'System health' : item.id === 'users' ? 'Roles and accounts' : item.id === 'insights' ? 'Quiz learning signals' : item.id === 'content' ? 'Current materials' : item.id === 'archived' ? 'Stored and archived' : 'Admin preferences'}
                   </span>
                 </span>
               ) : null}

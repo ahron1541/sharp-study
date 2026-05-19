@@ -70,8 +70,79 @@ function stripCodeFences(text = '') {
   return String(text).trim().replace(/```json|```html|```/gi, '').trim();
 }
 
+function extractJsonPayload(text = '') {
+  const stripped = stripCodeFences(text);
+  if (!stripped) {
+    throw new SyntaxError('AI returned an empty JSON response.');
+  }
+
+  try {
+    JSON.parse(stripped);
+    return stripped;
+  } catch {
+    // Fall through to extraction. Some providers add a short preface despite the prompt.
+  }
+
+  const firstJsonChar = stripped.search(/[\[{]/);
+  if (firstJsonChar < 0) {
+    throw new SyntaxError('AI response did not include a JSON object or array.');
+  }
+
+  const stack = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let index = firstJsonChar; index < stripped.length; index += 1) {
+    const char = stripped[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === '{' || char === '[') {
+      stack.push(char);
+      continue;
+    }
+
+    if (char === '}' || char === ']') {
+      const opening = stack.pop();
+      const validPair = (opening === '{' && char === '}') || (opening === '[' && char === ']');
+      if (!validPair) {
+        throw new SyntaxError('AI response contained mismatched JSON brackets.');
+      }
+      if (stack.length === 0) {
+        return stripped.slice(firstJsonChar, index + 1);
+      }
+    }
+  }
+
+  throw new SyntaxError('AI response JSON was incomplete.');
+}
+
 function parseJsonResponse(text) {
-  return JSON.parse(stripCodeFences(text));
+  const payload = extractJsonPayload(text);
+  try {
+    return JSON.parse(payload);
+  } catch (error) {
+    try {
+      return JSON.parse(payload.replace(/,\s*([}\]])/g, '$1'));
+    } catch {
+      error.message = `Malformed AI JSON: ${error.message}`;
+      throw error;
+    }
+  }
 }
 
 async function withRetry(apiCall, options = {}) {
@@ -306,6 +377,74 @@ async function generateWithFallback(prompt, requestOptions = {}, label = 'genera
   throw lastError || new Error('All AI providers failed.');
 }
 
+async function generateJsonWithFallback(prompt, requestOptions = {}, label = 'JSON generation') {
+  const providers = getProviders();
+  if (!providers.length) {
+    throw new Error('No AI providers are configured. Add at least one API key.');
+  }
+
+  let lastError = null;
+
+  for (const provider of providers) {
+    if (isProviderCoolingDown(provider.name)) {
+      console.info(`[AI Provider] Skipping ${provider.name} for ${label} because it is cooling down after a quota hit.`);
+      continue;
+    }
+
+    try {
+      console.info(`[AI Provider] Trying ${provider.name} for ${label}`);
+      const content = await provider.run(prompt, requestOptions);
+      if (!content || !String(content).trim()) {
+        throw new Error(`${provider.name} returned an empty response.`);
+      }
+
+      let parsed = null;
+      try {
+        parsed = parseJsonResponse(content);
+      } catch (parseError) {
+        console.warn(`[AI Provider] ${provider.name} returned malformed JSON for ${label}. Trying one repair retry.`);
+        const repairPrompt = `${prompt}
+
+Your previous response was incomplete or malformed JSON.
+Return the complete answer again as valid JSON only. Do not include markdown, comments, or extra text.`;
+        const repairedContent = await provider.run(repairPrompt, requestOptions);
+        parsed = parseJsonResponse(repairedContent);
+      }
+
+      console.info(`[AI Provider] ${provider.name} returned valid JSON for ${label}`);
+      return parsed;
+    } catch (error) {
+      lastError = error;
+      console.warn(`[AI Provider] ${provider.name} failed for ${label}: ${error.message}`);
+
+      if (isAbortError(error) || requestOptions.signal?.aborted) {
+        throw error;
+      }
+
+      if (isQuotaError(error)) {
+        const retryDelayMs = parseRetryDelayMs(error) || 5 * 60 * 1000;
+        setProviderCooldown(provider.name, retryDelayMs);
+      }
+
+      const hasMoreProviders = providers[providers.length - 1] !== provider;
+      if (!hasMoreProviders) {
+        if (error instanceof SyntaxError || /json/i.test(error.message || '')) {
+          throw new Error('AI returned incomplete or malformed JSON. Please try again with a smaller lesson or fewer generated materials.');
+        }
+        throw error;
+      }
+
+      if (error instanceof SyntaxError || /json/i.test(error.message || '')) {
+        console.warn(`[AI Provider] Falling through to the next provider because ${provider.name} returned malformed JSON.`);
+      } else if (!isQuotaError(error) && !isBusyError(error)) {
+        console.warn(`[AI Provider] Falling through to next provider after non-quota failure from ${provider.name}.`);
+      }
+    }
+  }
+
+  throw lastError || new Error('All AI providers failed.');
+}
+
 function buildStudyGuidePrompt(extractedText) {
   return `
 You are an accessibility-focused study coach for students with ADHD and Dyslexia.
@@ -465,10 +604,10 @@ Format:
   "support_snippet": "Exact supporting phrase from the lesson"
 }, {
   "type": "identification",
-  "question": "Identify the term/person/process described.",
-  "correct_answer": "...",
-  "accepted_answers": ["...", "..."],
-  "explanation": "Why this answer is right, based only on the lesson.",
+  "question": "The ability of a system to continue operating during attacks or failures and recover quickly after disruption.",
+  "correct_answer": "Survivability",
+  "accepted_answers": ["Survivability"],
+  "explanation": "Why this keyword is right, based only on the lesson.",
   "support_snippet": "Exact supporting phrase from the lesson"
 }]
 
@@ -479,7 +618,10 @@ Rules:
 - Prefer important names, terms, steps, dates, causes, effects, examples, definitions, and comparisons.
 - Multiple-choice questions must have exactly 4 concise choices and exactly one correct answer.
 - Wrong choices should be plausible but clearly wrong from the lesson.
-- Identification answers should be short enough for a student to type.
+- Identification questions must be definition-to-keyword: the question is a definition, clue, role, event description, or factual description from the lesson; the answer is only the exact keyword, term, person, date, law, place, or short phrase.
+- Never write identification prompts like "Identify the term described", "What is being described", or other generic placeholder wording.
+- Identification answers should be short enough for a student to type, usually 1 to 5 words.
+- Do not include sentences as identification answers. Use the keyword only.
 - The support_snippet must copy a short phrase from the lesson that supports the answer.
 - If the lesson cannot support 24 questions, return fewer accurate questions instead of filler.
 
@@ -497,23 +639,19 @@ async function generateStudyGuide(extractedText, requestOptions = {}) {
 }
 
 async function generateKeyReferences(extractedText, requestOptions = {}) {
-  const raw = await generateWithFallback(buildKeyReferencesPrompt(extractedText), requestOptions, 'key reference generation');
-  return parseJsonResponse(raw);
+  return generateJsonWithFallback(buildKeyReferencesPrompt(extractedText), requestOptions, 'key reference generation');
 }
 
 async function generateDiscussionQuestions(extractedText, requestOptions = {}) {
-  const raw = await generateWithFallback(buildDiscussionPrompt(extractedText), requestOptions, 'discussion question generation');
-  return parseJsonResponse(raw);
+  return generateJsonWithFallback(buildDiscussionPrompt(extractedText), requestOptions, 'discussion question generation');
 }
 
 async function generateFlashcards(extractedText, requestOptions = {}) {
-  const raw = await generateWithFallback(buildFlashcardsPrompt(extractedText), requestOptions, 'flashcard generation');
-  return parseJsonResponse(raw);
+  return generateJsonWithFallback(buildFlashcardsPrompt(extractedText), requestOptions, 'flashcard generation');
 }
 
 async function generateQuiz(extractedText, requestOptions = {}) {
-  const raw = await generateWithFallback(buildQuizPrompt(extractedText), requestOptions, 'quiz generation');
-  return parseJsonResponse(raw);
+  return generateJsonWithFallback(buildQuizPrompt(extractedText), requestOptions, 'quiz generation');
 }
 
 module.exports = {

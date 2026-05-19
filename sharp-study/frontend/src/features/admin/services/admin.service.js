@@ -16,6 +16,10 @@ export function fetchAdminOverview() {
   return apiRequest('/api/admin/overview');
 }
 
+export function fetchAdminLearningInsights() {
+  return apiRequest('/api/admin/learning-insights');
+}
+
 export function fetchAdminUsers(params) {
   return apiRequest(`/api/admin/users${toQuery(params)}`);
 }

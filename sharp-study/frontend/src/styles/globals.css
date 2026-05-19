@@ -701,10 +701,53 @@ body {
   }
 }
 
+.quiz-donut {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 9999px;
+  background: conic-gradient(var(--color-accent), rgba(148, 163, 184, 0.18) 72%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 0.5rem), #000 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 0.5rem), #000 0);
+  animation: spin 0.9s linear infinite;
+}
+
+.quiz-fade-up {
+  animation: quiz-fade-up 220ms ease-out both;
+}
+
+.quiz-attention-glow {
+  animation: quiz-attention-glow 1.55s ease-in-out infinite;
+}
+
+@keyframes quiz-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes quiz-attention-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.35);
+    transform: translateY(0);
+  }
+  50% {
+    box-shadow: 0 0 0 0.45rem rgba(245, 158, 11, 0);
+    transform: translateY(-1px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .study-guide-fade-up,
   .study-guide-editor-shell,
-  .study-guide-skeleton-shimmer::after {
+  .study-guide-skeleton-shimmer::after,
+  .quiz-donut,
+  .quiz-fade-up,
+  .quiz-attention-glow {
     animation: none !important;
   }
 
