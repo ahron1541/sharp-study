@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Edit2, Layers3, Loader2, PanelLeftClose, PanelLeftOpen, Sparkles, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, Edit2, FileQuestion, Layers3, Loader2, PanelLeftClose, PanelLeftOpen, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useAuth } from '../../auth/context/AuthContext';
@@ -44,6 +44,7 @@ function readStudyGuideContentCache(guideId) {
       content,
       savedContent: sanitizeHtml(normalizeStudyGuideHtml(parsed.savedContent || content)),
       flashcardSetId: typeof parsed.flashcardSetId === 'string' ? parsed.flashcardSetId : '',
+      quizId: typeof parsed.quizId === 'string' ? parsed.quizId : '',
       lastSyncedAt: parsed.lastSyncedAt || parsed.cachedAt || null,
       cachedAt: parsed.cachedAt || null,
     };
@@ -107,6 +108,9 @@ export default function StudyGuidePage() {
   const [flashcardSetId, setFlashcardSetId] = useState(() => cachedContent?.flashcardSetId || '');
   const [flashcardGeneration, setFlashcardGeneration] = useState(null);
   const [flashcardProgress, setFlashcardProgress] = useState({ value: 0, title: '', detail: '' });
+  const [quizId, setQuizId] = useState(() => cachedContent?.quizId || '');
+  const [quizGeneration, setQuizGeneration] = useState(null);
+  const [quizProgress, setQuizProgress] = useState({ value: 0, title: '', detail: '' });
   const [pendingNavigation, setPendingNavigation] = useState(null);
   const [selectionToolbar, setSelectionToolbar] = useState({
     visible: false,
@@ -137,6 +141,7 @@ export default function StudyGuidePage() {
         setSavedContent(cached.savedContent);
         setLastSyncedAt(cached.lastSyncedAt);
         setFlashcardSetId(cached.flashcardSetId || '');
+        setQuizId(cached.quizId || '');
         lastSavedContentRef.current = cached.savedContent;
         setLoading(false);
         window.clearTimeout(skeletonTimer);
@@ -189,19 +194,46 @@ export default function StudyGuidePage() {
       setLoading(false);
 
       let nextFlashcardSetId = '';
+      let nextQuizId = '';
       if (data.document_id) {
-        const { data: existingSet } = await supabase
-          .from('flashcard_sets')
+        const [{ data: existingSet }, { data: existingQuiz }] = await Promise.all([
+          supabase
+            .from('flashcard_sets')
+            .select('id')
+            .eq('user_id', data.user_id)
+            .eq('document_id', data.document_id)
+            .eq('is_archived', false)
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from('quizzes')
+            .select('id')
+            .eq('user_id', data.user_id)
+            .eq('document_id', data.document_id)
+            .eq('is_archived', false)
+            .limit(1)
+            .maybeSingle(),
+        ]);
+        nextFlashcardSetId = existingSet?.id || '';
+        nextQuizId = existingQuiz?.id || '';
+        if (isMounted) {
+          setFlashcardSetId(nextFlashcardSetId);
+          setQuizId(nextQuizId);
+        }
+      } else if (isMounted) {
+        const { data: existingQuiz } = await supabase
+          .from('quizzes')
           .select('id')
           .eq('user_id', data.user_id)
-          .eq('document_id', data.document_id)
+          .is('document_id', null)
+          .eq('title', `Quiz: ${data.title}`)
           .eq('is_archived', false)
           .limit(1)
           .maybeSingle();
-        nextFlashcardSetId = existingSet?.id || '';
-        if (isMounted) setFlashcardSetId(nextFlashcardSetId);
-      } else if (isMounted) {
+
+        nextQuizId = existingQuiz?.id || '';
         setFlashcardSetId('');
+        setQuizId(nextQuizId);
       }
 
       writeStudyGuideContentCache(id, {
@@ -209,6 +241,7 @@ export default function StudyGuidePage() {
         content: nextContent,
         savedContent: normalizedContent,
         flashcardSetId: nextFlashcardSetId,
+        quizId: nextQuizId,
         lastSyncedAt: data.updated_at || data.created_at || null,
       });
     };
@@ -236,9 +269,10 @@ export default function StudyGuidePage() {
       content,
       savedContent: savedContent || content,
       flashcardSetId,
+      quizId,
       lastSyncedAt,
     });
-  }, [content, flashcardSetId, guide, id, lastSyncedAt, savedContent]);
+  }, [content, flashcardSetId, guide, id, lastSyncedAt, quizId, savedContent]);
 
   const sections = useMemo(() => extractStudyGuideSections(deferredContent), [deferredContent]);
   const lessonText = useMemo(
@@ -419,6 +453,75 @@ export default function StudyGuidePage() {
       toast.error(error.message || 'Could not start flashcard generation.');
     }
   }, [flashcardSetId, id, navigate]);
+
+  const handleCreateQuiz = useCallback(async () => {
+    if (quizId) {
+      navigate(`/quiz/${quizId}`);
+      return;
+    }
+
+    setQuizGeneration({ status: 'starting' });
+    setQuizProgress({
+      value: 12,
+      title: 'Preparing quiz',
+      detail: 'Reading this study guide and checking whether a quiz already exists.',
+    });
+
+    try {
+      const response = await apiRequest(`/api/ai/study-guide/${id}/quiz`, { method: 'POST' });
+      const queuedJob = response.job;
+      if (!queuedJob?.id) throw new Error('The AI queue did not return a valid job id.');
+
+      setQuizGeneration(queuedJob);
+      setQuizProgress({
+        value: queuedJob.progressValue || 12,
+        title: queuedJob.message || 'Queued for quiz',
+        detail: queuedJob.detail || 'Your quiz is waiting for generation.',
+      });
+
+      const token = localStorage.getItem('sharp-study-token');
+      const pollTimer = window.setInterval(async () => {
+        try {
+          const statusResponse = await fetch(`${API_URL}/api/ai/generate/${queuedJob.id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const body = await statusResponse.json().catch(() => ({}));
+          if (!statusResponse.ok) throw new Error(body.error || 'Failed to check quiz generation.');
+          const nextJob = body.job;
+          setQuizGeneration(nextJob);
+          setQuizProgress({
+            value: nextJob?.progressValue || 20,
+            title: nextJob?.message || 'Generating quiz',
+            detail: nextJob?.detail || 'The AI is writing supported questions and explanations.',
+          });
+
+          if (nextJob?.status === 'completed') {
+            window.clearInterval(pollTimer);
+            const createdQuiz = nextJob?.result?.created?.quiz;
+            if (createdQuiz?.id) {
+              setQuizId(createdQuiz.id);
+              setQuizGeneration(null);
+              toast.success(nextJob?.result?.alreadyExists ? 'Opening your existing quiz.' : 'Quiz is ready.');
+              navigate(`/quiz/${createdQuiz.id}`);
+            }
+          }
+
+          if (nextJob?.status === 'failed' || nextJob?.status === 'cancelled') {
+            window.clearInterval(pollTimer);
+            setQuizGeneration(null);
+            throw new Error(nextJob?.error || 'Quiz generation failed.');
+          }
+        } catch (error) {
+          window.clearInterval(pollTimer);
+          setQuizGeneration(null);
+          toast.error(error.message || 'Quiz generation failed.');
+        }
+      }, 2000);
+    } catch (error) {
+      setQuizGeneration(null);
+      toast.error(error.message || 'Could not start quiz generation.');
+    }
+  }, [id, navigate, quizId]);
 
   useEffect(() => {
     return () => stopReading();
@@ -957,8 +1060,8 @@ export default function StudyGuidePage() {
 
         {!editing && (
           <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
-            <div className="pointer-events-auto w-full max-w-3xl rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/94 p-3 shadow-[0_24px_64px_rgba(15,23,42,0.18)] backdrop-blur-xl">
-              <div className="grid gap-2 sm:grid-cols-3">
+            <div className="pointer-events-auto w-full max-w-4xl rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/94 p-3 shadow-[0_24px_64px_rgba(15,23,42,0.18)] backdrop-blur-xl">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 <button
                   type="button"
                   onClick={handleReadAloud}
@@ -974,7 +1077,7 @@ export default function StudyGuidePage() {
                 <button
                   type="button"
                   onClick={handleCreateFlashcards}
-                  disabled={Boolean(flashcardGeneration)}
+                  disabled={Boolean(flashcardGeneration || quizGeneration)}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 text-sm font-bold text-[color:var(--color-text)] transition-all duration-200 hover:bg-[color:var(--color-surface-2)] disabled:cursor-wait disabled:opacity-60"
                 >
                   {flashcardGeneration ? <Loader2 className="animate-spin" size={18} /> : flashcardSetId ? <Layers3 size={18} /> : <Sparkles size={18} />}
@@ -982,11 +1085,21 @@ export default function StudyGuidePage() {
                 </button>
                 <button
                   type="button"
+                  onClick={handleCreateQuiz}
+                  disabled={Boolean(flashcardGeneration || quizGeneration)}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 text-sm font-bold text-[color:var(--color-text)] transition-all duration-200 hover:bg-[color:var(--color-surface-2)] disabled:cursor-wait disabled:opacity-60"
+                >
+                  {quizGeneration ? <Loader2 className="animate-spin" size={18} /> : quizId ? <FileQuestion size={18} /> : <Sparkles size={18} />}
+                  <span>{quizId ? 'Try quiz now' : quizGeneration ? 'Creating quiz' : 'Create quiz'}</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     setActiveTab('guide');
                     setEditing(true);
                   }}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 text-sm font-bold text-[color:var(--color-accent-text)] transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95"
+                  disabled={Boolean(flashcardGeneration || quizGeneration)}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 text-sm font-bold text-[color:var(--color-accent-text)] transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95 disabled:cursor-wait disabled:opacity-60"
                 >
                   <Edit2 size={18} />
                   <span>Edit</span>
@@ -1032,6 +1145,39 @@ export default function StudyGuidePage() {
           </div>
           <div className="h-3 overflow-hidden rounded-full bg-[color:var(--color-surface-2)]">
             <div className="h-full rounded-full bg-[color:var(--color-accent)] transition-[width] duration-500" style={{ width: `${flashcardProgress.value || 10}%` }} />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[1, 2, 3].map((item) => (
+              <div key={item} className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
+                <div className="h-3 w-20 animate-pulse rounded-full bg-[color:var(--color-surface)]" />
+                <div className="mt-3 h-3 w-full animate-pulse rounded-full bg-[color:var(--color-surface)]" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(quizGeneration)}
+        onClose={() => {}}
+        title="Creating quiz"
+        size="md"
+        closeOnBackdrop={false}
+        closeOnEscape={false}
+        showCloseButton={false}
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Loader2 className="animate-spin text-[color:var(--color-accent)]" size={20} />
+            <div>
+              <p className="font-bold text-[color:var(--color-text)]">{quizProgress.title || 'Generating quiz'}</p>
+              <p className="text-sm leading-6 text-[color:var(--color-text-muted)]">
+                {quizProgress.detail || 'The lesson is being turned into supported questions, answers, and explanations.'}
+              </p>
+            </div>
+          </div>
+          <div className="h-3 overflow-hidden rounded-full bg-[color:var(--color-surface-2)]">
+            <div className="h-full rounded-full bg-[color:var(--color-accent)] transition-[width] duration-500" style={{ width: `${quizProgress.value || 10}%` }} />
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             {[1, 2, 3].map((item) => (

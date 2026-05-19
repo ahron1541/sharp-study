@@ -21,6 +21,7 @@ export default function LoginForm({ sessionTimeout = false, onBusyChange }) {
     clearFieldError, submit,
   } = useLoginForm();
   const busyLabel = transitionLabel || 'Logging in...';
+  const hasBusyOverlay = typeof onBusyChange === 'function';
 
   useEffect(() => {
     onBusyChange?.({ active: loading, label: busyLabel });
@@ -28,7 +29,7 @@ export default function LoginForm({ sessionTimeout = false, onBusyChange }) {
 
   return (
     <div className={styles.wrapper} aria-busy={loading}>
-      {loading && (
+      {loading && !hasBusyOverlay && (
         <div className={styles.loginProgress} aria-hidden="true">
           <span />
         </div>

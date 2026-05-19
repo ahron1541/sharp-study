@@ -154,6 +154,87 @@ function normalizeGeneratedFlashcards(items = [], sourceText = '') {
     .slice(0, 16);
 }
 
+function normalizeGeneratedQuiz(items = [], sourceText = '') {
+  const seen = new Set();
+
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const type = item?.type === 'identification' ? 'identification' : 'multiple_choice';
+      const question = sanitizeGeneratedPlainText(item?.question, 420);
+      const correctAnswer = sanitizeGeneratedPlainText(
+        item?.correct_answer || (Array.isArray(item?.choices) ? item.choices[item?.correct_index] : ''),
+        220
+      );
+      const explanation = sanitizeGeneratedPlainText(item?.explanation, 720);
+      const supportSnippet = sanitizeGeneratedPlainText(item?.support_snippet, 300);
+
+      if (!question || !correctAnswer) return null;
+      if (/review the lesson|cannot determine|not provided|not mentioned|image|diagram/i.test(`${question} ${correctAnswer}`)) {
+        return null;
+      }
+      if (supportSnippet && !hasEnoughSourceOverlap(correctAnswer, supportSnippet, sourceText)) {
+        return null;
+      }
+
+      const key = normalizeForMatch(question);
+      if (!key || seen.has(key)) return null;
+      seen.add(key);
+
+      if (type === 'identification') {
+        const acceptedAnswers = Array.from(new Set([
+          correctAnswer,
+          ...(Array.isArray(item?.accepted_answers) ? item.accepted_answers : []),
+        ].map((answer) => sanitizeGeneratedPlainText(answer, 160)).filter(Boolean))).slice(0, 6);
+
+        return {
+          question,
+          correct_index: 0,
+          options: {
+            type: 'identification',
+            choices: [],
+            correct_answer: correctAnswer,
+            accepted_answers: acceptedAnswers.length ? acceptedAnswers : [correctAnswer],
+            explanation: explanation || `The lesson supports "${correctAnswer}" as the answer.`,
+            support_snippet: supportSnippet,
+          },
+        };
+      }
+
+      const choices = Array.isArray(item?.choices)
+        ? item.choices.map((choice) => sanitizeGeneratedPlainText(choice, 180)).filter(Boolean)
+        : Array.isArray(item?.options)
+          ? item.options.map((choice) => sanitizeGeneratedPlainText(choice, 180).replace(/^[A-D]\.\s*/i, '')).filter(Boolean)
+          : [];
+      const uniqueChoices = Array.from(new Set(choices)).slice(0, 4);
+      const correctIndex = Number.isInteger(item?.correct_index) ? item.correct_index : uniqueChoices.indexOf(correctAnswer);
+
+      if (uniqueChoices.length !== 4 || correctIndex < 0 || correctIndex > 3) return null;
+
+      const wrongExplanations = Array.isArray(item?.wrong_explanations)
+        ? item.wrong_explanations.map((entry) => sanitizeGeneratedPlainText(entry, 220))
+        : [];
+
+      return {
+        question,
+        correct_index: correctIndex,
+        options: {
+          type: 'multiple_choice',
+          choices: uniqueChoices,
+          correct_answer: uniqueChoices[correctIndex] || correctAnswer,
+          explanation: explanation || `The lesson supports "${uniqueChoices[correctIndex] || correctAnswer}" as the correct answer.`,
+          wrong_explanations: uniqueChoices.map((choice, index) => (
+            index === correctIndex
+              ? ''
+              : wrongExplanations[index] || `${choice} does not match the supporting lesson detail for this question.`
+          )),
+          support_snippet: supportSnippet,
+        },
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 24);
+}
+
 function normalizeGeneratedDiscussionQuestions(items = [], sourceText = '') {
   return items
     .map((item, index) => {
@@ -303,7 +384,7 @@ async function processGenerationJob(job) {
   console.log(`[AI Queue] Starting job ${job.id} for user ${userId}`);
   updateJob(job.id, {
     message: 'Extracting readable text',
-    detail: sourceStudyGuideId ? 'Reading the saved study guide before creating flashcards.' : 'Looking for usable content from your document.',
+    detail: sourceStudyGuideId ? 'Reading the saved study guide before creating the requested material.' : 'Looking for usable content from your document.',
     progressValue: 32,
   });
 
@@ -320,25 +401,50 @@ async function processGenerationJob(job) {
       throw new Error('Study guide not found.');
     }
 
-    let existingSetQuery = supabaseAdmin
-      .from('flashcard_sets')
-      .select('id, title')
-      .eq('user_id', userId)
-      .eq('is_archived', false);
+    if (generateOptions.includes('flashcards')) {
+      let existingSetQuery = supabaseAdmin
+        .from('flashcard_sets')
+        .select('id, title')
+        .eq('user_id', userId)
+        .eq('is_archived', false);
 
-    existingSetQuery = guide.document_id
-      ? existingSetQuery.eq('document_id', guide.document_id)
-      : existingSetQuery.eq('source_study_guide_id', guide.id);
+      existingSetQuery = guide.document_id
+        ? existingSetQuery.eq('document_id', guide.document_id)
+        : existingSetQuery.eq('source_study_guide_id', guide.id);
 
-    const { data: existingSet, error: existingSetError } = await existingSetQuery.maybeSingle();
-    if (existingSetError) throw existingSetError;
-    if (existingSet) {
-      return {
-        success: true,
-        generated: ['flashcards'],
-        created: { flashcards: existingSet },
-        alreadyExists: true,
-      };
+      const { data: existingSet, error: existingSetError } = await existingSetQuery.maybeSingle();
+      if (existingSetError) throw existingSetError;
+      if (existingSet) {
+        return {
+          success: true,
+          generated: ['flashcards'],
+          created: { flashcards: existingSet },
+          alreadyExists: true,
+        };
+      }
+    }
+
+    if (generateOptions.includes('quiz')) {
+      let existingQuizQuery = supabaseAdmin
+        .from('quizzes')
+        .select('id, title')
+        .eq('user_id', userId)
+        .eq('is_archived', false);
+
+      existingQuizQuery = guide.document_id
+        ? existingQuizQuery.eq('document_id', guide.document_id)
+        : existingQuizQuery.is('document_id', null).eq('title', `Quiz: ${guide.title}`);
+
+      const { data: existingQuiz, error: existingQuizError } = await existingQuizQuery.limit(1).maybeSingle();
+      if (existingQuizError) throw existingQuizError;
+      if (existingQuiz) {
+        return {
+          success: true,
+          generated: ['quiz'],
+          created: { quiz: existingQuiz },
+          alreadyExists: true,
+        };
+      }
     }
 
     sourceStudyGuide = guide;
@@ -479,19 +585,30 @@ async function processGenerationJob(job) {
     if (generateOptions.includes('quiz')) {
       updateJob(job.id, {
         message: 'Generating quiz',
-        detail: 'Gemini AI is creating quiz questions from your lesson.',
+        detail: 'Gemini AI is creating supported questions, answer keys, and explanations from your lesson.',
         progressValue: 64,
       });
 
-      const questions = await generateQuiz(cleanedExtractedText, requestOptions);
-      const { data: quiz } = await supabaseAdmin
+      const generatedQuestions = await generateQuiz(cleanedExtractedText, requestOptions);
+      const questions = normalizeGeneratedQuiz(generatedQuestions, cleanedExtractedText);
+      if (!questions.length) {
+        throw new Error('The AI response did not contain enough lesson-supported quiz questions. Please try again with clearer lesson content.');
+      }
+
+      const { data: quiz, error: quizError } = await supabaseAdmin
         .from('quizzes')
-        .insert({ user_id: userId, document_id: doc.id, title: `Quiz: ${docTitle}` })
+        .insert({
+          user_id: userId,
+          document_id: doc?.id || null,
+          title: `Quiz: ${sourceStudyGuide?.title || docTitle}`,
+        })
         .select()
         .single();
 
+      if (quizError) throw quizError;
+
       if (quiz && questions && questions.length > 0) {
-        await supabaseAdmin.from('quiz_questions').insert(
+        const { error: questionError } = await supabaseAdmin.from('quiz_questions').insert(
           questions.map((q) => ({
             quiz_id: quiz.id,
             question: q.question,
@@ -499,6 +616,10 @@ async function processGenerationJob(job) {
             correct_index: q.correct_index,
           }))
         );
+        if (questionError) {
+          await supabaseAdmin.from('quizzes').delete().eq('id', quiz.id);
+          throw questionError;
+        }
       }
 
       createdRecords.quiz = quiz ? { id: quiz.id, title: quiz.title } : null;
@@ -614,6 +735,37 @@ async function generateFlashcardsFromStudyGuide(req, res) {
   }
 }
 
+async function generateQuizFromStudyGuide(req, res) {
+  try {
+    const sourceStudyGuideId = String(req.params.id || '').trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sourceStudyGuideId)) {
+      return res.status(400).json({ error: 'Invalid study guide id.' });
+    }
+
+    const abortController = new AbortController();
+    const job = enqueueJob({
+      userId: req.user.id,
+      type: 'quiz',
+      payload: {
+        file: null,
+        generateOptions: ['quiz'],
+        userId: req.user.id,
+        sourceStudyGuideId,
+        abortController,
+      },
+    });
+
+    return res.status(202).json({ success: true, job });
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ error: err.message, job: err.job || null });
+    }
+
+    console.error('[AI] Could not queue study guide quiz:', err.message);
+    return res.status(500).json({ error: 'Could not queue quiz generation for this study guide.' });
+  }
+}
+
 async function getGenerationStatus(req, res) {
   const job = getJob(req.params.jobId);
   if (!job || job.userId !== req.user.id) {
@@ -636,5 +788,6 @@ module.exports = {
   cancelGeneration,
   generateFlashcardsFromStudyGuide,
   generateMaterials,
+  generateQuizFromStudyGuide,
   getGenerationStatus,
 };

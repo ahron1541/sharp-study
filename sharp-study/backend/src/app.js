@@ -10,10 +10,10 @@ const adminRoutes = require('./features/admin/admin.routes');
 const dashboardRoutes = require('./features/dashboard/dashboard.routes');
 const flashcardRoutes = require('./features/flashcards/flashcards.routes');
 const studyGuideRoutes = require('./features/study-guides/studyGuide.routes');
+const quizRoutes = require('./features/quizzes/quizzes.routes');
 
 // --- Temporarily commented out until we build these folders! ---
 // const documentRoutes = require('./features/documents/documents.routes');
-// const quizRoutes = require('./features/quizzes/quizzes.routes');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -58,10 +58,10 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/flashcards', flashcardRoutes);
 app.use('/api/study-guides', studyGuideRoutes);
+app.use('/api/quizzes', quizRoutes);
 
 // --- Temporarily disabled routes ---
 // app.use('/api/documents', documentRoutes);
-// app.use('/api/quizzes', quizRoutes);
 
 // Health check route
 app.get('/health', (req, res) => {

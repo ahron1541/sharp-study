@@ -451,18 +451,41 @@ ${extractedText.substring(0, 10000)}
 
 function buildQuizPrompt(extractedText) {
   return `
-Create 10 multiple-choice quiz questions from the text.
+Create up to 24 high-accuracy quiz questions from the lesson text below.
 Respond ONLY with a valid JSON array. No markdown, no explanation.
 Format:
 [{
+  "type": "multiple_choice",
   "question": "What is ...?",
-  "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
-  "correct_index": 0
+  "choices": ["...", "...", "...", "..."],
+  "correct_index": 0,
+  "correct_answer": "...",
+  "explanation": "Why the correct answer is right, based only on the lesson.",
+  "wrong_explanations": ["Why choice 1 is wrong", "Why choice 2 is wrong", "Why choice 3 is wrong", "Why choice 4 is wrong"],
+  "support_snippet": "Exact supporting phrase from the lesson"
+}, {
+  "type": "identification",
+  "question": "Identify the term/person/process described.",
+  "correct_answer": "...",
+  "accepted_answers": ["...", "..."],
+  "explanation": "Why this answer is right, based only on the lesson.",
+  "support_snippet": "Exact supporting phrase from the lesson"
 }]
 
-Text:
+Rules:
+- Use a mix of multiple_choice and identification questions when the lesson supports both.
+- Every answer must be supported only by the lesson text.
+- Do not invent facts, dates, names, definitions, examples, or choices.
+- Prefer important names, terms, steps, dates, causes, effects, examples, definitions, and comparisons.
+- Multiple-choice questions must have exactly 4 concise choices and exactly one correct answer.
+- Wrong choices should be plausible but clearly wrong from the lesson.
+- Identification answers should be short enough for a student to type.
+- The support_snippet must copy a short phrase from the lesson that supports the answer.
+- If the lesson cannot support 24 questions, return fewer accurate questions instead of filler.
+
+Lesson text:
 """
-${extractedText.substring(0, 6000)}
+${extractedText.substring(0, 12000)}
 """
   `;
 }
