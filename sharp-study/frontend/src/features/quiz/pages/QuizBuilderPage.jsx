@@ -5,9 +5,7 @@ import {
   ArrowLeft,
   ChevronDown,
   ChevronUp,
-  Eye,
   FileQuestion,
-  Loader2,
   Plus,
   Save,
   Settings2,
@@ -193,11 +191,35 @@ export default function QuizBuilderPage() {
   const [loaded, setLoaded] = useState(false);
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState('');
   const [leaveModal, setLeaveModal] = useState({ open: false, action: null });
+  const [saveStatus, setSaveStatus] = useState({
+    active: false,
+    progress: 100,
+    title: 'Ready',
+    detail: 'Your changes are protected while you work.',
+  });
   const autosaveTimerRef = useRef(null);
+  const saveLockRef = useRef(false);
 
   const currentSnapshot = useMemo(() => snapshotOf(title, questions, autosaveRemote), [autosaveRemote, questions, title]);
   const dirty = loaded && currentSnapshot !== lastSavedSnapshot;
   const validQuestionCount = questions.filter((question) => cleanText(question.question)).length;
+  const visibleSaveStatus = useMemo(() => {
+    if (saving || autosaving || saveStatus.active) return saveStatus;
+    if (dirty) {
+      return {
+        active: false,
+        progress: autosaveRemote && quizId ? 48 : 28,
+        title: autosaveRemote && quizId ? 'Auto-save is queued' : 'Changes are ready',
+        detail: autosaveRemote && quizId ? 'Recent edits will save automatically in a moment.' : 'Use Save when you want to keep this version.',
+      };
+    }
+    return {
+      active: false,
+      progress: 100,
+      title: 'All changes saved',
+      detail: 'Your quiz is up to date.',
+    };
+  }, [autosaveRemote, autosaving, dirty, quizId, saveStatus, saving]);
 
   const loadQuiz = useCallback(async () => {
     setLoading(true);
@@ -292,18 +314,37 @@ export default function QuizBuilderPage() {
   }, [dirty, navigate]);
 
   async function saveQuiz({ silent = false } = {}) {
-    if (saving || autosaving) return null;
+    if (saveLockRef.current || saving || autosaving) return null;
+    saveLockRef.current = true;
 
     try {
+      setSaveStatus({
+        active: true,
+        progress: 16,
+        title: silent ? 'Auto-saving edits' : 'Preparing to save',
+        detail: 'Checking required fields and cleaning quiz text.',
+      });
       const payload = buildPayload(title, questions);
       if (silent) setAutosaving(true);
       else setSaving(true);
 
+      setSaveStatus({
+        active: true,
+        progress: 44,
+        title: silent ? 'Updating saved copy' : 'Saving quiz',
+        detail: 'Saving the latest title, questions, answers, and explanations.',
+      });
       const response = await apiRequest(quizId ? `/api/quizzes/${quizId}` : '/api/quizzes', {
         method: quizId ? 'PATCH' : 'POST',
         body: JSON.stringify(payload),
       });
 
+      setSaveStatus({
+        active: true,
+        progress: 78,
+        title: 'Refreshing builder',
+        detail: 'Loading the saved version back into the editor.',
+      });
       const nextId = response.quiz?.id || quizId;
       setQuizId(nextId);
       setTitle(cleanText(response.quiz?.title || payload.title, 200));
@@ -320,21 +361,36 @@ export default function QuizBuilderPage() {
         navigate(`/quiz/${nextId}/edit`, { replace: true });
       }
 
+      setSaveStatus({
+        active: true,
+        progress: 100,
+        title: 'Save complete',
+        detail: 'Your quiz is up to date.',
+      });
+      window.setTimeout(() => {
+        setSaveStatus({
+          active: false,
+          progress: 100,
+          title: 'All changes saved',
+          detail: 'Your quiz is up to date.',
+        });
+      }, 900);
       if (!silent) toast.success('Quiz saved.');
       return response;
     } catch (error) {
+      setSaveStatus({
+        active: false,
+        progress: 0,
+        title: 'Save needs attention',
+        detail: error.message || 'Something stopped the save. Review the message and try again.',
+      });
       toast.error(error.message || 'Failed to save quiz.');
       return null;
     } finally {
+      saveLockRef.current = false;
       setSaving(false);
       setAutosaving(false);
     }
-  }
-
-  async function saveAndPreview() {
-    const response = await saveQuiz();
-    const nextId = response?.quiz?.id || quizId;
-    if (nextId) navigate(`/quiz/${nextId}`);
   }
 
   function updateQuestion(index, patch) {
@@ -409,15 +465,17 @@ export default function QuizBuilderPage() {
             <div className="min-w-0 flex-1">
               <button
                 type="button"
-                onClick={() => guardedNavigate(() => navigate('/library?tab=quiz'))}
+                onClick={() => guardedNavigate(() => navigate(quizId ? `/quiz/${quizId}` : '/library?tab=quiz'))}
                 className="mb-3 inline-flex items-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-2 text-sm font-bold text-[color:var(--color-text-muted)]"
+                aria-label={quizId ? 'Back to quiz preview' : 'Back to library'}
+                title={quizId ? 'Back to quiz preview' : 'Back to library'}
               >
-                <ArrowLeft size={16} />
-                Library
+                <ArrowLeft size={16} role="img" aria-label={quizId ? 'Back to quiz preview icon' : 'Back to library icon'} />
+                {quizId ? 'Quiz preview' : 'Library'}
               </button>
               <div className="flex items-center gap-3">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
-                  <FileQuestion size={23} aria-hidden="true" />
+                  <FileQuestion size={23} role="img" aria-label={quizId ? 'Edit quiz icon' : 'Create quiz icon'} />
                 </span>
                 <div className="min-w-0">
                   <p className="text-xs font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">{quizId ? 'Edit quiz' : 'Create quiz'}</p>
@@ -432,18 +490,11 @@ export default function QuizBuilderPage() {
                 onClick={() => saveQuiz()}
                 disabled={saving || autosaving}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-2.5 font-black text-[color:var(--color-text)] disabled:opacity-60"
+                aria-label="Save quiz"
+                title="Save quiz"
               >
-                {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                {saving ? <SaveProgressDonut progress={visibleSaveStatus.progress} size="sm" /> : <Save size={18} role="img" aria-label="Save quiz icon" />}
                 Save
-              </button>
-              <button
-                type="button"
-                onClick={saveAndPreview}
-                disabled={saving || autosaving}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 py-2.5 font-black text-[color:var(--color-accent-text)] disabled:opacity-60"
-              >
-                <Eye size={18} />
-                Preview quiz
               </button>
             </div>
           </div>
@@ -459,28 +510,46 @@ export default function QuizBuilderPage() {
                 placeholder="Untitled quiz"
               />
             </label>
-            <div className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-black text-[color:var(--color-text)]">Autosave to database</p>
-                  <p className="mt-1 text-xs font-semibold text-[color:var(--color-text-muted)]">
-                    Local draft is always saved. Database autosave starts after the first manual save.
-                  </p>
+            <div className="grid gap-3">
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-[color:var(--color-text)]">Auto-save</p>
+                    <p className="mt-1 text-xs font-semibold leading-5 text-[color:var(--color-text-muted)]">
+                      Keeps recent edits protected while you work. You can still save manually anytime.
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-xs font-black uppercase tracking-[0.12em] text-[color:var(--color-text-muted)]">
+                      {autosaveRemote ? 'On' : 'Off'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setAutosaveRemote((value) => !value)}
+                      aria-pressed={autosaveRemote}
+                      className={`relative inline-flex h-9 w-16 shrink-0 items-center overflow-hidden rounded-full border p-1 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--color-accent)] ${
+                        autosaveRemote
+                          ? 'border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/85'
+                          : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)]'
+                      }`}
+                      title="Toggle auto-save"
+                    >
+                      <span className={`h-7 w-7 rounded-full bg-white shadow-[0_4px_14px_rgba(15,23,42,0.25)] transition-transform duration-200 ${autosaveRemote ? 'translate-x-7' : 'translate-x-0'}`} />
+                      <span className="sr-only">Toggle auto-save</span>
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setAutosaveRemote((value) => !value)}
-                  aria-pressed={autosaveRemote}
-                  className={`relative h-8 w-14 rounded-full border transition ${autosaveRemote ? 'border-[color:var(--color-accent)] bg-[color:var(--color-accent)]' : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)]'}`}
-                  title="Toggle database autosave"
-                >
-                  <span className={`absolute top-1 h-6 w-6 rounded-full bg-white transition ${autosaveRemote ? 'left-7' : 'left-1'}`} />
-                  <span className="sr-only">Toggle database autosave</span>
-                </button>
               </div>
-              <p className="mt-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">
-                {autosaving ? 'Autosaving...' : dirty ? 'Unsaved local changes' : 'Saved'}
-              </p>
+
+              <div className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3" aria-live="polite">
+                <div className="flex items-center gap-3">
+                  <SaveProgressDonut progress={visibleSaveStatus.progress} active={saving || autosaving || visibleSaveStatus.active} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-[color:var(--color-text)]">{visibleSaveStatus.title}</p>
+                    <p className="mt-1 text-xs font-semibold leading-5 text-[color:var(--color-text-muted)]">{visibleSaveStatus.detail}</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -504,7 +573,7 @@ export default function QuizBuilderPage() {
           <aside className="space-y-3 lg:sticky lg:top-4 lg:self-start">
             <section className="rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
               <div className="flex items-center gap-2">
-                <Settings2 className="text-[color:var(--color-accent)]" size={19} aria-hidden="true" />
+                <Settings2 className="text-[color:var(--color-accent)]" size={19} role="img" aria-label="Builder summary icon" />
                 <h2 className="font-black text-[color:var(--color-text)]">Builder summary</h2>
               </div>
               <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
@@ -519,21 +588,53 @@ export default function QuizBuilderPage() {
               type="button"
               onClick={() => setQuestions((current) => [...current, createBlankQuestion('multiple_choice')])}
               className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 py-3 font-black text-[color:var(--color-accent-text)]"
+              aria-label="Add multiple choice question"
+              title="Add multiple choice question"
             >
-              <Plus size={18} />
+              <Plus size={18} role="img" aria-label="Add multiple choice icon" />
               Add multiple choice
             </button>
             <button
               type="button"
               onClick={() => setQuestions((current) => [...current, createBlankQuestion('identification')])}
               className="flex w-full items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-3 font-black text-[color:var(--color-text)]"
+              aria-label="Add identification question"
+              title="Add identification question"
             >
-              <Plus size={18} />
+              <Plus size={18} role="img" aria-label="Add identification icon" />
               Add identification
             </button>
           </aside>
         </section>
       </main>
+
+      <Modal
+        isOpen={saving || autosaving || saveStatus.active}
+        onClose={() => {}}
+        title={visibleSaveStatus.title}
+        size="md"
+        closeOnBackdrop={false}
+        closeOnEscape={false}
+        showCloseButton={false}
+      >
+        <div className="space-y-5 text-center" aria-live="assertive">
+          <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]">
+            <SaveProgressDonut progress={visibleSaveStatus.progress} active size="lg" />
+          </div>
+          <div>
+            <p className="text-xl font-black text-[color:var(--color-text)]">{visibleSaveStatus.title}</p>
+            <p className="mx-auto mt-2 max-w-sm text-sm font-semibold leading-7 text-[color:var(--color-text-muted)]">
+              {visibleSaveStatus.detail}
+            </p>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-[color:var(--color-surface-2)]" role="progressbar" aria-valuenow={visibleSaveStatus.progress} aria-valuemin={0} aria-valuemax={100}>
+            <div className="h-full rounded-full bg-[color:var(--color-accent)] transition-[width] duration-300" style={{ width: `${visibleSaveStatus.progress}%` }} />
+          </div>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-[color:var(--color-text-muted)]">
+            Please keep this page open
+          </p>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={leaveModal.open}
@@ -544,7 +645,7 @@ export default function QuizBuilderPage() {
         <div className="space-y-4 text-sm leading-7 text-[color:var(--color-text-muted)]">
           <div className="flex gap-3 rounded-[1.25rem] border border-amber-500/30 bg-amber-500/10 p-4">
             <AlertTriangle className="mt-1 shrink-0 text-amber-500" size={20} aria-hidden="true" />
-            <p>Your draft is saved in this browser, but unsaved database changes will not appear on other devices until you save.</p>
+            <p>You have changes that are not fully saved yet. If you leave now, your latest edits may not be available later.</p>
           </div>
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <button
@@ -552,7 +653,7 @@ export default function QuizBuilderPage() {
               onClick={discardAndLeave}
               className="rounded-2xl border border-rose-500/40 px-5 py-3 font-bold text-rose-500"
             >
-              Discard local draft
+              Discard changes
             </button>
             <button
               type="button"
@@ -591,13 +692,13 @@ function QuestionEditor({ question, index, total, onChange, onChoiceChange, onMo
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => onMove(-1)} disabled={index === 0} className="rounded-xl border border-[color:var(--color-border)] p-2 text-[color:var(--color-text-muted)] disabled:opacity-40" aria-label="Move question up" title="Move question up">
-            <ChevronUp size={17} />
+            <ChevronUp size={17} aria-hidden="true" />
           </button>
           <button type="button" onClick={() => onMove(1)} disabled={index === total - 1} className="rounded-xl border border-[color:var(--color-border)] p-2 text-[color:var(--color-text-muted)] disabled:opacity-40" aria-label="Move question down" title="Move question down">
-            <ChevronDown size={17} />
+            <ChevronDown size={17} aria-hidden="true" />
           </button>
           <button type="button" onClick={onDelete} className="rounded-xl border border-rose-500/30 p-2 text-rose-500" aria-label="Delete question" title="Delete question">
-            <Trash2 size={17} />
+            <Trash2 size={17} aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -699,5 +800,30 @@ function SummaryPill({ label, value }) {
       <dt className="text-xs font-black uppercase tracking-[0.13em] text-[color:var(--color-text-muted)]">{label}</dt>
       <dd className="mt-1 text-xl font-black text-[color:var(--color-text)]">{value}</dd>
     </div>
+  );
+}
+
+function SaveProgressDonut({ progress = 0, active = false, size = 'md' }) {
+  const safeProgress = Math.max(0, Math.min(100, Number(progress) || 0));
+  const degrees = Math.round((safeProgress / 100) * 360);
+  const dimensions = size === 'sm' ? 'h-5 w-5' : size === 'lg' ? 'h-16 w-16' : 'h-11 w-11';
+  const innerDimensions = size === 'sm' ? 'inset-[4px]' : size === 'lg' ? 'inset-[10px]' : 'inset-[7px]';
+  const textSize = size === 'lg' ? 'text-sm' : 'text-[0.62rem]';
+
+  return (
+    <span
+      className={`relative inline-flex shrink-0 items-center justify-center rounded-full ${dimensions} ${active ? 'quiz-save-donut-active' : ''}`}
+      style={{
+        background: `conic-gradient(var(--color-accent) ${degrees}deg, rgba(148, 163, 184, 0.24) 0deg)`,
+      }}
+      role="img"
+      aria-label={`Save progress ${safeProgress}%`}
+      title={`Save progress ${safeProgress}%`}
+    >
+      <span className={`absolute rounded-full bg-[color:var(--color-surface)] ${innerDimensions}`} />
+      {size === 'sm' ? null : (
+        <span className={`relative font-black text-[color:var(--color-text)] ${textSize}`}>{safeProgress}</span>
+      )}
+    </span>
   );
 }

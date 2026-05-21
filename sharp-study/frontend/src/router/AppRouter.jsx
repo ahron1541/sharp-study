@@ -77,6 +77,7 @@ export default function AppRouter() {
             <Route path="/study-guide/new" element={<StudyGuideCreatePage />} />
             <Route path="/study-guide/:id" element={<StudyGuidePage />} />
             <Route path="/flashcards/new" element={<FlashcardsCreatePage />} />
+            <Route path="/flashcards/:id/edit" element={<FlashcardsCreatePage />} />
             <Route path="/flashcards/:id" element={<FlashcardsPage />} />
             <Route path="/quiz/new" element={<QuizBuilderPage />} />
             <Route path="/quiz/:id/edit" element={<QuizBuilderPage />} />

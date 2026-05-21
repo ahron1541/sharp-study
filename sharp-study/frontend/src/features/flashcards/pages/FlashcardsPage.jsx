@@ -24,6 +24,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../auth/context/AuthContext';
 import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
+import { apiRequest } from '../../../config/api';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
 
 const HINT_DELAY_MS = 45000;
@@ -148,7 +149,6 @@ export default function FlashcardsPage() {
   const [flipped, setFlipped] = useState(false);
   const [hintVisible, setHintVisible] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
-  const [editModal, setEditModal] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [speaking, setSpeaking] = useState(false);
 
@@ -177,7 +177,7 @@ export default function FlashcardsPage() {
     try {
       localStorage.setItem(progressKey(id), JSON.stringify({ ...nextProgress, updatedAt: new Date().toISOString() }));
     } catch {
-      toast.error('Your browser blocked local progress saving.');
+      toast.error('This device blocked progress recovery.');
     }
   }, [id]);
 
@@ -235,7 +235,7 @@ export default function FlashcardsPage() {
       if (insertError) throw insertError;
       progressRowIdRef.current = inserted.id;
     } catch (error) {
-      console.warn('[FlashcardsProgress] Database sync failed; local progress is still saved.', error);
+      console.warn('[FlashcardsProgress] Progress update failed; review can still continue.', error);
     }
   }, [cards.length, id, supabase, user]);
 
@@ -508,7 +508,7 @@ export default function FlashcardsPage() {
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.target instanceof HTMLElement && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) return;
-      if (showTutorial || editModal || deleteTarget) return;
+      if (showTutorial || deleteTarget) return;
       if (event.key === ' ') {
         event.preventDefault();
         flipCard();
@@ -521,46 +521,13 @@ export default function FlashcardsPage() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [currentIndex, deleteTarget, editModal, flipCard, goToIndex, markCard, showTutorial, shuffleCards]);
-
-  const saveCard = async () => {
-    if (!editModal) return;
-    const clean = {
-      front: sanitizePlainText(editModal.front),
-      back: sanitizePlainText(editModal.back),
-    };
-    if (!clean.front || !clean.back) {
-      toast.error('Both the question and answer are required.');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      if (editModal.id) {
-        const { data, error } = await supabase.from('flashcards').update(clean).eq('id', editModal.id).select().single();
-        if (error) throw error;
-        setCards((current) => current.map((card) => (card.id === editModal.id ? { ...card, ...data } : card)));
-      } else {
-        const { data, error } = await supabase.from('flashcards').insert({ ...clean, set_id: id }).select().single();
-        if (error) throw error;
-        setCards((current) => [...current, data]);
-        updateProgress((current) => ({ ...current, order: [...current.order, data.id] }));
-      }
-      setEditModal(null);
-      toast.success('Flashcard saved.');
-    } catch (error) {
-      toast.error(error.message || 'Failed to save flashcard.');
-    } finally {
-      setSaving(false);
-    }
-  };
+  }, [currentIndex, deleteTarget, flipCard, goToIndex, markCard, showTutorial, shuffleCards]);
 
   const deleteCard = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || saving) return;
     setSaving(true);
     try {
-      const { error } = await supabase.from('flashcards').delete().eq('id', deleteTarget.id);
-      if (error) throw error;
+      await apiRequest(`/api/flashcards/${id}/cards/${deleteTarget.id}`, { method: 'DELETE' });
       setCards((current) => current.filter((card) => card.id !== deleteTarget.id));
       updateProgress((current) => {
         const statuses = { ...current.statuses };
@@ -607,7 +574,7 @@ export default function FlashcardsPage() {
               <p className="text-[0.68rem] font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">Flashcards</p>
               <h1 className="mt-1 truncate text-2xl font-black leading-tight text-[color:var(--color-text)] sm:text-3xl">{set.title}</h1>
               <p className="mt-1 text-xs text-[color:var(--color-text-muted)] sm:text-sm">
-                {orderedCards.length} cards in this set. Progress saves locally first, then syncs to your account.
+                {orderedCards.length} cards in this set. Your progress is protected while you review.
               </p>
             </div>
 
@@ -627,7 +594,7 @@ export default function FlashcardsPage() {
           <section className="mt-6 rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-8 text-center">
             <Keyboard className="mx-auto text-[color:var(--color-accent)]" size={42} />
             <h2 className="mt-4 text-2xl font-black text-[color:var(--color-text)]">No flashcards yet</h2>
-            <button onClick={() => setEditModal({ front: '', back: '' })} className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-bold text-[color:var(--color-accent-text)]">
+            <button onClick={() => navigate(`/flashcards/${id}/edit`)} className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-bold text-[color:var(--color-accent-text)]">
               <Plus size={18} />
               Add flashcard
             </button>
@@ -785,11 +752,11 @@ export default function FlashcardsPage() {
             </div>
 
             <aside className="space-y-2 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3">
-              <button onClick={() => setEditModal({ front: '', back: '' })} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[color:var(--color-accent)] px-3 py-2.5 text-sm font-bold text-[color:var(--color-accent-text)]">
+              <button onClick={() => navigate(`/flashcards/${id}/edit`)} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[color:var(--color-accent)] px-3 py-2.5 text-sm font-bold text-[color:var(--color-accent-text)] disabled:cursor-not-allowed disabled:opacity-50">
                 <Plus size={18} />
                 Add card
               </button>
-              <button onClick={() => setEditModal({ id: currentCard.id, front: currentCard.front, back: currentCard.back })} className="flex w-full items-center justify-center gap-2 rounded-xl border border-[color:var(--color-border)] px-3 py-2.5 text-sm font-bold text-[color:var(--color-text)]">
+              <button onClick={() => navigate(`/flashcards/${id}/edit`)} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl border border-[color:var(--color-border)] px-3 py-2.5 text-sm font-bold text-[color:var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50">
                 <BookOpen size={18} />
                 Edit current
               </button>
@@ -818,7 +785,7 @@ export default function FlashcardsPage() {
         <div className="space-y-4 text-sm leading-7 text-[color:var(--color-text-muted)]">
           <p>The front side always shows the question. Flip the card to reveal the answer, then mark it as known or still learning.</p>
           <p>Use Space to flip, ArrowRight for know, ArrowLeft for still learning, P for previous, and S to shuffle.</p>
-          <p>Manual cards use a question on the front and the answer on the back. Your review progress is saved locally if you refresh or close the tab.</p>
+          <p>Manual cards use a question on the front and the answer on the back. Your review progress can recover if you refresh or close the tab.</p>
           <button
             type="button"
             onClick={() => {
@@ -830,29 +797,6 @@ export default function FlashcardsPage() {
             <Sparkles size={18} />
             Start reviewing
           </button>
-        </div>
-      </Modal>
-
-      <Modal isOpen={Boolean(editModal)} onClose={() => saving ? null : setEditModal(null)} title={editModal?.id ? 'Edit flashcard' : 'Add flashcard'} size="md">
-        <div className="space-y-4">
-          {saving ? (
-            <LoadingPanel title="Saving flashcard" detail="Sanitizing the question and answer, then updating your set." />
-          ) : null}
-          <label className="block">
-            <span className="text-sm font-bold text-[color:var(--color-text)]">Question</span>
-            <textarea value={editModal?.front || ''} onChange={(event) => setEditModal((current) => ({ ...current, front: event.target.value }))} rows={4} className="mt-2 w-full rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-3 text-[color:var(--color-text)] outline-none focus:border-[color:var(--color-accent)]" disabled={saving} />
-          </label>
-          <label className="block">
-            <span className="text-sm font-bold text-[color:var(--color-text)]">Answer</span>
-            <textarea value={editModal?.back || ''} onChange={(event) => setEditModal((current) => ({ ...current, back: event.target.value }))} rows={4} className="mt-2 w-full rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-3 text-[color:var(--color-text)] outline-none focus:border-[color:var(--color-accent)]" disabled={saving} />
-          </label>
-          <div className="flex flex-wrap justify-end gap-2">
-            <button onClick={() => setEditModal(null)} disabled={saving} className="rounded-2xl px-5 py-3 font-bold text-[color:var(--color-text-muted)] disabled:opacity-50">Cancel</button>
-            <button onClick={saveCard} disabled={saving} className="inline-flex items-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-bold text-[color:var(--color-accent-text)] disabled:opacity-50">
-              {saving ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
-              Save card
-            </button>
-          </div>
         </div>
       </Modal>
 

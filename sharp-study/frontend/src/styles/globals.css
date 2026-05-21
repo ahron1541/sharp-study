@@ -719,6 +719,10 @@ body {
   animation: quiz-attention-glow 1.55s ease-in-out infinite;
 }
 
+.quiz-save-donut-active {
+  animation: quiz-save-donut-pulse 1.2s ease-in-out infinite;
+}
+
 @keyframes quiz-fade-up {
   from {
     opacity: 0;
@@ -741,13 +745,25 @@ body {
   }
 }
 
+@keyframes quiz-save-donut-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(124, 58, 237, 0));
+  }
+  50% {
+    transform: scale(1.04);
+    filter: drop-shadow(0 0 0.45rem rgba(124, 58, 237, 0.3));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .study-guide-fade-up,
   .study-guide-editor-shell,
   .study-guide-skeleton-shimmer::after,
   .quiz-donut,
   .quiz-fade-up,
-  .quiz-attention-glow {
+  .quiz-attention-glow,
+  .quiz-save-donut-active {
     animation: none !important;
   }
 

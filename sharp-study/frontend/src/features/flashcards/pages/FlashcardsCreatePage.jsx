@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Check,
+  ChevronLeft,
+  ChevronRight,
   GripVertical,
   Keyboard,
   Loader2,
@@ -19,11 +21,15 @@ import Modal from '../../../shared/components/Modal';
 import { apiRequest } from '../../../config/api';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
 
-const draftStorageKey = (userId) => `sharp-study-manual-flashcards-draft:${userId || 'guest'}`;
+const CARD_PAGE_SIZE = 5;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+const draftStorageKey = (userId, scope = 'new') => `sharp-study-manual-flashcards-draft:${userId || 'guest'}:${scope || 'new'}`;
+const contentCacheKey = (setId) => `sharp-study-flashcards-content:${setId}`;
 
 function createEmptyCard() {
   return {
     key: crypto.randomUUID(),
+    id: '',
     front: '',
     back: '',
   };
@@ -32,8 +38,9 @@ function createEmptyCard() {
 function normalizeCards(cards = []) {
   return cards
     .map((card) => ({
-      front: sanitizePlainText(card.front || '').slice(0, 500),
-      back: sanitizePlainText(card.back || '').slice(0, 1000),
+      id: UUID_PATTERN.test(card?.id || '') ? card.id : undefined,
+      front: sanitizePlainText(card?.front || '').slice(0, 500),
+      back: sanitizePlainText(card?.back || '').slice(0, 1000),
     }))
     .filter((card) => card.front && card.back)
     .slice(0, 80);
@@ -43,7 +50,8 @@ function normalizeDraftCards(cards = []) {
   const normalized = Array.isArray(cards)
     ? cards
       .map((card) => ({
-        key: typeof card?.key === 'string' ? card.key : crypto.randomUUID(),
+        key: typeof card?.key === 'string' ? card.key : card?.id || crypto.randomUUID(),
+        id: UUID_PATTERN.test(card?.id || '') ? card.id : '',
         front: sanitizePlainText(card?.front || '').slice(0, 500),
         back: sanitizePlainText(card?.back || '').slice(0, 1000),
       }))
@@ -69,42 +77,109 @@ function buildSanitizedDraft(title, description, cards) {
   };
 }
 
-function saveDraftToLocalStorage(userId, draft) {
+function saveDraftToLocalStorage(storageKey, draft) {
   if (!hasDraftContent(draft)) {
-    localStorage.removeItem(draftStorageKey(userId));
+    localStorage.removeItem(storageKey);
     return;
   }
 
-  localStorage.setItem(draftStorageKey(userId), JSON.stringify(draft));
+  localStorage.setItem(storageKey, JSON.stringify(draft));
+}
+
+function createSnapshot(title, description, cards) {
+  return JSON.stringify({
+    title: sanitizePlainText(title || '').slice(0, 180),
+    description: sanitizePlainText(description || '').slice(0, 500),
+    cards: normalizeDraftCards(cards).map((card) => ({
+      id: card.id || '',
+      front: card.front,
+      back: card.back,
+    })),
+  });
 }
 
 export default function FlashcardsCreatePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { id: routeSetId } = useParams();
+  const isEdit = Boolean(routeSetId);
+  const saveLockRef = useRef(false);
+
+  const [setId, setSetId] = useState(routeSetId || '');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [cards, setCards] = useState([createEmptyCard(), createEmptyCard()]);
   const [saving, setSaving] = useState(false);
-  const [saveIntent, setSaveIntent] = useState('create');
+  const [saveIntent, setSaveIntent] = useState('save');
+  const [saveStatus, setSaveStatus] = useState({
+    active: false,
+    progress: 0,
+    title: 'Saving flashcards',
+    detail: 'Preparing your flashcards.',
+  });
+  const [loadingSet, setLoadingSet] = useState(isEdit);
   const [restoredDraft, setRestoredDraft] = useState(null);
   const [draftAction, setDraftAction] = useState(null);
   const [draftReady, setDraftReady] = useState(false);
+  const [rawCurrentPage, setCurrentPage] = useState(0);
+  const [initialSnapshot, setInitialSnapshot] = useState('');
 
-  const validCards = useMemo(() => normalizeCards(cards), [cards]);
-  const hasChanges = useMemo(
-    () => hasDraftContent({ title, description, cards }),
-    [cards, description, title]
+  const draftKey = useMemo(
+    () => draftStorageKey(user?.id, isEdit ? routeSetId : 'new'),
+    [isEdit, routeSetId, user?.id]
   );
-  const canSave = sanitizePlainText(title).length > 0 && validCards.length > 0 && !saving && !restoredDraft && !draftAction;
+  const validCards = useMemo(() => normalizeCards(cards), [cards]);
+  const totalPages = Math.max(1, Math.ceil(cards.length / CARD_PAGE_SIZE));
+  const currentPage = Math.min(rawCurrentPage, totalPages - 1);
+  const pageStart = currentPage * CARD_PAGE_SIZE;
+  const visibleCards = cards.slice(pageStart, pageStart + CARD_PAGE_SIZE);
+  const currentSnapshot = useMemo(() => createSnapshot(title, description, cards), [cards, description, title]);
+  const hasChanges = isEdit ? draftReady && currentSnapshot !== initialSnapshot : hasDraftContent({ title, description, cards });
+  const blocked = saving || loadingSet || Boolean(restoredDraft) || Boolean(draftAction);
+  const canSave = sanitizePlainText(title).length > 0
+    && validCards.length > 0
+    && !blocked;
+  const visibleSaveStatus = saving || saveStatus.active
+    ? saveStatus
+    : {
+      active: false,
+      progress: 0,
+      title: 'Saving flashcards',
+      detail: 'Preparing your flashcards.',
+    };
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    let mounted = true;
+
+    const loadFlashcards = async () => {
+      setDraftReady(false);
+      setRestoredDraft(null);
+      setDraftAction(null);
+
       try {
-        const rawDraft = localStorage.getItem(draftStorageKey(user?.id));
-        if (!rawDraft) {
-          setDraftReady(true);
-          return;
+        if (isEdit) {
+          setLoadingSet(true);
+          const response = await apiRequest(`/api/flashcards/${routeSetId}`);
+          if (!mounted) return;
+
+          const nextTitle = sanitizePlainText(response?.set?.title || '').slice(0, 180);
+          const nextCards = normalizeDraftCards(response?.cards || []);
+          setSetId(response?.set?.id || routeSetId);
+          setTitle(nextTitle);
+          setDescription('');
+          setCards(nextCards);
+          setInitialSnapshot(createSnapshot(nextTitle, '', nextCards));
+        } else {
+          setSetId('');
+          setTitle('');
+          setDescription('');
+          const blankCards = [createEmptyCard(), createEmptyCard()];
+          setCards(blankCards);
+          setInitialSnapshot(createSnapshot('', '', blankCards));
         }
+
+        const rawDraft = localStorage.getItem(draftKey);
+        if (!rawDraft) return;
 
         const parsedDraft = JSON.parse(rawDraft);
         const sanitizedDraft = {
@@ -112,27 +187,42 @@ export default function FlashcardsCreatePage() {
           updatedAt: parsedDraft?.updatedAt || null,
         };
 
-        if (hasDraftContent(sanitizedDraft)) {
+        if (hasDraftContent(sanitizedDraft) && mounted) {
           setRestoredDraft(sanitizedDraft);
         }
-      } catch {
-        localStorage.removeItem(draftStorageKey(user?.id));
+      } catch (error) {
+        if (isEdit) {
+          toast.error(error.message || 'Failed to load this flashcard set.');
+          navigate('/library?tab=flashcards', { replace: true });
+        } else {
+          localStorage.removeItem(draftKey);
+        }
       } finally {
-        setDraftReady(true);
+        if (mounted) {
+          setLoadingSet(false);
+          setDraftReady(true);
+        }
       }
-    }, 0);
+    };
 
-    return () => window.clearTimeout(timer);
-  }, [user?.id]);
+    loadFlashcards();
+    return () => {
+      mounted = false;
+    };
+  }, [draftKey, isEdit, navigate, routeSetId]);
 
   useEffect(() => {
-    if (!draftReady || restoredDraft || draftAction || saving) return;
+    if (!draftReady || restoredDraft || draftAction || saving || loadingSet) return;
     try {
-      saveDraftToLocalStorage(user?.id, buildSanitizedDraft(title, description, cards));
+      if (isEdit && currentSnapshot === initialSnapshot) {
+        localStorage.removeItem(draftKey);
+        return;
+      }
+      saveDraftToLocalStorage(draftKey, buildSanitizedDraft(title, description, cards));
     } catch (error) {
-      console.warn('[FlashcardsCreateDraft] Failed to save local draft.', error);
+      console.warn('[FlashcardsCreateDraft] Failed to save draft.', error);
     }
-  }, [cards, description, draftAction, draftReady, restoredDraft, saving, title, user?.id]);
+  }, [cards, currentSnapshot, description, draftAction, draftKey, draftReady, initialSnapshot, isEdit, loadingSet, restoredDraft, saving, title]);
 
   useEffect(() => {
     const handleBeforeUnload = (event) => {
@@ -151,16 +241,26 @@ export default function FlashcardsCreatePage() {
   };
 
   const addCard = () => {
-    setCards((current) => [...current, createEmptyCard()]);
+    setCards((current) => {
+      const next = [...current, createEmptyCard()];
+      setCurrentPage(Math.floor((next.length - 1) / CARD_PAGE_SIZE));
+      return next;
+    });
   };
 
   const removeCard = (key) => {
     setCards((current) => (current.length <= 1 ? current : current.filter((card) => card.key !== key)));
   };
 
-  const saveSet = async (nextIntent = 'create') => {
+  const goBack = () => {
+    navigate(isEdit ? `/flashcards/${setId || routeSetId}` : '/library?tab=flashcards');
+  };
+
+  const saveSet = async (nextIntent = 'save') => {
+    if (saveLockRef.current || saving) return;
+
     if (!user?.id) {
-      toast.error('You need to be logged in to create flashcards.');
+      toast.error('Please sign in before saving flashcards.');
       return;
     }
 
@@ -168,7 +268,7 @@ export default function FlashcardsCreatePage() {
     const cleanCards = normalizeCards(cards);
 
     if (!cleanTitle) {
-      toast.error('Add a title before creating the set.');
+      toast.error('Add a title before saving the set.');
       return;
     }
     if (!cleanCards.length) {
@@ -176,205 +276,392 @@ export default function FlashcardsCreatePage() {
       return;
     }
 
+    saveLockRef.current = true;
     setSaving(true);
     setSaveIntent(nextIntent);
+    setSaveStatus({
+      active: true,
+      progress: 18,
+      title: 'Checking your flashcards',
+      detail: 'Reviewing the title, terms, and definitions before saving.',
+    });
 
     try {
-      const response = await apiRequest('/api/flashcards', {
-        method: 'POST',
+      setSaveStatus({
+        active: true,
+        progress: 46,
+        title: 'Saving your flashcards',
+        detail: 'Keeping your set protected while the latest changes are applied.',
+      });
+
+      const endpoint = isEdit ? `/api/flashcards/${setId || routeSetId}` : '/api/flashcards';
+      const response = await apiRequest(endpoint, {
+        method: isEdit ? 'PATCH' : 'POST',
         body: JSON.stringify({
           title: cleanTitle,
           cards: cleanCards,
         }),
       });
+      const savedId = response?.set?.id || response?.item?.id || setId || routeSetId;
 
-      localStorage.removeItem(draftStorageKey(user.id));
-      toast.success('Flashcard set created.');
-      navigate(nextIntent === 'practice' ? `/flashcards/${response.item.id}` : '/library?tab=flashcards');
+      setSaveStatus({
+        active: true,
+        progress: 82,
+        title: 'Finishing up',
+        detail: 'Refreshing the editor with the saved version of your set.',
+      });
+
+      localStorage.removeItem(draftKey);
+      if (savedId) localStorage.removeItem(contentCacheKey(savedId));
+
+      if (isEdit && Array.isArray(response?.cards)) {
+        const nextCards = normalizeDraftCards(response.cards);
+        setCards(nextCards);
+        setInitialSnapshot(createSnapshot(cleanTitle, description, nextCards));
+      } else {
+        setInitialSnapshot(createSnapshot(cleanTitle, description, cleanCards));
+      }
+
+      if (savedId) setSetId(savedId);
+
+      setSaveStatus({
+        active: true,
+        progress: 100,
+        title: 'Flashcards saved',
+        detail: 'Your set is ready.',
+      });
+      toast.success(isEdit ? 'Flashcard set saved.' : 'Flashcard set created.');
+
+      if (nextIntent === 'practice' && savedId) {
+        navigate(`/flashcards/${savedId}`);
+      } else if (!isEdit) {
+        navigate('/library?tab=flashcards');
+      }
     } catch (error) {
-      toast.error(error.message || 'Failed to create flashcard set.');
+      toast.error(error.message || (isEdit ? 'Failed to save flashcard set.' : 'Failed to create flashcard set.'));
+      setSaveStatus({
+        active: true,
+        progress: 0,
+        title: 'Saving did not finish',
+        detail: 'Please review your connection and try again.',
+      });
     } finally {
       setSaving(false);
+      saveLockRef.current = false;
+      window.setTimeout(() => {
+        setSaveStatus((current) => ({ ...current, active: false }));
+      }, 300);
     }
   };
 
   const continueDraft = () => {
     if (!restoredDraft) return;
     setDraftAction({
-      title: 'Restoring your flashcard draft',
-      detail: 'Loading the locally saved title, description, and cards into the creator.',
+      title: 'Preparing your flashcards',
+      detail: 'Opening the most recent saved version of your work.',
     });
     window.setTimeout(() => {
       setTitle(restoredDraft.title || '');
       setDescription(restoredDraft.description || '');
       setCards(normalizeDraftCards(restoredDraft.cards));
+      setCurrentPage(0);
       setRestoredDraft(null);
       setDraftAction(null);
-      toast.success('Draft restored.');
+      toast.success('Flashcards restored.');
     }, 450);
   };
 
   const discardDraft = () => {
     setDraftAction({
-      title: 'Discarding local draft',
-      detail: 'Removing the saved browser draft and preparing a blank flashcard set.',
+      title: 'Starting fresh',
+      detail: 'Clearing the unfinished version and preparing the editor.',
     });
     window.setTimeout(() => {
-      localStorage.removeItem(draftStorageKey(user?.id));
-      setTitle('');
-      setDescription('');
-      setCards([createEmptyCard(), createEmptyCard()]);
+      localStorage.removeItem(draftKey);
+      if (!isEdit) {
+        const blankCards = [createEmptyCard(), createEmptyCard()];
+        setTitle('');
+        setDescription('');
+        setCards(blankCards);
+        setInitialSnapshot(createSnapshot('', '', blankCards));
+      }
+      setCurrentPage(0);
       setRestoredDraft(null);
       setDraftAction(null);
-      toast.success('Local draft discarded.');
+      toast.success('Ready for a fresh start.');
     }, 450);
   };
 
-  const blocked = saving || Boolean(restoredDraft) || Boolean(draftAction);
+  if (loadingSet) {
+    return <FlashcardsBuilderSkeleton />;
+  }
 
   return (
     <>
       <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <Breadcrumb items={[{ label: 'Library', href: '/library?tab=flashcards' }, { label: 'Create flashcards' }]} />
+        <Breadcrumb
+          items={[
+            { label: 'Library', href: '/library?tab=flashcards' },
+            isEdit
+              ? { label: 'Edit flashcards' }
+              : { label: 'Create flashcards' },
+          ]}
+        />
 
         <section className="mt-4 rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 shadow-[0_20px_65px_rgba(15,23,42,0.1)] sm:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <button
                 type="button"
-                onClick={() => navigate('/library?tab=flashcards')}
+                onClick={goBack}
                 disabled={blocked}
                 className="mb-4 inline-flex items-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-2 text-sm font-bold text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label={isEdit ? 'Back to flashcard preview' : 'Back to flashcard library'}
+                title={isEdit ? 'Back to flashcard preview' : 'Back to flashcard library'}
               >
-                <ArrowLeft size={16} />
-                Library
+                <ArrowLeft size={16} aria-hidden="true" />
+                {isEdit ? 'Flashcard preview' : 'Library'}
               </button>
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-[color:var(--color-text-muted)]">Manual flashcards</p>
-              <h1 className="mt-2 text-3xl font-black leading-tight text-[color:var(--color-text)] sm:text-4xl">Create a new flashcard set</h1>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-[color:var(--color-text-muted)]">
+                {isEdit ? 'Edit flashcards' : 'Manual flashcards'}
+              </p>
+              <h1 className="mt-2 text-3xl font-black leading-tight text-[color:var(--color-text)] sm:text-4xl">
+                {isEdit ? 'Edit flashcard set' : 'Create a new flashcard set'}
+              </h1>
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row">
-              <button type="button" onClick={() => saveSet('create')} disabled={!canSave} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-5 text-sm font-black text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50">
-                {saving && saveIntent === 'create' ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                Create
+              <button
+                type="button"
+                onClick={() => saveSet('save')}
+                disabled={!canSave}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-5 text-sm font-black text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label={isEdit ? 'Save flashcard changes' : 'Create flashcard set'}
+                title={isEdit ? 'Save flashcard changes' : 'Create flashcard set'}
+              >
+                {saving && saveIntent === 'save' ? <SaveProgressDonut progress={visibleSaveStatus.progress} active size="sm" /> : <Save size={18} aria-hidden="true" />}
+                {isEdit ? 'Save changes' : 'Create'}
               </button>
-              <button type="button" onClick={() => saveSet('practice')} disabled={!canSave} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 text-sm font-black text-[color:var(--color-accent-text)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50">
-                {saving && saveIntent === 'practice' ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
-                Create and practice
+              <button
+                type="button"
+                onClick={() => saveSet('practice')}
+                disabled={!canSave}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 text-sm font-black text-[color:var(--color-accent-text)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label={isEdit ? 'Save and review flashcards' : 'Create and practice flashcards'}
+                title={isEdit ? 'Save and review flashcards' : 'Create and practice flashcards'}
+              >
+                {saving && saveIntent === 'practice' ? <SaveProgressDonut progress={visibleSaveStatus.progress} active size="sm" /> : <Sparkles size={18} aria-hidden="true" />}
+                {isEdit ? 'Save and review' : 'Create and practice'}
               </button>
             </div>
           </div>
 
           <div className="mt-6 grid gap-3">
             <label className="block">
-              <span className="sr-only">Title</span>
-              <input value={title} onChange={(event) => setTitle(event.target.value)} disabled={blocked} maxLength={180} placeholder="Title" className="h-14 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] px-4 font-black text-[color:var(--color-text)] outline-none transition focus:border-[color:var(--color-accent)] disabled:opacity-60" />
+              <span className="sr-only">Flashcard set title</span>
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                disabled={blocked}
+                maxLength={180}
+                placeholder="Title"
+                className="h-14 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] px-4 font-black text-[color:var(--color-text)] outline-none transition focus:border-[color:var(--color-accent)] disabled:opacity-60"
+              />
             </label>
             <label className="block">
-              <span className="sr-only">Description</span>
-              <input value={description} onChange={(event) => setDescription(event.target.value)} disabled={blocked} maxLength={500} placeholder="Add a description..." className="h-14 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] px-4 text-sm font-semibold text-[color:var(--color-text)] outline-none transition focus:border-[color:var(--color-accent)] disabled:opacity-60" />
+              <span className="sr-only">Flashcard set note</span>
+              <input
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                disabled={blocked}
+                maxLength={500}
+                placeholder="Add a short note for yourself..."
+                className="h-14 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] px-4 text-sm font-semibold text-[color:var(--color-text)] outline-none transition focus:border-[color:var(--color-accent)] disabled:opacity-60"
+              />
             </label>
           </div>
         </section>
 
-        {saving ? (
-          <section className="mt-5 rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-5">
-            <div className="flex items-center gap-3">
-              <Loader2 className="animate-spin text-[color:var(--color-accent)]" size={22} />
-              <div>
-                <p className="font-black text-[color:var(--color-text)]">Creating your flashcard set</p>
-                <p className="text-sm text-[color:var(--color-text-muted)]">Sanitizing every field, saving the set, and locking actions until it is ready.</p>
-              </div>
-            </div>
-            <div className="mt-4 h-3 overflow-hidden rounded-full bg-[color:var(--color-surface-2)]">
-              <div className="h-full w-2/3 animate-pulse rounded-full bg-[color:var(--color-accent)]" />
-            </div>
-          </section>
-        ) : null}
-
         <section className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4">
           <div className="flex items-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-2 text-sm font-black text-[color:var(--color-text-muted)]">
-            <Keyboard size={16} />
+            <Keyboard size={16} aria-hidden="true" />
             Manual question and answer cards
           </div>
           <div className="flex items-center gap-2 text-sm font-bold text-[color:var(--color-text-muted)]">
-            <Check size={16} className={validCards.length ? 'text-emerald-500' : ''} />
+            <Check size={16} className={validCards.length ? 'text-emerald-500' : ''} aria-hidden="true" />
             {validCards.length} complete card{validCards.length === 1 ? '' : 's'}
           </div>
         </section>
 
-        <section className="mt-5 space-y-4">
-          {cards.map((card, index) => (
-            <article key={card.key} className="rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4 shadow-[0_14px_42px_rgba(15,23,42,0.08)]">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <p className="text-lg font-black text-[color:var(--color-text)]">{index + 1}</p>
-                <div className="flex items-center gap-2 text-[color:var(--color-text-muted)]">
-                  <GripVertical size={18} aria-hidden="true" />
-                  <button type="button" onClick={() => removeCard(card.key)} disabled={blocked || cards.length <= 1} className="rounded-xl p-2 transition hover:bg-[color:var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-40" aria-label={`Delete card ${index + 1}`}>
-                    <Trash2 size={16} />
-                  </button>
+        <FlashcardsPagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCards={cards.length}
+          pageStart={pageStart}
+          pageCount={visibleCards.length}
+          disabled={blocked}
+          onPrevious={() => setCurrentPage((page) => Math.max(0, page - 1))}
+          onNext={() => setCurrentPage((page) => Math.min(totalPages - 1, page + 1))}
+        />
+
+        <section className="mt-4 space-y-4">
+          {visibleCards.map((card, offset) => {
+            const index = pageStart + offset;
+            return (
+              <article key={card.key} className="rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4 shadow-[0_14px_42px_rgba(15,23,42,0.08)]">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <p className="text-lg font-black text-[color:var(--color-text)]">{index + 1}</p>
+                  <div className="flex items-center gap-2 text-[color:var(--color-text-muted)]">
+                    <GripVertical size={18} aria-hidden="true" />
+                    <button
+                      type="button"
+                      onClick={() => removeCard(card.key)}
+                      disabled={blocked || cards.length <= 1}
+                      className="rounded-xl p-2 transition hover:bg-[color:var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={`Delete flashcard ${index + 1}`}
+                      title={`Delete flashcard ${index + 1}`}
+                    >
+                      <Trash2 size={16} aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                <label className="block">
-                  <span className="sr-only">Card {index + 1} question</span>
-                  <textarea value={card.front} onChange={(event) => updateCard(card.key, { front: event.target.value })} disabled={blocked} maxLength={500} rows={2} placeholder="Enter term" className="min-h-24 w-full resize-y rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-3 font-bold text-[color:var(--color-text)] outline-none transition focus:border-[color:var(--color-accent)] disabled:opacity-60" />
-                  <span className="mt-2 block text-xs font-black uppercase tracking-[0.12em] text-[color:var(--color-text-muted)]">Term</span>
-                </label>
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  <label className="block">
+                    <span className="sr-only">Flashcard {index + 1} question</span>
+                    <textarea
+                      value={card.front}
+                      onChange={(event) => updateCard(card.key, { front: event.target.value })}
+                      disabled={blocked}
+                      maxLength={500}
+                      rows={2}
+                      placeholder="Enter term"
+                      className="min-h-24 w-full resize-y rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-3 font-bold text-[color:var(--color-text)] outline-none transition focus:border-[color:var(--color-accent)] disabled:opacity-60"
+                    />
+                    <span className="mt-2 block text-xs font-black uppercase tracking-[0.12em] text-[color:var(--color-text-muted)]">Term</span>
+                  </label>
 
-                <label className="block">
-                  <span className="sr-only">Card {index + 1} answer</span>
-                  <textarea value={card.back} onChange={(event) => updateCard(card.key, { back: event.target.value })} disabled={blocked} maxLength={1000} rows={2} placeholder="Enter definition" className="min-h-24 w-full resize-y rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-3 font-bold text-[color:var(--color-text)] outline-none transition focus:border-[color:var(--color-accent)] disabled:opacity-60" />
-                  <span className="mt-2 block text-xs font-black uppercase tracking-[0.12em] text-[color:var(--color-text-muted)]">Definition</span>
-                </label>
-              </div>
-            </article>
-          ))}
+                  <label className="block">
+                    <span className="sr-only">Flashcard {index + 1} answer</span>
+                    <textarea
+                      value={card.back}
+                      onChange={(event) => updateCard(card.key, { back: event.target.value })}
+                      disabled={blocked}
+                      maxLength={1000}
+                      rows={2}
+                      placeholder="Enter definition"
+                      className="min-h-24 w-full resize-y rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-3 font-bold text-[color:var(--color-text)] outline-none transition focus:border-[color:var(--color-accent)] disabled:opacity-60"
+                    />
+                    <span className="mt-2 block text-xs font-black uppercase tracking-[0.12em] text-[color:var(--color-text-muted)]">Definition</span>
+                  </label>
+                </div>
+              </article>
+            );
+          })}
         </section>
 
+        <FlashcardsPagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCards={cards.length}
+          pageStart={pageStart}
+          pageCount={visibleCards.length}
+          disabled={blocked}
+          onPrevious={() => setCurrentPage((page) => Math.max(0, page - 1))}
+          onNext={() => setCurrentPage((page) => Math.min(totalPages - 1, page + 1))}
+        />
+
         <div className="mt-8 flex justify-center">
-          <button type="button" onClick={addCard} disabled={blocked} className="inline-flex items-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-6 py-4 font-black text-[color:var(--color-text)] transition hover:-translate-y-0.5 hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50">
-            <Plus size={18} />
+          <button
+            type="button"
+            onClick={addCard}
+            disabled={blocked}
+            className="inline-flex items-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-6 py-4 font-black text-[color:var(--color-text)] transition hover:-translate-y-0.5 hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Add another flashcard"
+            title="Add another flashcard"
+          >
+            <Plus size={18} aria-hidden="true" />
             Add a card
           </button>
         </div>
 
         <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <button type="button" onClick={() => saveSet('create')} disabled={!canSave} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-6 font-black text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50">
-            {saving && saveIntent === 'create' ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-            Create
+          <button
+            type="button"
+            onClick={() => saveSet('save')}
+            disabled={!canSave}
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-6 font-black text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label={isEdit ? 'Save flashcard changes' : 'Create flashcard set'}
+            title={isEdit ? 'Save flashcard changes' : 'Create flashcard set'}
+          >
+            {saving && saveIntent === 'save' ? <SaveProgressDonut progress={visibleSaveStatus.progress} active size="sm" /> : <Save size={18} aria-hidden="true" />}
+            {isEdit ? 'Save changes' : 'Create'}
           </button>
-          <button type="button" onClick={() => saveSet('practice')} disabled={!canSave} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-6 font-black text-[color:var(--color-accent-text)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50">
-            {saving && saveIntent === 'practice' ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
-            Create and practice
+          <button
+            type="button"
+            onClick={() => saveSet('practice')}
+            disabled={!canSave}
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-6 font-black text-[color:var(--color-accent-text)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label={isEdit ? 'Save and review flashcards' : 'Create and practice flashcards'}
+            title={isEdit ? 'Save and review flashcards' : 'Create and practice flashcards'}
+          >
+            {saving && saveIntent === 'practice' ? <SaveProgressDonut progress={visibleSaveStatus.progress} active size="sm" /> : <Sparkles size={18} aria-hidden="true" />}
+            {isEdit ? 'Save and review' : 'Create and practice'}
           </button>
         </div>
       </main>
 
-      <Modal isOpen={Boolean(restoredDraft) || Boolean(draftAction)} onClose={() => {}} title={draftAction ? draftAction.title : 'Continue your unsaved flashcards?'} size="md" closeOnBackdrop={false} closeOnEscape={false} showCloseButton={false}>
+      <Modal
+        isOpen={saving || saveStatus.active}
+        onClose={() => {}}
+        title={visibleSaveStatus.title}
+        size="md"
+        closeOnBackdrop={false}
+        closeOnEscape={false}
+        showCloseButton={false}
+      >
+        <div className="space-y-5 text-center" aria-live="assertive">
+          <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]">
+            <SaveProgressDonut progress={visibleSaveStatus.progress} active size="lg" />
+          </div>
+          <div>
+            <p className="text-xl font-black text-[color:var(--color-text)]">{visibleSaveStatus.title}</p>
+            <p className="mx-auto mt-2 max-w-sm text-sm font-semibold leading-7 text-[color:var(--color-text-muted)]">
+              {visibleSaveStatus.detail}
+            </p>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-[color:var(--color-surface-2)]" role="progressbar" aria-valuenow={visibleSaveStatus.progress} aria-valuemin={0} aria-valuemax={100}>
+            <div className="h-full rounded-full bg-[color:var(--color-accent)] transition-[width] duration-300" style={{ width: `${visibleSaveStatus.progress}%` }} />
+          </div>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-[color:var(--color-text-muted)]">
+            Please keep this page open
+          </p>
+        </div>
+      </Modal>
+
+      <Modal isOpen={Boolean(restoredDraft) || Boolean(draftAction)} onClose={() => {}} title={draftAction ? draftAction.title : 'Continue unfinished flashcards?'} size="md" closeOnBackdrop={false} closeOnEscape={false} showCloseButton={false}>
         {draftAction ? (
           <LocalDraftLoading title={draftAction.title} detail={draftAction.detail} />
         ) : (
           <div className="space-y-4">
             <p className="text-sm leading-7 text-[color:var(--color-text-muted)]">
-              A flashcard set draft was saved only in this browser. You can continue where you left off or discard it and start fresh.
+              We found unfinished flashcard edits. You can continue where you left off or start fresh.
             </p>
             <div className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4">
               <p className="text-sm font-black text-[color:var(--color-text)]">{restoredDraft?.title || 'Untitled flashcard set'}</p>
               <p className="mt-1 text-xs font-semibold text-[color:var(--color-text-muted)]">
-                {normalizeCards(restoredDraft?.cards || []).length} complete card{normalizeCards(restoredDraft?.cards || []).length === 1 ? '' : 's'} saved locally
+                {normalizeCards(restoredDraft?.cards || []).length} complete card{normalizeCards(restoredDraft?.cards || []).length === 1 ? '' : 's'} available
               </p>
               <p className="mt-1 text-xs font-semibold text-[color:var(--color-text-muted)]">
-                Local draft {restoredDraft?.updatedAt ? new Date(restoredDraft.updatedAt).toLocaleString() : 'saved recently'}
+                {restoredDraft?.updatedAt ? `Updated ${new Date(restoredDraft.updatedAt).toLocaleString()}` : 'Updated recently'}
               </p>
             </div>
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button type="button" onClick={discardDraft} className="rounded-2xl border border-[color:var(--color-border)] px-5 py-3 font-bold text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface-2)]">
-                Discard
+                Start fresh
               </button>
               <button type="button" onClick={continueDraft} className="rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-bold text-[color:var(--color-accent-text)] transition hover:-translate-y-0.5">
-                Continue draft
+                Continue editing
               </button>
             </div>
           </div>
@@ -384,11 +671,48 @@ export default function FlashcardsCreatePage() {
   );
 }
 
+function FlashcardsPagination({ currentPage, totalPages, totalCards, pageStart, pageCount, disabled, onPrevious, onNext }) {
+  const start = totalCards ? pageStart + 1 : 0;
+  const end = Math.min(totalCards, pageStart + pageCount);
+
+  return (
+    <nav className="mt-5 flex flex-col gap-3 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3 sm:flex-row sm:items-center sm:justify-between" aria-label="Flashcard editor pagination">
+      <p className="text-sm font-bold text-[color:var(--color-text-muted)]">
+        Page {currentPage + 1} of {totalPages}. Showing {start}-{end} of {totalCards} cards.
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onPrevious}
+          disabled={disabled || currentPage === 0}
+          className="inline-flex h-10 items-center gap-2 rounded-xl border border-[color:var(--color-border)] px-4 text-sm font-bold text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label="Previous flashcard editor page"
+          title="Previous page"
+        >
+          <ChevronLeft size={16} aria-hidden="true" />
+          Previous
+        </button>
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={disabled || currentPage >= totalPages - 1}
+          className="inline-flex h-10 items-center gap-2 rounded-xl border border-[color:var(--color-border)] px-4 text-sm font-bold text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label="Next flashcard editor page"
+          title="Next page"
+        >
+          Next
+          <ChevronRight size={16} aria-hidden="true" />
+        </button>
+      </div>
+    </nav>
+  );
+}
+
 function LocalDraftLoading({ title, detail }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <Loader2 className="animate-spin text-[color:var(--color-accent)]" size={20} />
+        <Loader2 className="animate-spin text-[color:var(--color-accent)]" size={20} aria-hidden="true" />
         <div>
           <p className="font-black text-[color:var(--color-text)]">{title}</p>
           <p className="text-sm leading-6 text-[color:var(--color-text-muted)]">{detail}</p>
@@ -398,5 +722,49 @@ function LocalDraftLoading({ title, detail }) {
         <div className="h-full w-2/3 animate-pulse rounded-full bg-[color:var(--color-accent)]" />
       </div>
     </div>
+  );
+}
+
+function SaveProgressDonut({ progress = 0, active = false, size = 'md' }) {
+  const safeProgress = Math.max(0, Math.min(100, Number(progress) || 0));
+  const degrees = Math.round((safeProgress / 100) * 360);
+  const dimensions = size === 'sm' ? 'h-5 w-5' : size === 'lg' ? 'h-16 w-16' : 'h-11 w-11';
+  const innerDimensions = size === 'sm' ? 'inset-[4px]' : size === 'lg' ? 'inset-[10px]' : 'inset-[7px]';
+  const textSize = size === 'lg' ? 'text-sm' : 'text-[0.62rem]';
+
+  return (
+    <span
+      className={`relative inline-flex shrink-0 items-center justify-center rounded-full ${dimensions} ${active ? 'quiz-save-donut-active' : ''}`}
+      style={{
+        background: `conic-gradient(var(--color-accent) ${degrees}deg, rgba(148, 163, 184, 0.24) 0deg)`,
+      }}
+      role="img"
+      aria-label={`Save progress ${safeProgress}%`}
+      title={`Save progress ${safeProgress}%`}
+    >
+      <span className={`absolute rounded-full bg-[color:var(--color-surface)] ${innerDimensions}`} />
+      {size === 'sm' ? null : (
+        <span className={`relative font-black text-[color:var(--color-text)] ${textSize}`}>{safeProgress}</span>
+      )}
+    </span>
+  );
+}
+
+function FlashcardsBuilderSkeleton() {
+  return (
+    <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <div className="h-4 w-52 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
+      <section className="mt-4 rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
+        <div className="h-10 w-40 animate-pulse rounded-2xl bg-[color:var(--color-surface-2)]" />
+        <div className="mt-6 h-10 w-72 animate-pulse rounded-2xl bg-[color:var(--color-surface-2)]" />
+        <div className="mt-6 h-14 animate-pulse rounded-xl bg-[color:var(--color-surface-2)]" />
+        <div className="mt-3 h-14 animate-pulse rounded-xl bg-[color:var(--color-surface-2)]" />
+      </section>
+      <section className="mt-5 space-y-4">
+        {[0, 1, 2].map((item) => (
+          <div key={item} className="h-44 animate-pulse rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]" />
+        ))}
+      </section>
+    </main>
   );
 }
