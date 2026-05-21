@@ -86,6 +86,22 @@ function saveDraftToLocalStorage(storageKey, draft) {
   localStorage.setItem(storageKey, JSON.stringify(draft));
 }
 
+function writeFlashcardsContentCache(setId, payload) {
+  if (!setId || !payload?.set || !Array.isArray(payload?.cards)) return;
+
+  try {
+    localStorage.setItem(contentCacheKey(setId), JSON.stringify({
+      set: payload.set,
+      cards: payload.cards,
+      relatedStudyGuideId: payload.relatedStudyGuideId || '',
+      relatedQuizId: payload.relatedQuizId || '',
+      cachedAt: new Date().toISOString(),
+    }));
+  } catch (error) {
+    console.warn('[FlashcardsCreateCache] Failed to refresh saved flashcards.', error);
+  }
+}
+
 function createSnapshot(title, description, cards) {
   return JSON.stringify({
     title: sanitizePlainText(title || '').slice(0, 180),
@@ -312,7 +328,16 @@ export default function FlashcardsCreatePage() {
       });
 
       localStorage.removeItem(draftKey);
-      if (savedId) localStorage.removeItem(contentCacheKey(savedId));
+      if (savedId && response?.set && Array.isArray(response?.cards)) {
+        writeFlashcardsContentCache(savedId, {
+          set: response.set,
+          cards: response.cards,
+          relatedStudyGuideId: response.relatedStudyGuideId,
+          relatedQuizId: response.relatedQuizId,
+        });
+      } else if (savedId) {
+        localStorage.removeItem(contentCacheKey(savedId));
+      }
 
       if (isEdit && Array.isArray(response?.cards)) {
         const nextCards = normalizeDraftCards(response.cards);

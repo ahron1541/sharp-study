@@ -14,6 +14,8 @@ function sanitizePlainText(value = '', maxLength = 1000) {
     .slice(0, maxLength);
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const createFlashcardSetSchema = z.object({
   title: z.string().trim().min(1).max(180),
   cards: z.array(z.object({
@@ -24,7 +26,17 @@ const createFlashcardSetSchema = z.object({
   })).min(1).max(80),
 });
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const flashcardAttemptSchema = z.object({
+  card_id: z.string().regex(UUID_PATTERN),
+  result: z.enum(['known', 'learning']),
+  response_ms: z.number().int().min(0).max(24 * 60 * 60 * 1000).optional().nullable(),
+});
+
+const flashcardProgressSchema = z.object({
+  current_index: z.number().int().min(0).optional(),
+  order_json: z.array(z.string().regex(UUID_PATTERN)).optional(),
+  statuses_json: z.record(z.string().regex(UUID_PATTERN), z.enum(['known', 'learning'])).optional(),
+});
 
 router.use(requireAuth);
 
@@ -62,11 +74,94 @@ function normalizeCardRow(card) {
   };
 }
 
+function normalizeProgressRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    current_index: Number(row.current_index) || 0,
+    order_json: Array.isArray(row.order_json) ? row.order_json : [],
+    statuses_json: row.statuses_json && typeof row.statuses_json === 'object' ? row.statuses_json : {},
+    known_count: Number(row.known_count) || 0,
+    learning_count: Number(row.learning_count) || 0,
+    updated_at: row.updated_at,
+  };
+}
+
 function countProgressStatuses(statuses = {}) {
   const values = Object.values(statuses || {});
   return {
     known: values.filter((status) => status === 'known').length,
     learning: values.filter((status) => status === 'learning').length,
+  };
+}
+
+function normalizeProgressPayload(progress, cards = []) {
+  const validIds = new Set(cards.map((card) => card.id));
+  const order = Array.isArray(progress.order_json)
+    ? progress.order_json.filter((cardId) => validIds.has(cardId))
+    : [];
+  const statuses = progress.statuses_json && typeof progress.statuses_json === 'object'
+    ? Object.fromEntries(
+      Object.entries(progress.statuses_json)
+        .filter(([cardId, status]) => validIds.has(cardId) && ['known', 'learning'].includes(status))
+    )
+    : {};
+  const counts = countProgressStatuses(statuses);
+  const currentIndex = order.length
+    ? Math.max(0, Math.min(Number(progress.current_index) || 0, order.length - 1))
+    : 0;
+
+  return {
+    current_index: currentIndex,
+    order_json: order,
+    statuses_json: statuses,
+    known_count: counts.known,
+    learning_count: counts.learning,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function getSetCards(setId) {
+  const { data, error } = await supabaseAdmin
+    .from('flashcards')
+    .select('id, set_id, front, back, hint, created_at')
+    .eq('set_id', setId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
+async function getRelatedMaterialIds(set, userId) {
+  if (!set?.document_id) {
+    return { relatedStudyGuideId: '', relatedQuizId: '' };
+  }
+
+  const [{ data: guideData, error: guideError }, { data: quizData, error: quizError }] = await Promise.all([
+    supabaseAdmin
+      .from('study_guides')
+      .select('id')
+      .eq('document_id', set.document_id)
+      .eq('user_id', userId)
+      .eq('is_archived', false)
+      .limit(1)
+      .maybeSingle(),
+    supabaseAdmin
+      .from('quizzes')
+      .select('id')
+      .eq('document_id', set.document_id)
+      .eq('user_id', userId)
+      .eq('is_archived', false)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (guideError) throw guideError;
+  if (quizError) throw quizError;
+
+  return {
+    relatedStudyGuideId: guideData?.id || '',
+    relatedQuizId: quizData?.id || '',
   };
 }
 
@@ -78,7 +173,6 @@ async function cleanupDeletedCardReferences(setId, userId, cardIds = []) {
     .from('flashcard_attempts')
     .delete()
     .eq('set_id', setId)
-    .eq('user_id', userId)
     .in('card_id', ids);
 
   if (attemptsError) throw attemptsError;
@@ -150,24 +244,40 @@ router.post('/', async (req, res) => {
         document_id: null,
         is_archived: false,
       })
-      .select('id, title')
+      .select('id, user_id, document_id, source_study_guide_id, title, is_archived, created_at')
       .single();
 
     if (setError) throw setError;
     createdSet = set;
 
-    const { error: cardsError } = await supabaseAdmin.from('flashcards').insert(
-      cards.map((card) => ({
-        set_id: set.id,
-        front: card.front,
-        back: card.back,
-        hint: card.hint,
-      }))
-    );
+    const { data: createdCards, error: cardsError } = await supabaseAdmin
+      .from('flashcards')
+      .insert(
+        cards.map((card) => ({
+          set_id: set.id,
+          front: card.front,
+          back: card.back,
+          hint: card.hint,
+        }))
+      )
+      .select('id, set_id, front, back, hint, created_at');
 
     if (cardsError) throw cardsError;
 
-    return res.status(201).json({ success: true, item: set });
+    return res.status(201).json({
+      success: true,
+      item: { id: set.id, title: sanitizePlainText(set.title, 180) },
+      set: {
+        id: set.id,
+        title: sanitizePlainText(set.title, 180),
+        document_id: set.document_id,
+        source_study_guide_id: set.source_study_guide_id,
+        created_at: set.created_at,
+      },
+      cards: (createdCards || []).map(normalizeCardRow),
+      relatedStudyGuideId: '',
+      relatedQuizId: '',
+    });
   } catch (error) {
     if (createdSet?.id) {
       await supabaseAdmin.from('flashcard_sets').delete().eq('id', createdSet.id);
@@ -190,13 +300,10 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Flashcard set not found.' });
     }
 
-    const { data: cards, error: cardsError } = await supabaseAdmin
-      .from('flashcards')
-      .select('id, set_id, front, back, hint, created_at')
-      .eq('set_id', set.id)
-      .order('created_at', { ascending: true });
-
-    if (cardsError) throw cardsError;
+    const [cards, related] = await Promise.all([
+      getSetCards(set.id),
+      getRelatedMaterialIds(set, req.user.id),
+    ]);
 
     return res.json({
       success: true,
@@ -208,6 +315,8 @@ router.get('/:id', async (req, res) => {
         created_at: set.created_at,
       },
       cards: (cards || []).map(normalizeCardRow),
+      relatedStudyGuideId: related.relatedStudyGuideId,
+      relatedQuizId: related.relatedQuizId,
     });
   } catch (error) {
     console.error('[FLASHCARDS] Failed to load flashcard set:', error.message);
@@ -297,7 +406,11 @@ router.patch('/:id', async (req, res) => {
       }
     }
 
-    const [{ data: updatedSet, error: updatedSetError }, { data: updatedCards, error: updatedCardsError }] = await Promise.all([
+    const [
+      { data: updatedSet, error: updatedSetError },
+      { data: updatedCards, error: updatedCardsError },
+      related,
+    ] = await Promise.all([
       supabaseAdmin
         .from('flashcard_sets')
         .select('id, user_id, document_id, source_study_guide_id, title, is_archived, created_at')
@@ -309,6 +422,7 @@ router.patch('/:id', async (req, res) => {
         .select('id, set_id, front, back, hint, created_at')
         .eq('set_id', set.id)
         .order('created_at', { ascending: true }),
+      getRelatedMaterialIds(set, req.user.id),
     ]);
 
     if (updatedSetError) throw updatedSetError;
@@ -324,10 +438,150 @@ router.patch('/:id', async (req, res) => {
         created_at: updatedSet.created_at,
       },
       cards: (updatedCards || []).map(normalizeCardRow),
+      relatedStudyGuideId: related.relatedStudyGuideId,
+      relatedQuizId: related.relatedQuizId,
     });
   } catch (error) {
     console.error('[FLASHCARDS] Failed to update flashcard set:', error.message);
     return res.status(500).json({ error: 'Failed to update flashcard set.' });
+  }
+});
+
+router.get('/:id/progress', async (req, res) => {
+  try {
+    const setId = String(req.params.id || '').trim();
+    if (!UUID_PATTERN.test(setId)) {
+      return res.status(400).json({ error: 'Invalid flashcard set id.' });
+    }
+
+    const set = await getOwnedSet(setId, req.user.id);
+    if (!set || set.is_archived) {
+      return res.status(404).json({ error: 'Flashcard set not found.' });
+    }
+
+    const { data: progress, error: progressError } = await supabaseAdmin
+      .from('flashcard_progress')
+      .select('id, current_index, order_json, statuses_json, known_count, learning_count, updated_at')
+      .eq('user_id', req.user.id)
+      .eq('set_id', set.id)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (progressError) throw progressError;
+    return res.json({ success: true, progress: normalizeProgressRow(progress) });
+  } catch (error) {
+    console.error('[FLASHCARDS] Failed to load flashcard progress:', error.message);
+    return res.status(500).json({ error: 'Failed to load flashcard progress.' });
+  }
+});
+
+router.put('/:id/progress', async (req, res) => {
+  try {
+    const setId = String(req.params.id || '').trim();
+    if (!UUID_PATTERN.test(setId)) {
+      return res.status(400).json({ error: 'Invalid flashcard set id.' });
+    }
+
+    const parsed = flashcardProgressSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid flashcard progress payload.' });
+    }
+
+    const set = await getOwnedSet(setId, req.user.id);
+    if (!set || set.is_archived) {
+      return res.status(404).json({ error: 'Flashcard set not found.' });
+    }
+
+    const cards = await getSetCards(set.id);
+    const progressPayload = normalizeProgressPayload(parsed.data, cards);
+
+    const { data: existing, error: existingError } = await supabaseAdmin
+      .from('flashcard_progress')
+      .select('id')
+      .eq('user_id', req.user.id)
+      .eq('set_id', set.id)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+
+    if (existing?.id) {
+      const { data: updated, error: updateError } = await supabaseAdmin
+        .from('flashcard_progress')
+        .update(progressPayload)
+        .eq('id', existing.id)
+        .eq('user_id', req.user.id)
+        .select('id, current_index, order_json, statuses_json, known_count, learning_count, updated_at')
+        .single();
+
+      if (updateError) throw updateError;
+      return res.json({ success: true, progress: normalizeProgressRow(updated) });
+    }
+
+    const { data: inserted, error: insertError } = await supabaseAdmin
+      .from('flashcard_progress')
+      .insert({
+        user_id: req.user.id,
+        set_id: set.id,
+        ...progressPayload,
+      })
+      .select('id, current_index, order_json, statuses_json, known_count, learning_count, updated_at')
+      .single();
+
+    if (insertError) throw insertError;
+    return res.json({ success: true, progress: normalizeProgressRow(inserted) });
+  } catch (error) {
+    console.error('[FLASHCARDS] Failed to save flashcard progress:', error.message);
+    return res.status(500).json({ error: 'Failed to save flashcard progress.' });
+  }
+});
+
+router.post('/:id/attempts', async (req, res) => {
+  try {
+    const setId = String(req.params.id || '').trim();
+    if (!UUID_PATTERN.test(setId)) {
+      return res.status(400).json({ error: 'Invalid flashcard set id.' });
+    }
+
+    const parsed = flashcardAttemptSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid flashcard attempt payload.' });
+    }
+
+    const set = await getOwnedSet(setId, req.user.id);
+    if (!set || set.is_archived) {
+      return res.status(404).json({ error: 'Flashcard set not found.' });
+    }
+
+    const { data: card, error: cardError } = await supabaseAdmin
+      .from('flashcards')
+      .select('id')
+      .eq('set_id', set.id)
+      .eq('id', parsed.data.card_id)
+      .maybeSingle();
+
+    if (cardError) throw cardError;
+    if (!card) {
+      return res.status(404).json({ error: 'Flashcard not found.' });
+    }
+
+    const { error: insertError } = await supabaseAdmin
+      .from('flashcard_attempts')
+      .insert({
+        user_id: req.user.id,
+        set_id: set.id,
+        card_id: card.id,
+        result: parsed.data.result,
+        response_ms: parsed.data.response_ms ?? null,
+      });
+
+    if (insertError) throw insertError;
+    return res.status(201).json({ success: true });
+  } catch (error) {
+    console.error('[FLASHCARDS] Failed to save flashcard attempt:', error.message);
+    return res.status(500).json({ error: 'Failed to save flashcard attempt.' });
   }
 });
 
