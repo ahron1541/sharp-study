@@ -70,7 +70,7 @@ export default function Modal({
               <X size={20} className="text-[color:var(--color-text-muted)]" />
             </button>
           ) : (
-            <span ref={firstFocusRef} tabIndex={-1} aria-hidden="true" />
+            <span ref={firstFocusRef} tabIndex={-1} />
           )}
         </div>
         {/* Content */}

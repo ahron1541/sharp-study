@@ -22,7 +22,7 @@ import { apiRequest } from '../../../config/api';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
 
 const CARD_PAGE_SIZE = 5;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const draftStorageKey = (userId, scope = 'new') => `sharp-study-manual-flashcards-draft:${userId || 'guest'}:${scope || 'new'}`;
 const contentCacheKey = (setId) => `sharp-study-flashcards-content:${setId}`;
 
