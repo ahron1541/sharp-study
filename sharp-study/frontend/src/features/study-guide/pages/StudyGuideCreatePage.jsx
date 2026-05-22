@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -42,6 +42,9 @@ export default function StudyGuideCreatePage() {
   const [restoredDraft, setRestoredDraft] = useState(null);
   const [draftAction, setDraftAction] = useState(null);
   const [draftReady, setDraftReady] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState(null);
+  const browserBackGuardActiveRef = useRef(false);
+  const allowBrowserBackRef = useRef(false);
 
   const hasChanges = useMemo(
     () => title.trim().length > 0 || content !== EMPTY_EDITOR,
@@ -98,6 +101,83 @@ export default function StudyGuideCreatePage() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasChanges, saving]);
 
+  useEffect(() => {
+    if (!hasChanges || saving) return undefined;
+
+    if (!browserBackGuardActiveRef.current) {
+      window.history.pushState({ sharpStudyGuard: 'study-guide-create' }, '', window.location.href);
+      browserBackGuardActiveRef.current = true;
+    }
+
+    const handlePopState = () => {
+      if (allowBrowserBackRef.current) return;
+      browserBackGuardActiveRef.current = false;
+      setPendingNavigation({ kind: 'browser-back' });
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [hasChanges, saving]);
+
+  const restoreBrowserBackGuard = useCallback(() => {
+    if (!hasChanges || saving || browserBackGuardActiveRef.current) return;
+    window.history.pushState({ sharpStudyGuard: 'study-guide-create' }, '', window.location.href);
+    browserBackGuardActiveRef.current = true;
+  }, [hasChanges, saving]);
+
+  const clearLocalDraft = useCallback(() => {
+    localStorage.removeItem(draftStorageKey(user?.id));
+  }, [user?.id]);
+
+  const requestNavigation = useCallback((nextPath) => {
+    if (hasChanges && !saving) {
+      setPendingNavigation({ kind: 'path', to: nextPath });
+      return;
+    }
+
+    navigate(nextPath);
+  }, [hasChanges, navigate, saving]);
+
+  useEffect(() => {
+    if (!hasChanges || saving) return undefined;
+
+    const handleDocumentClick = (event) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (!link) return;
+      if (link.target && link.target !== '_self') return;
+
+      const href = link.getAttribute('href');
+      if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) {
+        return;
+      }
+
+      const url = new URL(link.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+
+      const nextPath = `${url.pathname}${url.search}${url.hash}`;
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (nextPath === currentPath) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      setPendingNavigation({ kind: 'path', to: nextPath });
+    };
+
+    document.addEventListener('click', handleDocumentClick, true);
+    return () => document.removeEventListener('click', handleDocumentClick, true);
+  }, [hasChanges, saving]);
+
   const handleCreate = async () => {
     const cleanTitle = title.trim();
     if (!cleanTitle) {
@@ -122,7 +202,7 @@ export default function StudyGuideCreatePage() {
       });
 
       toast.success('Study guide created.');
-      localStorage.removeItem(draftStorageKey(user.id));
+      clearLocalDraft();
       navigate(`/study-guide/${response.item.id}`);
     } catch (createError) {
       toast.error(createError.message || 'Failed to create your study guide.');
@@ -151,13 +231,35 @@ export default function StudyGuideCreatePage() {
       detail: 'Removing the saved browser draft and preparing a blank study guide.',
     });
     window.setTimeout(() => {
-      localStorage.removeItem(draftStorageKey(user?.id));
+      clearLocalDraft();
       setTitle('');
       setContent(EMPTY_EDITOR);
       setRestoredDraft(null);
       setDraftAction(null);
       toast.success('Local draft discarded.');
     }, 450);
+  };
+
+  const stayOnPage = () => {
+    if (pendingNavigation?.kind === 'browser-back') {
+      restoreBrowserBackGuard();
+    }
+    setPendingNavigation(null);
+  };
+
+  const discardAndLeave = () => {
+    clearLocalDraft();
+    setPendingNavigation(null);
+
+    if (pendingNavigation?.kind === 'browser-back') {
+      allowBrowserBackRef.current = true;
+      window.history.back();
+      return;
+    }
+
+    if (pendingNavigation?.kind === 'path') {
+      navigate(pendingNavigation.to);
+    }
   };
 
   return (
@@ -175,7 +277,7 @@ export default function StudyGuideCreatePage() {
           <div className="max-w-3xl">
             <button
               type="button"
-              onClick={() => navigate('/library')}
+              onClick={() => requestNavigation('/library')}
               className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-bold text-[color:var(--color-text-muted)] transition-colors duration-200 hover:bg-[color:var(--color-surface-2)] hover:text-[color:var(--color-text)]"
             >
               <ArrowLeft size={16} />
@@ -230,7 +332,7 @@ export default function StudyGuideCreatePage() {
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button
             type="button"
-            onClick={() => navigate('/library')}
+            onClick={() => requestNavigation('/library')}
             disabled={saving || Boolean(draftAction)}
             className="rounded-2xl px-5 py-3 font-bold text-[color:var(--color-text-muted)] transition-colors duration-200 hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -302,6 +404,42 @@ export default function StudyGuideCreatePage() {
           </div>
         </div>
       )}
+    </Modal>
+    <Modal
+      isOpen={Boolean(pendingNavigation)}
+      onClose={stayOnPage}
+      title="Leave study guide?"
+      size="md"
+    >
+      <div className="space-y-4">
+        <p className="text-sm leading-7 text-[color:var(--color-text-muted)]">
+          Your study guide is not created yet. You can stay on this page, create it now, or discard the draft and leave.
+        </p>
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={discardAndLeave}
+            className="rounded-2xl border border-rose-500/40 px-5 py-3 font-bold text-rose-500 transition hover:bg-rose-500/10"
+          >
+            Discard and leave
+          </button>
+          <button
+            type="button"
+            onClick={stayOnPage}
+            className="rounded-2xl border border-[color:var(--color-border)] px-5 py-3 font-bold text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface-2)]"
+          >
+            Stay on page
+          </button>
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={saving || Boolean(restoredDraft) || Boolean(draftAction)}
+            className="rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-bold text-[color:var(--color-accent-text)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Create study guide
+          </button>
+        </div>
+      </div>
     </Modal>
     </>
   );

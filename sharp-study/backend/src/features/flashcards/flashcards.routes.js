@@ -2,6 +2,7 @@ const express = require('express');
 const { z } = require('zod');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { supabaseAdmin } = require('../../config/supabase');
+const { ACTIVITY_TYPES, recordStudyActivity } = require('../streaks/streaks.service');
 
 const router = express.Router();
 
@@ -264,6 +265,8 @@ router.post('/', async (req, res) => {
 
     if (cardsError) throw cardsError;
 
+    await recordStudyActivity(req.user.id, ACTIVITY_TYPES.FLASHCARD_CREATED);
+
     return res.status(201).json({
       success: true,
       item: { id: set.id, title: sanitizePlainText(set.title, 180) },
@@ -428,6 +431,8 @@ router.patch('/:id', async (req, res) => {
     if (updatedSetError) throw updatedSetError;
     if (updatedCardsError) throw updatedCardsError;
 
+    await recordStudyActivity(req.user.id, ACTIVITY_TYPES.FLASHCARD_UPDATED);
+
     return res.json({
       success: true,
       set: {
@@ -578,6 +583,7 @@ router.post('/:id/attempts', async (req, res) => {
       });
 
     if (insertError) throw insertError;
+    await recordStudyActivity(req.user.id, ACTIVITY_TYPES.FLASHCARD_REVIEW);
     return res.status(201).json({ success: true });
   } catch (error) {
     console.error('[FLASHCARDS] Failed to save flashcard attempt:', error.message);

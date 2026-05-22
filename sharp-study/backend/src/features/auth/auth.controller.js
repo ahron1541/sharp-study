@@ -92,10 +92,6 @@ let smtpTransporterPromise = null;
 
 const generateOTP = () => crypto.randomInt(100000, 999999).toString();
 
-function getIsoDateToday() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function normalizeIdentifier(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -151,43 +147,6 @@ function verifyProofToken(token, expectedEmail, expectedPurpose) {
   } catch {
     return false;
   }
-}
-
-function updateStreakPreferences(preferences = {}) {
-  const nextPreferences = { ...preferences };
-  const currentStreak = preferences?.streak || {};
-  const history = Array.isArray(currentStreak.history) ? currentStreak.history : [];
-  const today = getIsoDateToday();
-  const lastDate = currentStreak.last_date;
-
-  let current = Number(currentStreak.current || 0);
-  const longest = Number(currentStreak.longest || 0);
-
-  if (lastDate === today) {
-    nextPreferences.streak = {
-      ...currentStreak,
-      current,
-      longest: Math.max(longest, current),
-      last_date: today,
-      history: Array.from(new Set([...history, today])).sort(),
-    };
-    return nextPreferences;
-  }
-
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayIso = yesterday.toISOString().slice(0, 10);
-  current = lastDate === yesterdayIso ? current + 1 : 1;
-
-  nextPreferences.streak = {
-    ...currentStreak,
-    current,
-    longest: Math.max(longest, current),
-    last_date: today,
-    history: Array.from(new Set([...history, today])).sort(),
-  };
-
-  return nextPreferences;
 }
 
 async function getProfileByEmail(email, columns) {
@@ -629,7 +588,7 @@ exports.login = async (req, res) => {
     const { identifier, password } = parsed.data;
     const { data: user, error: userError } = await getProfileByIdentifier(
       identifier,
-      'id, email, password_hash, is_blocked, username, preferences'
+      'id, email, password_hash, is_blocked, username'
     );
 
     if (userError) throw userError;
@@ -655,9 +614,6 @@ exports.login = async (req, res) => {
       ip_address: req.ip,
       succeeded: true,
     }]);
-
-    const nextPreferences = updateStreakPreferences(user.preferences || {});
-    await supabase.from('profiles').update({ preferences: nextPreferences }).eq('id', user.id);
 
     res.status(200).json({
       message: 'Login successful',

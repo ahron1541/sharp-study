@@ -19,6 +19,7 @@ import {
   Heading2,
   Heading3,
   Highlighter,
+  Info,
   Italic,
   List,
   ListOrdered,
@@ -33,7 +34,8 @@ import {
   Undo2,
   Volume2,
 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import Modal from '../../../shared/components/Modal';
 import { createInstructionalStudyGuideTemplate } from '../utils/content';
 
 const HIGHLIGHT_COLORS = [
@@ -138,6 +140,8 @@ export default function StudyGuideEditor({
   saveActionLabel,
 }) {
   const initialContent = starterContent || content || createInstructionalStudyGuideTemplate();
+  const [highlightOpen, setHighlightOpen] = useState(false);
+  const [noticeOpen, setNoticeOpen] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -267,6 +271,16 @@ export default function StudyGuideEditor({
             <div className="hidden text-xs font-medium text-[color:var(--color-text-muted)] sm:block">
               The editor stays pinned while the text scrolls below.
             </div>
+            <button
+              type="button"
+              onClick={() => setNoticeOpen(true)}
+              className="inline-flex h-9 items-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-xs font-bold text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface-2)] hover:text-[color:var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)]"
+              aria-label="Open editor notice"
+              title="Open editor notice"
+            >
+              <Info size={14} aria-hidden="true" />
+              <span>Notice</span>
+            </button>
           </div>
 
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -428,15 +442,20 @@ export default function StudyGuideEditor({
               ) : null}
 
               <div className="flex flex-wrap items-center gap-2">
-                <div
-                  className="inline-flex items-center gap-2 rounded-2xl bg-[color:var(--color-surface-2)] px-3 py-2 text-xs font-bold text-[color:var(--color-text-muted)]"
-                  role="group"
-                  aria-label="Highlight color tools"
+                <button
+                  type="button"
+                  onClick={() => setHighlightOpen((value) => !value)}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-[color:var(--color-surface-2)] px-3 py-2 text-xs font-bold text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-border)] hover:text-[color:var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)]"
+                  aria-expanded={highlightOpen}
+                  aria-controls="study-guide-highlight-colors"
+                  aria-label="Toggle highlight colors"
+                  disabled={saving}
                 >
-                  <Highlighter size={14} />
+                  <Highlighter size={14} aria-hidden="true" />
                   <span>Highlight</span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
+                </button>
+                {highlightOpen ? (
+                <div id="study-guide-highlight-colors" className="flex flex-wrap items-center gap-2">
                   {HIGHLIGHT_COLORS.map((color) => (
                     <button
                       key={color.name}
@@ -461,6 +480,7 @@ export default function StudyGuideEditor({
                     <Eraser size={16} />
                   </ToolButton>
                 </div>
+                ) : null}
               </div>
             </div>
 
@@ -481,16 +501,24 @@ export default function StudyGuideEditor({
 
       <div className="relative flex-1 overflow-hidden bg-[color:var(--color-surface)] px-5 py-6 sm:px-7 sm:py-7">
         <div className="study-guide-panel-sheen pointer-events-none absolute inset-x-6 top-0 h-px" />
-        <div className="mb-5 rounded-[1.5rem] border border-dashed border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]/75 p-4 text-sm leading-6 text-[color:var(--color-text-muted)]">
-          Edit freely while your draft is cached locally right away and synced to the cloud after a short pause. Use larger headings for main sections and smaller headings for subtopics.
-        </div>
 
-        <div className="study-guide-editor-scroll h-[calc(100%-5.5rem)] overflow-y-auto pr-2">
+        <div className="study-guide-editor-scroll h-full overflow-y-auto pr-2">
           <div className="study-guide-editor rounded-[1.75rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/35 px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:px-6 sm:py-6">
             <EditorContent editor={editor} />
           </div>
         </div>
       </div>
+
+      <Modal
+        isOpen={noticeOpen}
+        onClose={() => setNoticeOpen(false)}
+        title="Editor notice"
+        size="md"
+      >
+        <p className="text-sm leading-7 text-[color:var(--color-text-muted)]">
+          Edit freely while your draft is cached locally right away and synced to the cloud after a short pause. Use larger headings for main sections and smaller headings for subtopics.
+        </p>
+      </Modal>
     </div>
   );
 }

@@ -125,6 +125,8 @@ export default function StudyGuidePage() {
   const utteranceRef = useRef(null);
   const lastSavedContentRef = useRef('');
   const lastLocalSaveAtRef = useRef(0);
+  const browserBackGuardActiveRef = useRef(false);
+  const allowBrowserBackRef = useRef(false);
   const deferredContent = useDeferredValue(content);
 
   useEffect(() => {
@@ -664,6 +666,24 @@ export default function StudyGuidePage() {
   useEffect(() => {
     if (!hasPendingChanges) return undefined;
 
+    if (!browserBackGuardActiveRef.current) {
+      window.history.pushState({ sharpStudyGuard: 'study-guide-edit' }, '', window.location.href);
+      browserBackGuardActiveRef.current = true;
+    }
+
+    const handlePopState = () => {
+      if (allowBrowserBackRef.current) return;
+      browserBackGuardActiveRef.current = false;
+      setPendingNavigation({ kind: 'browser-back' });
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [hasPendingChanges]);
+
+  useEffect(() => {
+    if (!hasPendingChanges) return undefined;
+
     const handleDocumentClick = (event) => {
       if (
         event.defaultPrevented ||
@@ -811,10 +831,17 @@ export default function StudyGuidePage() {
 
   const handleDiscardAndLeave = () => {
     stopReading();
+    setPendingNavigation(null);
+
+    if (pendingNavigation?.kind === 'browser-back') {
+      allowBrowserBackRef.current = true;
+      window.history.back();
+      return;
+    }
+
     if (pendingNavigation?.kind === 'path') {
       navigate(pendingNavigation.to);
     }
-    setPendingNavigation(null);
   };
 
   const handleSaveAndLeave = async () => {
@@ -822,13 +849,24 @@ export default function StudyGuidePage() {
     if (!saved) return;
 
     stopReading();
+    setPendingNavigation(null);
+
+    if (pendingNavigation?.kind === 'browser-back') {
+      allowBrowserBackRef.current = true;
+      window.history.back();
+      return;
+    }
+
     if (pendingNavigation?.kind === 'path') {
       navigate(pendingNavigation.to);
     }
-    setPendingNavigation(null);
   };
 
   const handleStayEditing = () => {
+    if (pendingNavigation?.kind === 'browser-back' && !browserBackGuardActiveRef.current) {
+      window.history.pushState({ sharpStudyGuard: 'study-guide-edit' }, '', window.location.href);
+      browserBackGuardActiveRef.current = true;
+    }
     setPendingNavigation(null);
   };
 

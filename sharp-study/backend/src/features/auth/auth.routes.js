@@ -22,6 +22,15 @@ const loginLimiter = rateLimit({
   message: { error: 'Too many login attempts. Please try again later.' },
 });
 
+const PROTECTED_PREFERENCE_KEYS = new Set(['xp', 'level', 'streak', 'daily_goals']);
+
+function sanitizePreferenceUpdate(preferences) {
+  return Object.fromEntries(
+    Object.entries(preferences || {})
+      .filter(([key]) => !PROTECTED_PREFERENCE_KEYS.has(key))
+  );
+}
+
 // The 4-Step Signup Flow
 router.post('/signup/request-otp', otpRequestLimiter, authController.requestSignupOtp);
 router.post('/signup/verify-otp', authController.verifySignupOtp);
@@ -59,18 +68,36 @@ router.get('/preferences', requireAuth, async (req, res) => {
 router.patch('/preferences', requireAuth, async (req, res) => {
   try {
     const { preferences } = req.body;
-    if (!preferences || typeof preferences !== 'object') {
+    if (!preferences || typeof preferences !== 'object' || Array.isArray(preferences)) {
       return res.status(400).json({ error: 'Invalid preferences payload.' });
     }
 
     const { supabaseAdmin } = require('../../config/supabase');
+    const { data: profile, error: loadError } = await supabaseAdmin
+      .from('profiles')
+      .select('preferences')
+      .eq('id', req.user.id)
+      .single();
+
+    if (loadError) throw loadError;
+
+    const currentPreferences = profile?.preferences
+      && typeof profile.preferences === 'object'
+      && !Array.isArray(profile.preferences)
+      ? profile.preferences
+      : {};
+    const nextPreferences = {
+      ...currentPreferences,
+      ...sanitizePreferenceUpdate(preferences),
+    };
+
     const { error } = await supabaseAdmin
       .from('profiles')
-      .update({ preferences })
+      .update({ preferences: nextPreferences })
       .eq('id', req.user.id);
 
     if (error) throw error;
-    res.json({ success: true });
+    res.json({ success: true, preferences: nextPreferences });
   } catch (err) {
     res.status(500).json({ error: 'Could not save preferences.' });
   }

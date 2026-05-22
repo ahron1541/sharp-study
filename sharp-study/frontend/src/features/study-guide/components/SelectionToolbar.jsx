@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 export default function SelectionToolbar({
   position,
   visible,
@@ -8,6 +10,8 @@ export default function SelectionToolbar({
   onRemoveHighlight,
   onClose,
 }) {
+  const [highlightOpen, setHighlightOpen] = useState(false);
+
   if (!visible || !position) return null;
 
   return (
@@ -31,13 +35,15 @@ export default function SelectionToolbar({
         </button>
         <button
           type="button"
-          onClick={() => onHighlight(highlightColors[0]?.value)}
+          onClick={() => setHighlightOpen((value) => !value)}
           className="rounded-full bg-[color:var(--color-accent)] px-3 py-1.5 text-xs font-bold text-[color:var(--color-accent-text)] transition hover:opacity-90"
+          aria-expanded={highlightOpen}
+          aria-controls="selection-highlight-colors"
         >
           Highlight
         </button>
-        {highlightColors.length > 0 && (
-          <div className="flex items-center gap-1 rounded-full bg-[color:var(--color-surface-2)] p-1">
+        {highlightOpen && highlightColors.length > 0 && (
+          <div id="selection-highlight-colors" className="flex items-center gap-1 rounded-full bg-[color:var(--color-surface-2)] p-1">
             {highlightColors.map((color) => (
               <button
                 key={color.name}

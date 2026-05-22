@@ -1,38 +1,69 @@
-export function calculateStreak(currentStreak, lastDate) {
-  if (!lastDate) return { current: 1, broken: false, same: false };
+import { useCallback, useEffect, useState } from 'react';
+import { apiRequest } from '../../../config/api';
 
-  const today = new Date();
-  const last = new Date(lastDate);
-  const todayStr = today.toISOString().slice(0, 10);
-  const lastStr = last.toISOString().slice(0, 10);
+const EMPTY_STREAK = {
+  current: 0,
+  longest: 0,
+  last_activity_date: null,
+  today_active: false,
+  timezone: 'Asia/Manila',
+  history: [],
+};
 
-  if (todayStr === lastStr) return { current: currentStreak, broken: false, same: true };
+function normalizeStreak(payload) {
+  const streak = payload?.streak || payload || {};
+  const history = Array.isArray(streak.history)
+    ? streak.history
+      .map((entry) => ({
+        date: String(entry?.date || '').slice(0, 10),
+        activity_count: Number(entry?.activity_count || 0),
+        activity_counts: entry?.activity_counts && typeof entry.activity_counts === 'object'
+          ? entry.activity_counts
+          : {},
+      }))
+      .filter((entry) => /^\d{4}-\d{2}-\d{2}$/.test(entry.date))
+    : [];
 
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().slice(0, 10);
-
-  if (lastStr === yesterdayStr) return { current: currentStreak + 1, broken: false, same: false };
-
-  return { current: 1, broken: true, same: false };
+  return {
+    current: Number(streak.current || 0),
+    longest: Number(streak.longest || 0),
+    last_activity_date: streak.last_activity_date || null,
+    today_active: Boolean(streak.today_active),
+    timezone: streak.timezone || EMPTY_STREAK.timezone,
+    history,
+  };
 }
 
-export function getWeeklyHistory(lastDate, currentStreak) {
-  const today = new Date();
-  const result = [];
+export function useStreak(options = {}) {
+  const { days = 35 } = options;
+  const [streak, setStreak] = useState(EMPTY_STREAK);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  for (let i = 6; i >= 0; i--) {
-    const day = new Date(today);
-    day.setDate(today.getDate() - i);
-    const dayStr = day.toISOString().slice(0, 10);
-    // Simplified logic for history
-    result.push(i < currentStreak);
-  }
+  const fetchStreak = useCallback(async () => {
+    setLoading(true);
+    setError('');
 
-  return result;
-}
+    try {
+      const response = await apiRequest(`/api/streak?days=${encodeURIComponent(days)}`);
+      setStreak(normalizeStreak(response));
+    } catch (err) {
+      setError(err.message || 'Failed to load study streak.');
+      setStreak(EMPTY_STREAK);
+    } finally {
+      setLoading(false);
+    }
+  }, [days]);
 
-export async function recordStudySession(currentPrefs) {
-  // Logic to update streak in preferences
-  return currentPrefs;
+  useEffect(() => {
+    const timer = window.setTimeout(fetchStreak, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchStreak]);
+
+  return {
+    streak,
+    loading,
+    error,
+    refetch: fetchStreak,
+  };
 }

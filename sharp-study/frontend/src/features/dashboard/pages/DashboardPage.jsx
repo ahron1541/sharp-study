@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, BookOpen, CalendarDays, CreditCard, Flame, HelpCircle, Sparkles, Trophy, Zap } from 'lucide-react';
+import { ArrowRight, CalendarDays, CreditCard, Flame, HelpCircle, Sparkles, Trophy, Zap } from 'lucide-react';
 
 import { useDashboard } from '../hooks/useDashboard';
+import { useStreak } from '../hooks/useStreak';
 import { useAuth as useAuthCore } from '../../auth/context/AuthContext';
 import MaterialTypeIcon from '../../library/components/MaterialTypeIcon';
 import { getMaterialRoute } from '../../library/utils/materials';
@@ -12,20 +13,20 @@ const SECTION_ORDER = [
   ['flashcards', 'flashcards', 'Flashcards', 'Flashcards'],
   ['quizzes', 'quiz', 'Quizzes', 'Quiz'],
 ];
-const STREAK_CALENDAR_MAINTENANCE = true;
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { items = { study_guides: [], flashcards: [], quizzes: [] }, loading } = useDashboard({ limit: 3 });
+  const { streak: streakStats, loading: streakLoading, error: streakError } = useStreak({ days: 35 });
   const { profile } = useAuthCore();
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const calendarRef = useRef(null);
 
   const firstName = profile?.first_name || 'Student';
-  const streakPrefs = useMemo(() => profile?.preferences?.streak || {}, [profile?.preferences?.streak]);
-  const streak = Number(streakPrefs.current || 0);
-  const streakHistory = useMemo(() => resolveStreakHistory(streakPrefs), [streakPrefs]);
+  const streak = Number(streakStats.current || 0);
+  const longestStreak = Number(streakStats.longest || 0);
+  const streakHistory = useMemo(() => resolveStreakHistory(streakStats), [streakStats]);
   const weeklyProgress = useMemo(() => buildWeeklyProgress(streakHistory, now), [streakHistory, now]);
   const isFirstTime = items.study_guides.length === 0 && items.flashcards.length === 0 && items.quizzes.length === 0;
 
@@ -35,7 +36,7 @@ export default function DashboardPage() {
         icon: Trophy,
         accent: 'text-amber-500',
         badge: 'bg-amber-500/10',
-        message: 'You have built a strong study rhythm. Keep protecting it one day at a time.',
+        message: 'You have built a strong study rhythm. Keep protecting it with one focused activity today.',
       };
     }
     if (streak >= 7) {
@@ -43,14 +44,22 @@ export default function DashboardPage() {
         icon: Zap,
         accent: 'text-orange-500',
         badge: 'bg-orange-500/10',
-        message: 'A full week of consistency is real progress. Stay steady and keep showing up.',
+        message: 'A full week of real study activity is progress worth keeping warm.',
+      };
+    }
+    if (streak === 0) {
+      return {
+        icon: Flame,
+        accent: 'text-text-muted',
+        badge: 'bg-surface-2',
+        message: 'Complete one flashcard review, quiz attempt, or study guide save today to start your streak.',
       };
     }
     return {
       icon: Flame,
       accent: 'text-streak',
       badge: 'bg-streak/10',
-      message: 'Every study day counts. A short focused session today keeps the streak alive.',
+      message: 'Every active study day counts. A short focused action today keeps the streak alive.',
     };
   }, [streak]);
 
@@ -172,9 +181,9 @@ export default function DashboardPage() {
         <div className="rounded-[2rem] border border-border bg-surface p-6 shadow-card">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">Daily Streak</p>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">Study Streak</p>
               <div className="mt-2 flex items-end gap-2">
-                <span className="text-5xl font-display font-black text-text">{streak}</span>
+                <span className="text-5xl font-display font-black text-text">{streakLoading ? '...' : streak}</span>
                 <span className="pb-2 text-sm font-bold text-text-muted">days</span>
               </div>
             </div>
@@ -184,6 +193,14 @@ export default function DashboardPage() {
           </div>
 
           <p className="mt-5 text-sm leading-7 text-text-muted">{streakMeta.message}</p>
+          {longestStreak > 0 ? (
+            <p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-text-muted">
+              Best streak: {longestStreak} days
+            </p>
+          ) : null}
+          {streakError ? (
+            <p className="mt-2 text-xs font-semibold text-text-muted">Streak sync is unavailable right now.</p>
+          ) : null}
 
           <div className="mt-5 flex items-center justify-between gap-3">
             <div className="flex flex-1 gap-2">
@@ -194,25 +211,17 @@ export default function DashboardPage() {
             <div className="relative shrink-0" ref={calendarRef}>
               <button
                 type="button"
-                disabled={STREAK_CALENDAR_MAINTENANCE}
                 onClick={() => setCalendarOpen((value) => !value)}
                 aria-expanded={calendarOpen}
                 aria-haspopup="dialog"
                 aria-controls="streak-calendar-popover"
-                className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-bold text-text disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-bold text-text"
               >
                 <CalendarDays size={16} aria-hidden="true" />
-                {STREAK_CALENDAR_MAINTENANCE ? 'Under maintenance' : 'Calendar'}
+                Calendar
               </button>
 
-              {STREAK_CALENDAR_MAINTENANCE ? (
-                <div className="absolute right-0 top-[calc(100%+0.75rem)] z-20 w-[min(24rem,calc(100vw-3rem))] rounded-[1.5rem] border border-border bg-surface p-4 shadow-[0_20px_60px_rgba(15,23,42,0.22)]">
-                  <p className="text-sm font-black text-text">Streak calendar is under maintenance</p>
-                  <p className="mt-2 text-sm leading-7 text-text-muted">
-                    We are recalibrating the date history so your streak view returns with cleaner and more reliable tracking.
-                  </p>
-                </div>
-              ) : calendarOpen ? (
+              {calendarOpen ? (
                 <div
                   id="streak-calendar-popover"
                   role="dialog"
@@ -334,11 +343,15 @@ function QuickAccessCard({ icon, label, sub, onClick }) {
 function resolveStreakHistory(streakPrefs) {
   const history = Array.isArray(streakPrefs?.history) ? streakPrefs.history : [];
   if (history.length) {
-    return [...new Set(history.map((value) => normalizeDateKey(value)).filter(Boolean))];
+    return [...new Set(
+      history
+        .map((value) => normalizeDateKey(typeof value === 'string' ? value : value?.date))
+        .filter(Boolean)
+    )];
   }
 
   const current = Number(streakPrefs?.current || 0);
-  const lastDate = streakPrefs?.last_date;
+  const lastDate = streakPrefs?.last_activity_date || streakPrefs?.last_date;
   if (!current || !lastDate) return [];
 
   const dates = [];

@@ -5,6 +5,7 @@ const { supabaseAdmin } = require('../../config/supabase');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { invalidateDashboardCache } = require('../dashboard/dashboard.cache');
 const { sanitizePlainText, sanitizeStudyGuideContent } = require('../../utils/studyGuideSanitize');
+const { ACTIVITY_TYPES, recordStudyActivity } = require('../streaks/streaks.service');
 
 const router = express.Router();
 
@@ -50,6 +51,7 @@ router.post('/', async (req, res) => {
     if (error) throw error;
 
     invalidateDashboardCache(req.user.id);
+    await recordStudyActivity(req.user.id, ACTIVITY_TYPES.STUDY_GUIDE_CREATED);
     return res.status(201).json({ success: true, item: data });
   } catch (error) {
     console.error('[STUDY_GUIDES] Failed to create study guide:', error.message);
@@ -93,6 +95,7 @@ router.patch('/:id', async (req, res) => {
       invalidateDashboardCache(req.user.id);
     }
 
+    await recordStudyActivity(req.user.id, ACTIVITY_TYPES.STUDY_GUIDE_UPDATED);
     return res.json({ success: true, item: data });
   } catch (error) {
     console.error('[STUDY_GUIDES] Failed to update study guide:', error.message);

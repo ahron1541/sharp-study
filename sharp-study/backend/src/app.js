@@ -11,6 +11,7 @@ const dashboardRoutes = require('./features/dashboard/dashboard.routes');
 const flashcardRoutes = require('./features/flashcards/flashcards.routes');
 const studyGuideRoutes = require('./features/study-guides/studyGuide.routes');
 const quizRoutes = require('./features/quizzes/quizzes.routes');
+const streakRoutes = require('./features/streaks/streaks.routes');
 
 // --- Temporarily commented out until we build these folders! ---
 // const documentRoutes = require('./features/documents/documents.routes');
@@ -59,6 +60,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/flashcards', flashcardRoutes);
 app.use('/api/study-guides', studyGuideRoutes);
 app.use('/api/quizzes', quizRoutes);
+app.use('/api/streak', streakRoutes);
 
 // --- Temporarily disabled routes ---
 // app.use('/api/documents', documentRoutes);

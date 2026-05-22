@@ -4,6 +4,7 @@ const { z } = require('zod');
 const { supabaseAdmin } = require('../../config/supabase');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { sanitizePlainText } = require('../../utils/studyGuideSanitize');
+const { ACTIVITY_TYPES, recordStudyActivity } = require('../streaks/streaks.service');
 
 const router = express.Router();
 
@@ -360,6 +361,7 @@ router.post('/', async (req, res) => {
       quiz_title: payload.title,
       question_count: questionRows.length,
     });
+    await recordStudyActivity(req.user.id, ACTIVITY_TYPES.QUIZ_CREATED);
 
     return res.status(201).json({
       success: true,
@@ -544,6 +546,7 @@ router.patch('/:id', async (req, res) => {
       quiz_title: payload.title,
       question_count: payload.questions.length,
     });
+    await recordStudyActivity(req.user.id, ACTIVITY_TYPES.QUIZ_UPDATED);
 
     return res.json({
       success: true,
@@ -652,6 +655,7 @@ router.post('/:id/attempts', async (req, res) => {
       .single();
 
     if (logError) throw logError;
+    await recordStudyActivity(req.user.id, ACTIVITY_TYPES.QUIZ_ATTEMPT);
 
     return res.status(201).json({
       success: true,

@@ -12,6 +12,7 @@ const {
   generateQuiz,
 } = require('./ai.service');
 const { invalidateDashboardCache } = require('../dashboard/dashboard.cache');
+const { ACTIVITY_TYPES, recordStudyActivity } = require('../streaks/streaks.service');
 const {
   buildSnapshot,
   cancelJob,
@@ -662,6 +663,7 @@ async function processGenerationJob(job) {
     if (typeof invalidateDashboardCache === 'function') {
       invalidateDashboardCache(userId);
     }
+    await recordStudyActivity(userId, ACTIVITY_TYPES.AI_GENERATION);
 
     updateJob(job.id, {
       message: 'Finishing your library update',
