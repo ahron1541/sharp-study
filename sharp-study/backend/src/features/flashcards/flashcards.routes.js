@@ -92,6 +92,12 @@ function normalizeProgressRow(row) {
   };
 }
 
+function parsePositiveInt(value, fallback, min, max) {
+  const number = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(number, max));
+}
+
 function countProgressStatuses(statuses = {}) {
   const values = Object.values(statuses || {});
   return {
@@ -547,6 +553,75 @@ router.put('/:id/progress', async (req, res) => {
   } catch (error) {
     console.error('[FLASHCARDS] Failed to save flashcard progress:', error.message);
     return res.status(500).json({ error: 'Failed to save flashcard progress.' });
+  }
+});
+
+router.get('/:id/attempts', async (req, res) => {
+  try {
+    const setId = String(req.params.id || '').trim();
+    if (!UUID_PATTERN.test(setId)) {
+      return res.status(400).json({ error: 'Invalid flashcard set id.' });
+    }
+
+    const set = await getOwnedSet(setId, req.user.id);
+    if (!set || set.is_archived) {
+      return res.status(404).json({ error: 'Flashcard set not found.' });
+    }
+
+    const page = parsePositiveInt(req.query.page, 1, 1, 1000);
+    const pageSize = parsePositiveInt(req.query.limit, 5, 1, 20);
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    const { data: attempts, error: attemptsError, count } = await supabaseAdmin
+      .from('flashcard_attempts')
+      .select('id, card_id, result, response_ms, difficulty, created_at', { count: 'exact' })
+      .eq('user_id', req.user.id)
+      .eq('set_id', set.id)
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (attemptsError) throw attemptsError;
+
+    const cardIds = [...new Set((attempts || []).map((attempt) => attempt.card_id).filter(Boolean))];
+    let cardsById = new Map();
+    if (cardIds.length) {
+      const { data: cardRows, error: cardsError } = await supabaseAdmin
+        .from('flashcards')
+        .select('id, front')
+        .eq('set_id', set.id)
+        .in('id', cardIds);
+
+      if (cardsError) throw cardsError;
+      cardsById = new Map((cardRows || []).map((card) => [card.id, sanitizePlainText(card.front, 120)]));
+    }
+
+    const total = Number(count || 0);
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    return res.json({
+      success: true,
+      attempts: (attempts || []).map((attempt) => ({
+        id: attempt.id,
+        card_id: attempt.card_id,
+        card_front: cardsById.get(attempt.card_id) || 'Deleted flashcard',
+        result: attempt.result === 'learning' ? 'learning' : 'known',
+        response_ms: Number.isFinite(Number(attempt.response_ms)) ? Number(attempt.response_ms) : null,
+        difficulty: difficultySchema.safeParse(attempt.difficulty).success ? attempt.difficulty : 'normal',
+        created_at: attempt.created_at,
+      })),
+      pagination: {
+        page,
+        page_size: pageSize,
+        total,
+        total_pages: totalPages,
+        has_next: page < totalPages,
+        has_previous: page > 1,
+      },
+    });
+  } catch (error) {
+    console.error('[FLASHCARDS] Failed to load flashcard attempts:', error.message);
+    return res.status(500).json({ error: 'Failed to load flashcard attempts.' });
   }
 });
 

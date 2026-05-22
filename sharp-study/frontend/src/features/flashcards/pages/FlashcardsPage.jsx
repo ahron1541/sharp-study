@@ -5,11 +5,14 @@ import {
   BookOpen,
   Check,
   ChevronLeft,
+  ChevronRight,
   Flame,
   HelpCircle,
+  History,
   Keyboard,
   Library,
   Loader2,
+  PlayCircle,
   RotateCcw,
   ShieldCheck,
   Shuffle,
@@ -32,16 +35,17 @@ import XpNotice from '../../gamification/components/XpNotice';
 
 const HINT_DELAY_MS = 45000;
 const SYNC_DELAY_MS = 20000;
+const ATTEMPT_PAGE_SIZE = 5;
 const progressKey = (setId) => `sharp-study-flashcards-progress:${setId}`;
 const contentCacheKey = (setId) => `sharp-study-flashcards-content:${setId}`;
 const difficultyKey = (setId) => `sharp-study-flashcards-difficulty:${setId}`;
 const tutorialKey = 'sharp-study-flashcards-tutorial-seen';
 const MotionDiv = motion.div;
 const FLASHCARD_DIFFICULTIES = [
-  { value: 'easy', label: 'Easy', helper: 'Hints stay open', knownXp: 1, learningXp: 1, color: '#22c55e', icon: Sparkles, hintsLocked: false },
-  { value: 'normal', label: 'Normal', helper: 'Balanced review', knownXp: 2, learningXp: 1, color: '#8b3dff', icon: ShieldCheck, hintsLocked: false },
-  { value: 'hard', label: 'Hard', helper: 'Hints locked', knownXp: 4, learningXp: 2, color: '#f97316', icon: Flame, hintsLocked: true },
-  { value: 'expert', label: 'Expert', helper: 'Strict recall', knownXp: 6, learningXp: 3, color: '#facc15', icon: Star, hintsLocked: true },
+  { value: 'easy', label: 'Easy', helper: 'Hints stay open', description: 'Best for warming up or reading a new lesson for the first time.', knownXp: 1, learningXp: 1, color: '#22c55e', icon: Sparkles, hintsLocked: false },
+  { value: 'normal', label: 'Normal', helper: 'Balanced review', description: 'Good for regular practice with standard hint support.', knownXp: 2, learningXp: 1, color: '#8b3dff', icon: ShieldCheck, hintsLocked: false },
+  { value: 'hard', label: 'Hard', helper: 'Hints locked', description: 'Better XP with stricter recall. Hints are locked while you answer.', knownXp: 4, learningXp: 2, color: '#f97316', icon: Flame, hintsLocked: true },
+  { value: 'expert', label: 'Expert', helper: 'Strict recall', description: 'Highest flashcard XP. Use this when you are ready to test memory without help.', knownXp: 6, learningXp: 3, color: '#facc15', icon: Star, hintsLocked: true },
 ];
 
 function getFlashcardDifficulty(value = 'normal') {
@@ -147,6 +151,36 @@ function writeFlashcardsContentCache(setId, payload) {
   }
 }
 
+function normalizeAttemptLogItem(attempt) {
+  return {
+    id: sanitizePlainText(attempt?.id || `local-${Date.now()}`),
+    card_id: sanitizePlainText(attempt?.card_id || ''),
+    card_front: sanitizePlainText(attempt?.card_front || 'Flashcard'),
+    result: attempt?.result === 'learning' ? 'learning' : 'known',
+    response_ms: Number.isFinite(Number(attempt?.response_ms)) ? Number(attempt.response_ms) : null,
+    difficulty: getFlashcardDifficulty(attempt?.difficulty).value,
+    created_at: attempt?.created_at || new Date().toISOString(),
+  };
+}
+
+function formatReviewDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown date';
+  return date.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatResponseTime(ms) {
+  if (!Number.isFinite(Number(ms))) return 'No timer';
+  const seconds = Math.max(0, Math.round(Number(ms) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
+}
+
 export default function FlashcardsPage() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -167,6 +201,18 @@ export default function FlashcardsPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [speaking, setSpeaking] = useState(false);
   const [difficulty, setDifficulty] = useState(() => readFlashcardDifficulty(id));
+  const [reviewStarted, setReviewStarted] = useState(false);
+  const [attemptLog, setAttemptLog] = useState([]);
+  const [attemptPage, setAttemptPage] = useState(1);
+  const [attemptPagination, setAttemptPagination] = useState({
+    page: 1,
+    page_size: ATTEMPT_PAGE_SIZE,
+    total: 0,
+    total_pages: 1,
+    has_next: false,
+    has_previous: false,
+  });
+  const [attemptLogLoading, setAttemptLogLoading] = useState(false);
 
   const syncTimerRef = useRef(null);
   const utteranceRef = useRef(null);
@@ -245,6 +291,39 @@ export default function FlashcardsPage() {
     });
   }, [scheduleProgressSync]);
 
+  const loadAttemptLog = useCallback(async (page = 1) => {
+    if (!user?.id || !id) {
+      setAttemptLog([]);
+      setAttemptPagination({
+        page: 1,
+        page_size: ATTEMPT_PAGE_SIZE,
+        total: 0,
+        total_pages: 1,
+        has_next: false,
+        has_previous: false,
+      });
+      return;
+    }
+
+    setAttemptLogLoading(true);
+    try {
+      const response = await apiRequest(`/api/flashcards/${id}/attempts?page=${page}&limit=${ATTEMPT_PAGE_SIZE}`);
+      setAttemptLog((response.attempts || []).map(normalizeAttemptLogItem));
+      setAttemptPagination({
+        page: Number(response.pagination?.page || page),
+        page_size: Number(response.pagination?.page_size || ATTEMPT_PAGE_SIZE),
+        total: Number(response.pagination?.total || 0),
+        total_pages: Math.max(1, Number(response.pagination?.total_pages || 1)),
+        has_next: Boolean(response.pagination?.has_next),
+        has_previous: Boolean(response.pagination?.has_previous),
+      });
+    } catch (error) {
+      console.warn('[FlashcardsProgress] Attempt log load failed.', error);
+    } finally {
+      setAttemptLogLoading(false);
+    }
+  }, [id, user?.id]);
+
   const stopReading = useCallback(() => {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
@@ -288,6 +367,7 @@ export default function FlashcardsPage() {
         setRelatedStudyGuideId(cached.relatedStudyGuideId || '');
         setRelatedQuizId(cached.relatedQuizId || '');
         setDifficulty(cachedDifficulty);
+        setReviewStarted(false);
         if (getFlashcardDifficulty(cachedDifficulty).hintsLocked) {
           setHintVisible(false);
         }
@@ -345,6 +425,7 @@ export default function FlashcardsPage() {
       setCards(nextCards);
       setProgress(nextProgress);
       setShowTutorial(!localStorage.getItem(tutorialKey));
+      setReviewStarted(false);
       setLoading(false);
 
       const nextRelatedStudyGuideId = sanitizePlainText(response.relatedStudyGuideId || '');
@@ -391,6 +472,14 @@ export default function FlashcardsPage() {
   }, [cards, id, relatedQuizId, relatedStudyGuideId, set]);
 
   useEffect(() => {
+    if (!set?.id || !user?.id) return undefined;
+    const timer = window.setTimeout(() => {
+      loadAttemptLog(attemptPage);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [attemptPage, loadAttemptLog, set?.id, user?.id]);
+
+  useEffect(() => {
     if (!currentCard || flipped || completed || hintsLocked) return undefined;
     const timer = window.setTimeout(() => setHintVisible(true), HINT_DELAY_MS);
     return () => window.clearTimeout(timer);
@@ -408,6 +497,15 @@ export default function FlashcardsPage() {
     setDifficulty(next.value);
     if (next.hintsLocked) setHintVisible(false);
   }, []);
+
+  const startReview = useCallback(() => {
+    if (!orderedCards.length) return;
+    stopReading();
+    setFlipped(false);
+    setHintVisible(false);
+    setReviewStarted(true);
+    cardStartedAtRef.current = Date.now();
+  }, [orderedCards.length, stopReading]);
 
   const flipCard = useCallback(() => {
     withLock(() => {
@@ -449,6 +547,9 @@ export default function FlashcardsPage() {
             response_ms: responseMs,
             difficulty: difficultyMeta.value,
           }),
+        }).then(() => {
+          setAttemptPage(1);
+          loadAttemptLog(1);
         }).catch((error) => {
           console.warn('[FlashcardsProgress] Attempt sync failed.', error);
         });
@@ -456,7 +557,7 @@ export default function FlashcardsPage() {
       setFlipped(false);
       setHintVisible(false);
     });
-  }, [currentCard, difficultyMeta.value, id, orderedCards.length, reviewedCount, stopReading, updateProgress, user, withLock]);
+  }, [currentCard, difficultyMeta.value, id, loadAttemptLog, orderedCards.length, reviewedCount, stopReading, updateProgress, user, withLock]);
 
   const goBackToLastQuestion = useCallback(() => {
     const previous = progress.history[progress.history.length - 1];
@@ -497,12 +598,13 @@ export default function FlashcardsPage() {
     syncProgressToDatabase(nextProgress);
     setFlipped(false);
     setHintVisible(false);
+    setReviewStarted(false);
   }, [cards, saveProgressLocally, syncProgressToDatabase]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.target instanceof HTMLElement && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) return;
-      if (showTutorial || deleteTarget) return;
+      if (!reviewStarted || showTutorial || deleteTarget) return;
       if (event.key === ' ') {
         event.preventDefault();
         flipCard();
@@ -515,7 +617,7 @@ export default function FlashcardsPage() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [currentIndex, deleteTarget, flipCard, goToIndex, markCard, showTutorial, shuffleCards]);
+  }, [currentIndex, deleteTarget, flipCard, goToIndex, markCard, reviewStarted, showTutorial, shuffleCards]);
 
   const deleteCard = async () => {
     if (!deleteTarget || saving) return;
@@ -573,8 +675,14 @@ export default function FlashcardsPage() {
             </div>
 
             <div className="flex shrink-0 items-start justify-end gap-3">
-              <XpNotice className="mt-1" title="Flashcard reviews can earn XP.">
-                Mark a card as Know or Still learning to record a review. Harder modes give more XP, and Hard or Expert lock hints for stricter recall.
+              <XpNotice
+                className="mt-1"
+                eyebrow="Difficulty notice"
+                ariaLabel="Show flashcard difficulty notice"
+                buttonTitle="Show flashcard difficulty notice"
+                title="Choose a challenge before reviewing."
+              >
+                Easy keeps hints available. Normal is balanced. Hard and Expert lock hints and give higher XP when you mark cards after the review reaches the server.
               </XpNotice>
               <div className="grid grid-cols-3 gap-2 rounded-[1.1rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-1.5 text-center sm:min-w-72">
                 <Stat label="Known" value={knownCount} tone="success" />
@@ -608,6 +716,23 @@ export default function FlashcardsPage() {
             onLibrary={() => navigate('/library?tab=flashcards')}
             onStudyGuide={() => relatedStudyGuideId ? navigate(`/study-guide/${relatedStudyGuideId}`) : navigate('/library?tab=study_guide')}
             onQuiz={() => relatedQuizId ? navigate(`/quiz/${relatedQuizId}`) : navigate('/library?tab=quiz')}
+          />
+        ) : !reviewStarted ? (
+          <FlashcardPreview
+            set={set}
+            cards={orderedCards}
+            knownCount={knownCount}
+            learningCount={learningCount}
+            difficulty={difficultyMeta.value}
+            difficulties={FLASHCARD_DIFFICULTIES}
+            attemptLog={attemptLog}
+            attemptPagination={attemptPagination}
+            attemptLogLoading={attemptLogLoading}
+            onDifficultyChange={changeDifficulty}
+            onStart={startReview}
+            onPageChange={setAttemptPage}
+            onLibrary={() => navigate('/library?tab=flashcards')}
+            onEdit={() => navigate(`/flashcards/${id}/edit`)}
           />
         ) : (
           <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
@@ -757,6 +882,13 @@ export default function FlashcardsPage() {
                 options={FLASHCARD_DIFFICULTIES}
                 onChange={changeDifficulty}
               />
+              <FlashcardAttemptLog
+                attempts={attemptLog}
+                pagination={attemptPagination}
+                loading={attemptLogLoading}
+                onPageChange={setAttemptPage}
+                compact
+              />
               <button onClick={() => navigate(`/flashcards/${id}/edit`)} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl border border-[color:var(--color-border)] px-3 py-2.5 text-sm font-bold text-[color:var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50">
                 <BookOpen size={18} />
                 Edit current
@@ -812,6 +944,235 @@ export default function FlashcardsPage() {
         </div>
       </Modal>
     </>
+  );
+}
+
+function FlashcardPreview({
+  set,
+  cards,
+  knownCount,
+  learningCount,
+  difficulty,
+  difficulties,
+  attemptLog,
+  attemptPagination,
+  attemptLogLoading,
+  onDifficultyChange,
+  onStart,
+  onPageChange,
+  onLibrary,
+  onEdit,
+}) {
+  const selected = getFlashcardDifficulty(difficulty);
+  const Icon = selected.icon;
+  const remaining = Math.max(0, cards.length - knownCount - learningCount);
+
+  return (
+    <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-5 shadow-[0_20px_60px_rgba(15,23,42,0.1)] sm:p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">Review setup</p>
+            <h2 className="mt-2 text-3xl font-black leading-tight text-[color:var(--color-text)]">Choose your flashcard challenge.</h2>
+            <p className="mt-3 max-w-3xl text-sm font-semibold leading-7 text-[color:var(--color-text-muted)]">
+              This set was prepared as {getFlashcardDifficulty(set?.difficulty).label} difficulty, but you can pick the pressure you want for this review session.
+            </p>
+          </div>
+          <div className="grid min-w-[min(100%,22rem)] grid-cols-3 gap-2 rounded-[1.35rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-2 text-center">
+            <Stat label="Cards" value={cards.length} tone="accent" />
+            <Stat label="Known" value={knownCount} tone="success" />
+            <Stat label="Left" value={remaining} tone="warning" />
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
+          <DifficultyOptionGrid
+            value={difficulty}
+            options={difficulties}
+            onChange={onDifficultyChange}
+          />
+
+          <aside className="rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl" style={{ background: `${selected.color}22`, color: selected.color }}>
+                <Icon size={24} aria-hidden="true" />
+              </span>
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[color:var(--color-text-muted)]">Selected</p>
+                <h3 className="text-xl font-black text-[color:var(--color-text)]">{selected.label}</h3>
+              </div>
+            </div>
+            <p className="mt-4 text-sm font-semibold leading-7 text-[color:var(--color-text-muted)]">{selected.description}</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <StartStat label="Know" value={`+${selected.knownXp} XP`} />
+              <StartStat label="Learning" value={`+${selected.learningXp} XP`} />
+            </div>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={onStart}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-black text-[color:var(--color-accent-text)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-[color:var(--color-accent)]/50"
+              >
+                <PlayCircle size={20} aria-hidden="true" />
+                Start flashcards
+              </button>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                <button type="button" onClick={onEdit} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-2.5 text-sm font-black text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface)]">
+                  <BookOpen size={17} aria-hidden="true" />
+                  Edit set
+                </button>
+                <button type="button" onClick={onLibrary} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-2.5 text-sm font-black text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface)]">
+                  <Library size={17} aria-hidden="true" />
+                  Library
+                </button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+
+      <FlashcardAttemptLog
+        attempts={attemptLog}
+        pagination={attemptPagination}
+        loading={attemptLogLoading}
+        onPageChange={onPageChange}
+      />
+    </section>
+  );
+}
+
+function DifficultyOptionGrid({ value, options, onChange }) {
+  return (
+    <fieldset>
+      <legend className="text-sm font-black text-[color:var(--color-text)]">Difficulty</legend>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {options.map((option) => {
+          const Icon = option.icon;
+          const active = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              aria-pressed={active}
+              className={`min-h-[8.5rem] rounded-[1.35rem] border p-4 text-left transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-[color:var(--color-accent)]/50 ${
+                active
+                  ? 'bg-[color:var(--color-surface-2)] text-[color:var(--color-text)] shadow-[0_14px_35px_rgba(15,23,42,0.12)]'
+                  : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text-muted)]'
+              }`}
+              style={{ borderColor: active ? option.color : undefined }}
+            >
+              <span className="flex items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl" style={{ background: `${option.color}22`, color: option.color }}>
+                  <Icon size={20} aria-hidden="true" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-base font-black">{option.label}</span>
+                  <span className="block text-xs font-black uppercase tracking-[0.12em]">{option.helper}</span>
+                </span>
+              </span>
+              <span className="mt-3 block text-sm font-semibold leading-6">{option.description}</span>
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+function FlashcardAttemptLog({ attempts, pagination, loading, onPageChange, compact = false }) {
+  const safePage = Number(pagination?.page || 1);
+  const totalPages = Math.max(1, Number(pagination?.total_pages || 1));
+  const total = Number(pagination?.total || 0);
+
+  return (
+    <section className={`rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] ${compact ? 'p-3' : 'p-5'}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <History className="text-[color:var(--color-accent)]" size={compact ? 17 : 20} aria-hidden="true" />
+          <h2 className={`${compact ? 'text-base' : 'text-xl'} font-black text-[color:var(--color-text)]`}>Review log</h2>
+        </div>
+        <span className="rounded-full bg-[color:var(--color-surface-2)] px-2.5 py-1 text-xs font-black text-[color:var(--color-text-muted)]">
+          {total} total
+        </span>
+      </div>
+
+      <div className="mt-4 space-y-3" aria-live="polite">
+        {loading ? (
+          <div className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4">
+            <div className="flex items-center gap-3 text-sm font-bold text-[color:var(--color-text-muted)]">
+              <Loader2 className="animate-spin text-[color:var(--color-accent)]" size={18} aria-hidden="true" />
+              Loading review history...
+            </div>
+          </div>
+        ) : attempts.length ? attempts.map((attempt) => {
+          const difficulty = getFlashcardDifficulty(attempt.difficulty);
+          const resultKnown = attempt.result === 'known';
+          return (
+            <article key={attempt.id} className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-[color:var(--color-text)]">{attempt.card_front}</p>
+                  <p className="mt-1 text-xs font-semibold text-[color:var(--color-text-muted)]">
+                    {formatReviewDate(attempt.created_at)} · {formatResponseTime(attempt.response_ms)}
+                  </p>
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-black ${resultKnown ? 'bg-emerald-500/10 text-emerald-500' : 'bg-orange-500/10 text-orange-500'}`}>
+                  {resultKnown ? 'Know' : 'Learning'}
+                </span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <span className="rounded-full px-2.5 py-1 text-xs font-black" style={{ background: `${difficulty.color}1f`, color: difficulty.color }}>
+                  {difficulty.label}
+                </span>
+                <span className="rounded-full bg-[color:var(--color-surface)] px-2.5 py-1 text-xs font-black text-[color:var(--color-text-muted)]">
+                  {resultKnown ? `+${difficulty.knownXp} XP` : `+${difficulty.learningXp} XP`}
+                </span>
+              </div>
+            </article>
+          );
+        }) : (
+          <div className="rounded-[1.25rem] border border-dashed border-[color:var(--color-border)] p-4 text-sm font-semibold leading-6 text-[color:var(--color-text-muted)]">
+            Your reviewed cards will appear here after they sync.
+          </div>
+        )}
+      </div>
+
+      {totalPages > 1 ? (
+        <nav className="mt-4 flex items-center justify-between gap-2" aria-label="Flashcard review log pagination">
+          <button
+            type="button"
+            onClick={() => onPageChange(Math.max(1, safePage - 1))}
+            disabled={loading || safePage <= 1}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--color-border)] text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Previous review log page"
+          >
+            <ChevronLeft size={18} aria-hidden="true" />
+          </button>
+          <span className="text-xs font-black uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">
+            Page {safePage} of {totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => onPageChange(Math.min(totalPages, safePage + 1))}
+            disabled={loading || safePage >= totalPages}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--color-border)] text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Next review log page"
+          >
+            <ChevronRight size={18} aria-hidden="true" />
+          </button>
+        </nav>
+      ) : null}
+    </section>
+  );
+}
+
+function StartStat({ label, value }) {
+  return (
+    <div className="rounded-[1rem] bg-[color:var(--color-surface)] p-3 text-center">
+      <p className="text-[0.68rem] font-black uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">{label}</p>
+      <p className="mt-1 text-sm font-black text-[color:var(--color-text)]">{value}</p>
+    </div>
   );
 }
 

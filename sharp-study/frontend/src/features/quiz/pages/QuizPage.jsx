@@ -48,10 +48,10 @@ const DEFAULT_SETTINGS = {
   difficulty: 'normal',
 };
 const QUIZ_DIFFICULTIES = [
-  { value: 'easy', label: 'Easy', quizXp: 5, timerMultiplier: 1.25, timerLabel: 'More time', icon: Sparkles },
-  { value: 'normal', label: 'Normal', quizXp: 10, timerMultiplier: 1, timerLabel: 'Standard', icon: Target },
-  { value: 'hard', label: 'Hard', quizXp: 20, timerMultiplier: 0.8, timerLabel: 'Faster', icon: Flame },
-  { value: 'expert', label: 'Expert', quizXp: 35, timerMultiplier: 0.6, timerLabel: 'Strict', icon: Trophy },
+  { value: 'easy', label: 'Easy', quizXp: 5, timerMultiplier: 1.25, timerLabel: 'More time', description: 'More timer room for a calmer first pass.', color: '#22c55e', icon: Sparkles },
+  { value: 'normal', label: 'Normal', quizXp: 10, timerMultiplier: 1, timerLabel: 'Standard', description: 'Balanced timer pressure and steady XP.', color: '#8b3dff', icon: Target },
+  { value: 'hard', label: 'Hard', quizXp: 20, timerMultiplier: 0.8, timerLabel: 'Faster', description: 'Less time, higher base XP, better for confident review.', color: '#f97316', icon: Flame },
+  { value: 'expert', label: 'Expert', quizXp: 35, timerMultiplier: 0.6, timerLabel: 'Strict', description: 'Strict timer pressure with the highest base quiz XP.', color: '#facc15', icon: Trophy },
 ];
 const WRONG_FEEDBACK_MESSAGES = [
   'No problem. You are still learning.',
@@ -929,6 +929,7 @@ export default function QuizPage() {
           itemCount={Math.min(settings.itemCount, availableQuestions.length)}
           availableCount={availableQuestions.length}
           onCancel={closeStartPrompt}
+          onDifficultyChange={(value) => updateSetting('difficulty', value)}
           onBegin={beginStartCountdown}
         />
       </Modal>
@@ -1001,7 +1002,7 @@ export default function QuizPage() {
   );
 }
 
-function StartQuizModalContent({ countdown, settings, itemCount, availableCount, onCancel, onBegin }) {
+function StartQuizModalContent({ countdown, settings, itemCount, availableCount, onCancel, onDifficultyChange, onBegin }) {
   const countingDown = countdown !== null;
   const countdownLabel = countdown === 0 ? 'Go' : countdown;
   const modeLabel = settings.sessionType === 'practice' ? 'Practice mode' : 'Test mode';
@@ -1052,6 +1053,14 @@ function StartQuizModalContent({ countdown, settings, itemCount, availableCount,
       </div>
 
       {!countingDown ? (
+        <QuizDifficultyChooser
+          value={settings.difficulty}
+          onChange={onDifficultyChange}
+          compact
+        />
+      ) : null}
+
+      {!countingDown ? (
         <div className="rounded-[1.25rem] border border-amber-500/30 bg-amber-500/10 p-4">
           <div className="flex gap-3">
             <AlertTriangle className="mt-1 shrink-0 text-amber-500" size={20} aria-hidden="true" />
@@ -1092,6 +1101,47 @@ function StartSummary({ label, value }) {
       <p className="text-[0.68rem] font-black uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">{label}</p>
       <p className="mt-1 truncate text-sm font-black text-[color:var(--color-text)]">{value}</p>
     </div>
+  );
+}
+
+function QuizDifficultyChooser({ value, onChange, compact = false }) {
+  return (
+    <fieldset className={`rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] ${compact ? 'p-3' : 'p-4'}`}>
+      <legend className="px-1 text-sm font-black text-[color:var(--color-text)]">Difficulty</legend>
+      <div className={`mt-3 grid gap-2 ${compact ? 'sm:grid-cols-2' : 'sm:grid-cols-2'}`}>
+        {QUIZ_DIFFICULTIES.map((option) => {
+          const Icon = option.icon;
+          const active = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              aria-pressed={active}
+              className={`min-h-[5.25rem] rounded-xl border px-3 py-2 text-left transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-[color:var(--color-accent)]/50 ${
+                active
+                  ? 'bg-[color:var(--color-surface)] text-[color:var(--color-text)] shadow-[0_12px_32px_rgba(15,23,42,0.12)]'
+                  : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)]/70 text-[color:var(--color-text-muted)]'
+              }`}
+              style={{ borderColor: active ? option.color : undefined }}
+            >
+              <span className="flex items-center gap-2.5">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl" style={{ background: `${option.color}22`, color: option.color }}>
+                  <Icon size={18} aria-hidden="true" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-black">{option.label}</span>
+                  <span className="block text-xs font-bold">{`+${option.quizXp} XP · ${option.timerLabel}`}</span>
+                </span>
+              </span>
+              {!compact ? (
+                <span className="mt-2 block text-xs font-semibold leading-5">{option.description}</span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
@@ -1143,8 +1193,14 @@ function PreviewScreen({
           </div>
 
           <div className="flex shrink-0 items-start justify-end gap-3">
-            <XpNotice className="mt-1" title="Submitting a quiz attempt can earn XP.">
-              Difficulty controls quiz XP. Harder modes give more base XP, while strong scores can add an accuracy bonus after the attempt syncs.
+            <XpNotice
+              className="mt-1"
+              eyebrow="Difficulty notice"
+              ariaLabel="Show quiz difficulty notice"
+              buttonTitle="Show quiz difficulty notice"
+              title="Difficulty changes XP and timer pressure."
+            >
+              Easy gives more time with lower XP. Normal is balanced. Hard and Expert shorten the timer, increase base XP, and can still earn accuracy bonuses after the attempt syncs.
             </XpNotice>
             <div className="grid min-w-[min(100%,22rem)] grid-cols-3 gap-2 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
               <Stat label="Pool" value={questionCounts.all} tone="accent" />
@@ -1164,18 +1220,8 @@ function PreviewScreen({
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <SegmentedSetting
-                label="Difficulty"
+              <QuizDifficultyChooser
                 value={settings.difficulty}
-                options={QUIZ_DIFFICULTIES.map((option) => {
-                  const Icon = option.icon;
-                  return {
-                    value: option.value,
-                    label: option.label,
-                    caption: `+${option.quizXp} XP · ${option.timerLabel}`,
-                    icon: <Icon size={16} />,
-                  };
-                })}
                 onChange={(value) => onUpdateSetting('difficulty', value)}
               />
               <SegmentedSetting
@@ -1626,24 +1672,37 @@ function ResultsScreen({ quiz, result, attempts, onBackToPreview, onRetake, onRe
 }
 
 function AttemptLog({ attempts }) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(attempts.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const visibleAttempts = attempts.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   return (
     <section className="rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-5">
-      <div className="flex items-center gap-2">
-        <History className="text-[color:var(--color-accent)]" size={20} />
-        <h2 className="text-xl font-black text-[color:var(--color-text)]">Past performance</h2>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <History className="text-[color:var(--color-accent)]" size={20} />
+          <h2 className="text-xl font-black text-[color:var(--color-text)]">Past performance</h2>
+        </div>
+        <span className="rounded-full bg-[color:var(--color-surface-2)] px-2.5 py-1 text-xs font-black text-[color:var(--color-text-muted)]">
+          {attempts.length} total
+        </span>
       </div>
       <div className="mt-4 space-y-3">
-        {attempts.length ? attempts.map((attempt) => {
+        {visibleAttempts.length ? visibleAttempts.map((attempt) => {
           const difficulty = getQuizDifficulty(attempt.difficulty);
           return (
             <div key={attempt.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-black text-[color:var(--color-text)]">
-                  {new Date(attempt.created_at).toLocaleDateString()} · {attempt.session_type === 'practice' ? 'Practice' : 'Test'} · {difficulty.label}
+                  {new Date(attempt.created_at).toLocaleDateString()} · {attempt.session_type === 'practice' ? 'Practice' : 'Test'}
                 </p>
                 <p className="mt-1 text-xs font-semibold text-[color:var(--color-text-muted)]">
                   {attempt.score}/{attempt.total} · {formatDuration(attempt.duration_seconds)}{attempt.pending ? ' · pending sync' : ''}
                 </p>
+                <span className="mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-black" style={{ background: `${difficulty.color}20`, color: difficulty.color }}>
+                  {difficulty.label}
+                </span>
               </div>
               <span className="rounded-full bg-[color:var(--color-surface)] px-3 py-2 text-sm font-black text-[color:var(--color-text)]">{attempt.percent}%</span>
             </div>
@@ -1654,6 +1713,31 @@ function AttemptLog({ attempts }) {
           </div>
         )}
       </div>
+      {totalPages > 1 ? (
+        <nav className="mt-4 flex items-center justify-between gap-2" aria-label="Quiz score log pagination">
+          <button
+            type="button"
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={safePage <= 1}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--color-border)] text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Previous quiz score page"
+          >
+            <ChevronLeft size={18} aria-hidden="true" />
+          </button>
+          <span className="text-xs font-black uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">
+            Page {safePage} of {totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={safePage >= totalPages}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--color-border)] text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Next quiz score page"
+          >
+            <ChevronRight size={18} aria-hidden="true" />
+          </button>
+        </nav>
+      ) : null}
     </section>
   );
 }

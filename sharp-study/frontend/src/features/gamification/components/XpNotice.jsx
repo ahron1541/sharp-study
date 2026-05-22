@@ -7,7 +7,15 @@ const PANEL_MIN_WIDTH = 260;
 const VIEWPORT_MARGIN = 16;
 const PANEL_GAP = 12;
 
-export default function XpNotice({ title, children, className = '', panelPlacement = 'below' }) {
+export default function XpNotice({
+  title,
+  children,
+  className = '',
+  panelPlacement = 'below',
+  eyebrow = 'XP notice',
+  ariaLabel = 'Show XP notice',
+  buttonTitle = 'Show XP notice',
+}) {
   const [open, setOpen] = useState(false);
   const [panelStyle, setPanelStyle] = useState(null);
   const rootRef = useRef(null);
@@ -82,8 +90,8 @@ export default function XpNotice({ title, children, className = '', panelPlaceme
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-controls={panelId}
-        aria-label="Show XP notice"
-        title="Show XP notice"
+        aria-label={ariaLabel}
+        title={buttonTitle}
         className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-cyan-300/60 bg-cyan-400/15 text-cyan-500 shadow-[0_12px_28px_rgba(8,145,178,0.18)] transition hover:-translate-y-0.5 hover:bg-cyan-400/25 focus-visible:outline focus-visible:outline-4 focus-visible:outline-cyan-300/50"
       >
         <Info size={21} strokeWidth={2.6} aria-hidden="true" />
@@ -102,6 +110,7 @@ export default function XpNotice({ title, children, className = '', panelPlaceme
             visibility: panelStyle ? 'visible' : 'hidden',
           }}
           className="fixed z-[1000] max-h-[min(26rem,calc(100vh_-_2rem))] overflow-y-auto rounded-[1.35rem] border border-cyan-300/50 bg-[color:var(--color-surface)] p-4 text-[color:var(--color-text)] shadow-[0_24px_70px_rgba(15,23,42,0.22)]"
+          aria-label={eyebrow}
         >
           <div className="flex items-start gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-cyan-500 text-white shadow-[0_12px_26px_rgba(8,145,178,0.22)]">
@@ -109,7 +118,7 @@ export default function XpNotice({ title, children, className = '', panelPlaceme
             </span>
             <div className="min-w-0">
               <div className="flex items-start justify-between gap-3">
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-500">XP notice</p>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-500">{eyebrow}</p>
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
