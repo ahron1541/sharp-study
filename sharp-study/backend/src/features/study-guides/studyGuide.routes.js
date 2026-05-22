@@ -4,7 +4,7 @@ const { z } = require('zod');
 const { supabaseAdmin } = require('../../config/supabase');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { invalidateDashboardCache } = require('../dashboard/dashboard.cache');
-const { sanitizeStudyGuideContent } = require('../../utils/studyGuideSanitize');
+const { sanitizePlainText, sanitizeStudyGuideContent } = require('../../utils/studyGuideSanitize');
 
 const router = express.Router();
 
@@ -30,11 +30,16 @@ router.post('/', async (req, res) => {
     }
 
     const { title, content } = parsed.data;
+    const cleanTitle = sanitizePlainText(title).slice(0, 200);
+    if (!cleanTitle) {
+      return res.status(400).json({ error: 'Study guide title is required.' });
+    }
+
     const { data, error } = await supabaseAdmin
       .from('study_guides')
       .insert({
         user_id: req.user.id,
-        title,
+        title: cleanTitle,
         content: sanitizeStudyGuideContent(content),
         document_id: null,
         is_archived: false,
@@ -60,6 +65,13 @@ router.patch('/:id', async (req, res) => {
     }
 
     const payload = { ...parsed.data };
+    if (payload.title) {
+      payload.title = sanitizePlainText(payload.title).slice(0, 200);
+      if (!payload.title) {
+        return res.status(400).json({ error: 'Study guide title is required.' });
+      }
+    }
+
     if (payload.content) {
       payload.content = sanitizeStudyGuideContent(payload.content);
     }
@@ -69,7 +81,7 @@ router.patch('/:id', async (req, res) => {
       .update(payload)
       .eq('id', req.params.id)
       .eq('user_id', req.user.id)
-      .select('id, title, content, updated_at')
+      .select('id, title, content, created_at')
       .maybeSingle();
 
     if (error) throw error;
