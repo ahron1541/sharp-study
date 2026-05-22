@@ -26,6 +26,7 @@ const createFlashcardSetSchema = z.object({
     front: z.string().trim().min(1).max(500),
     back: z.string().trim().min(1).max(1000),
     hint: z.string().trim().max(180).optional().nullable(),
+    difficulty: difficultySchema.default('normal'),
   })).min(1).max(80),
 });
 
@@ -51,6 +52,7 @@ function normalizeCardPayload(cards = []) {
       front: sanitizePlainText(card.front, 500),
       back: sanitizePlainText(card.back, 1000),
       hint: sanitizePlainText(card.hint || '', 180) || null,
+      difficulty: difficultySchema.safeParse(card.difficulty).success ? card.difficulty : 'normal',
     }))
     .filter((card) => card.front && card.back);
 }
@@ -269,6 +271,7 @@ router.post('/', async (req, res) => {
           front: card.front,
           back: card.back,
           hint: card.hint,
+          difficulty: card.difficulty,
         }))
       )
       .select('id, set_id, front, back, hint, difficulty, created_at');
@@ -404,6 +407,7 @@ router.patch('/:id', async (req, res) => {
             front: card.front,
             back: card.back,
             hint: card.hint,
+            difficulty: card.difficulty,
           })
           .eq('set_id', set.id)
           .eq('id', card.id);
@@ -416,6 +420,7 @@ router.patch('/:id', async (req, res) => {
             front: card.front,
             back: card.back,
             hint: card.hint,
+            difficulty: card.difficulty,
           });
         if (insertError) throw insertError;
       }

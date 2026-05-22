@@ -202,6 +202,7 @@ export default function FlashcardsPage() {
   const [speaking, setSpeaking] = useState(false);
   const [difficulty, setDifficulty] = useState(() => readFlashcardDifficulty(id));
   const [reviewStarted, setReviewStarted] = useState(false);
+  const [previewExitConfirm, setPreviewExitConfirm] = useState(false);
   const [attemptLog, setAttemptLog] = useState([]);
   const [attemptPage, setAttemptPage] = useState(1);
   const [attemptPagination, setAttemptPagination] = useState({
@@ -529,6 +530,30 @@ export default function FlashcardsPage() {
     cardStartedAtRef.current = Date.now();
   }, [difficultyMeta.label, orderedCards.length, stopReading]);
 
+  const returnToPreview = useCallback(() => {
+    stopReading();
+    if (pendingProgressRef.current) {
+      syncProgressToDatabase(pendingProgressRef.current);
+      pendingProgressRef.current = null;
+    }
+    if (syncTimerRef.current) {
+      window.clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
+    setFlipped(false);
+    setHintVisible(false);
+    setReviewStarted(false);
+    setPreviewExitConfirm(false);
+  }, [stopReading, syncProgressToDatabase]);
+
+  const requestReturnToPreview = useCallback(() => {
+    if (reviewStarted && orderedCards.length) {
+      setPreviewExitConfirm(true);
+      return;
+    }
+    returnToPreview();
+  }, [orderedCards.length, returnToPreview, reviewStarted]);
+
   const flipCard = useCallback(() => {
     withLock(() => {
       stopReading();
@@ -626,7 +651,7 @@ export default function FlashcardsPage() {
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.target instanceof HTMLElement && ['INPUT', 'TEXTAREA'].includes(event.target.tagName)) return;
-      if (!reviewStarted || showTutorial || deleteTarget) return;
+      if (!reviewStarted || showTutorial || deleteTarget || previewExitConfirm) return;
       if (event.key === ' ') {
         event.preventDefault();
         flipCard();
@@ -639,7 +664,7 @@ export default function FlashcardsPage() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [currentIndex, deleteTarget, flipCard, goToIndex, markCard, reviewStarted, showTutorial, shuffleCards]);
+  }, [currentIndex, deleteTarget, flipCard, goToIndex, markCard, previewExitConfirm, reviewStarted, showTutorial, shuffleCards]);
 
   const deleteCard = async () => {
     if (!deleteTarget || saving) return;
@@ -689,7 +714,19 @@ export default function FlashcardsPage() {
         <section className="flashcards-shell mt-3 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3 shadow-[0_14px_44px_rgba(15,23,42,0.08)] sm:p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
-              <p className="text-[0.68rem] font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">Flashcards</p>
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate('/library?tab=flashcards')}
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-[color:var(--color-border)] px-3 text-xs font-black text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface-2)] focus-visible:outline focus-visible:outline-4 focus-visible:outline-[color:var(--color-accent)]/50"
+                  aria-label="Back to flashcard library"
+                  title="Back to flashcard library"
+                >
+                  <ArrowLeft size={15} aria-hidden="true" />
+                  Library
+                </button>
+                <p className="text-[0.68rem] font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">Flashcards</p>
+              </div>
               <h1 className="mt-1 truncate text-2xl font-black leading-tight text-[color:var(--color-text)] sm:text-3xl">{set.title}</h1>
               <p className="mt-1 text-xs text-[color:var(--color-text-muted)] sm:text-sm">
                 {orderedCards.length} cards in this set. Your progress is protected while you review.
@@ -899,19 +936,15 @@ export default function FlashcardsPage() {
             </div>
 
             <aside className="space-y-3 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3">
-              <FlashcardDifficultyPanel
-                value={difficultyMeta.value}
-                options={FLASHCARD_DIFFICULTIES}
-                counts={difficultyCounts}
-                onChange={changeDifficulty}
+              <SelectedFlashcardDifficulty
+                difficulty={difficultyMeta}
+                total={orderedCards.length}
+                reviewed={reviewedCount}
               />
-              <FlashcardAttemptLog
-                attempts={attemptLog}
-                pagination={attemptPagination}
-                loading={attemptLogLoading}
-                onPageChange={setAttemptPage}
-                compact
-              />
+              <button onClick={requestReturnToPreview} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl border border-[color:var(--color-border)] px-3 py-2.5 text-sm font-bold text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50">
+                <ArrowLeft size={18} />
+                Go back to preview
+              </button>
               <button onClick={() => navigate(`/flashcards/${id}/edit`)} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl border border-[color:var(--color-border)] px-3 py-2.5 text-sm font-bold text-[color:var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50">
                 <BookOpen size={18} />
                 Edit current
@@ -953,6 +986,38 @@ export default function FlashcardsPage() {
             <Sparkles size={18} />
             Start reviewing
           </button>
+        </div>
+      </Modal>
+
+      <Modal isOpen={previewExitConfirm} onClose={() => saving ? null : setPreviewExitConfirm(false)} title="Go back to preview?" size="sm">
+        <div className="space-y-4">
+          <p className="text-sm font-semibold leading-7 text-[color:var(--color-text-muted)]">
+            Your flashcard session is still in progress. Going back will close this play screen and return to the difficulty preview. Any synced card results stay saved, but your current review flow will stop.
+          </p>
+          <div className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-[color:var(--color-text-muted)]">Current session</p>
+            <p className="mt-1 text-sm font-black text-[color:var(--color-text)]">
+              {difficultyMeta.label} · {reviewedCount}/{orderedCards.length} reviewed
+            </p>
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setPreviewExitConfirm(false)}
+              disabled={saving}
+              className="rounded-2xl border border-[color:var(--color-border)] px-5 py-3 font-bold text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface-2)] disabled:opacity-50"
+            >
+              Keep reviewing
+            </button>
+            <button
+              type="button"
+              onClick={returnToPreview}
+              disabled={saving}
+              className="rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-bold text-[color:var(--color-accent-text)] transition hover:-translate-y-0.5 disabled:opacity-50"
+            >
+              Go back to preview
+            </button>
+          </div>
         </div>
       </Modal>
 
@@ -1217,48 +1282,37 @@ function Stat({ label, value, tone }) {
   );
 }
 
-function FlashcardDifficultyPanel({ value, options, counts = {}, onChange }) {
-  const selected = getFlashcardDifficulty(value);
+function SelectedFlashcardDifficulty({ difficulty, total, reviewed }) {
+  const selected = getFlashcardDifficulty(difficulty?.value);
+  const Icon = selected.icon;
+  const progress = total ? Math.min(100, Math.round((reviewed / total) * 100)) : 0;
+
   return (
-    <section className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[0.68rem] font-black uppercase tracking-[0.16em] text-[color:var(--color-text-muted)]">Difficulty</p>
-          <p className="mt-1 text-sm font-bold text-[color:var(--color-text-muted)]">
+    <section className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4">
+      <div className="flex items-start gap-3">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl" style={{ background: `${selected.color}22`, color: selected.color }}>
+          <Icon size={22} aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[0.68rem] font-black uppercase tracking-[0.16em] text-[color:var(--color-text-muted)]">Selected difficulty</p>
+          <h2 className="mt-1 truncate text-xl font-black text-[color:var(--color-text)]">{selected.label}</h2>
+          <p className="mt-1 text-xs font-bold text-[color:var(--color-text-muted)]">
             Know +{selected.knownXp} XP · Learning +{selected.learningXp} XP
           </p>
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {options.map((option) => {
-          const Icon = option.icon;
-          const active = option.value === value;
-          const count = Number(counts[option.value] || 0);
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => onChange(option.value)}
-              aria-pressed={active}
-              className={`min-h-[4.7rem] rounded-xl border p-2 text-left transition hover:-translate-y-0.5 ${
-                active
-                  ? 'bg-[color:var(--color-surface)] text-[color:var(--color-text)] shadow-[0_12px_30px_rgba(15,23,42,0.12)]'
-                  : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)]/70 text-[color:var(--color-text-muted)]'
-              }`}
-              style={{ borderColor: active ? option.color : undefined }}
-            >
-              <span className="flex items-center gap-2">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: `${option.color}22`, color: option.color }}>
-                  <Icon size={16} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-black">{option.label}</span>
-                  <span className="block truncate text-[0.68rem] font-bold">{count} ready</span>
-                </span>
-              </span>
-            </button>
-          );
-        })}
+
+      <p className="mt-4 text-sm font-semibold leading-6 text-[color:var(--color-text-muted)]">
+        This session keeps the chosen difficulty locked. Return to preview if you want to pick another challenge.
+      </p>
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <StartStat label="Reviewed" value={`${reviewed}/${total}`} />
+        <StartStat label="Session" value={`${progress}%`} />
+      </div>
+
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-[color:var(--color-surface)]" role="progressbar" aria-label="Current flashcard session progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+        <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${progress}%`, background: selected.color }} />
       </div>
     </section>
   );
@@ -1366,12 +1420,42 @@ function LoadingPanel({ title, detail }) {
   );
 }
 
+function FlashcardsLoadingDonut({ progress = 42 }) {
+  const safeProgress = Math.max(0, Math.min(100, Number(progress) || 0));
+  const degrees = Math.round((safeProgress / 100) * 360);
+
+  return (
+    <span
+      className="quiz-save-donut-active relative inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-full"
+      style={{
+        background: `conic-gradient(var(--color-accent) ${degrees}deg, rgba(148, 163, 184, 0.24) 0deg)`,
+      }}
+      role="img"
+      aria-label={`Flashcards loading ${safeProgress}%`}
+      title={`Flashcards loading ${safeProgress}%`}
+    >
+      <span className="absolute inset-[10px] rounded-full bg-[color:var(--color-surface)]" />
+      <span className="relative text-sm font-black text-[color:var(--color-text)]">{safeProgress}</span>
+    </span>
+  );
+}
+
 function FlashcardsSkeleton() {
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
       <div className="h-4 w-52 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
       <section className="mt-4 rounded-[2.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
-        <div className="h-5 w-32 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]">
+            <FlashcardsLoadingDonut progress={38} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xl font-black text-[color:var(--color-text)]">Loading flashcards</p>
+            <p className="mt-2 text-sm font-semibold text-[color:var(--color-text-muted)]">
+              Syncing cards, difficulty levels, and your saved review progress.
+            </p>
+          </div>
+        </div>
         <div className="mt-4 h-10 w-3/4 animate-pulse rounded-2xl bg-[color:var(--color-surface-2)]" />
         <div className="mt-5 h-3 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
       </section>

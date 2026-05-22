@@ -5,12 +5,15 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Flame,
   GripVertical,
   Keyboard,
   Loader2,
   Plus,
   Save,
+  ShieldCheck,
   Sparkles,
+  Star,
   Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -26,6 +29,16 @@ const CARD_PAGE_SIZE = 5;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const draftStorageKey = (userId, scope = 'new') => `sharp-study-manual-flashcards-draft:${userId || 'guest'}:${scope || 'new'}`;
 const contentCacheKey = (setId) => `sharp-study-flashcards-content:${setId}`;
+const FLASHCARD_DIFFICULTIES = [
+  { value: 'easy', label: 'Easy', helper: 'Direct recall', description: 'Shorter, beginner-friendly cards.', color: '#22c55e', icon: Sparkles },
+  { value: 'normal', label: 'Normal', helper: 'Balanced review', description: 'A steady default for most lessons.', color: '#8b3dff', icon: ShieldCheck },
+  { value: 'hard', label: 'Hard', helper: 'Applied recall', description: 'Better for cards that need deeper thinking.', color: '#f97316', icon: Flame },
+  { value: 'expert', label: 'Expert', helper: 'Strict recall', description: 'Use for your toughest memory checks.', color: '#facc15', icon: Star },
+];
+
+function getFlashcardDifficulty(value = 'normal') {
+  return FLASHCARD_DIFFICULTIES.find((item) => item.value === value) || FLASHCARD_DIFFICULTIES[1];
+}
 
 function createEmptyCard() {
   return {
@@ -33,6 +46,7 @@ function createEmptyCard() {
     id: '',
     front: '',
     back: '',
+    difficulty: 'normal',
   };
 }
 
@@ -42,6 +56,7 @@ function normalizeCards(cards = []) {
       id: UUID_PATTERN.test(card?.id || '') ? card.id : undefined,
       front: sanitizePlainText(card?.front || '').slice(0, 500),
       back: sanitizePlainText(card?.back || '').slice(0, 1000),
+      difficulty: getFlashcardDifficulty(card?.difficulty).value,
     }))
     .filter((card) => card.front && card.back)
     .slice(0, 80);
@@ -55,6 +70,7 @@ function normalizeDraftCards(cards = []) {
         id: UUID_PATTERN.test(card?.id || '') ? card.id : '',
         front: sanitizePlainText(card?.front || '').slice(0, 500),
         back: sanitizePlainText(card?.back || '').slice(0, 1000),
+        difficulty: getFlashcardDifficulty(card?.difficulty).value,
       }))
       .filter((card) => card.front || card.back)
       .slice(0, 80)
@@ -111,6 +127,7 @@ function createSnapshot(title, description, cards) {
       id: card.id || '',
       front: card.front,
       back: card.back,
+      difficulty: getFlashcardDifficulty(card.difficulty).value,
     })),
   });
 }
@@ -555,6 +572,12 @@ export default function FlashcardsCreatePage() {
                   </div>
                 </div>
 
+                <FlashcardDifficultyPicker
+                  value={card.difficulty}
+                  disabled={blocked}
+                  onChange={(difficulty) => updateCard(card.key, { difficulty })}
+                />
+
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                   <label className="block">
                     <span className="sr-only">Flashcard {index + 1} question</span>
@@ -700,6 +723,58 @@ export default function FlashcardsCreatePage() {
   );
 }
 
+function FlashcardDifficultyPicker({ value, disabled, onChange }) {
+  const selected = getFlashcardDifficulty(value);
+
+  return (
+    <fieldset className="mb-4 rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3">
+      <legend className="px-1 text-xs font-black uppercase tracking-[0.16em] text-[color:var(--color-text-muted)]">
+        Card difficulty
+      </legend>
+      <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs font-bold text-[color:var(--color-text-muted)]">
+          Choose how challenging this card should feel in review.
+        </p>
+        <p className="text-xs font-bold text-[color:var(--color-text-muted)]">
+          Current: <span className="text-[color:var(--color-text)]">{selected.label}</span>
+        </p>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {FLASHCARD_DIFFICULTIES.map((option) => {
+          const Icon = option.icon;
+          const active = option.value === selected.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              disabled={disabled}
+              aria-pressed={active}
+              className={`min-h-[5.25rem] rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-[color:var(--color-accent)]/50 ${
+                active
+                  ? 'bg-[color:var(--color-surface-2)] text-[color:var(--color-text)] shadow-[0_12px_30px_rgba(15,23,42,0.1)]'
+                  : 'border-[color:var(--color-border)] text-[color:var(--color-text-muted)] hover:bg-[color:var(--color-surface-2)]'
+              }`}
+              style={{ borderColor: active ? option.color : undefined }}
+            >
+              <span className="flex items-center gap-2">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl" style={{ background: `${option.color}22`, color: option.color }}>
+                  <Icon size={18} aria-hidden="true" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-black">{option.label}</span>
+                  <span className="block truncate text-[0.68rem] font-bold uppercase tracking-[0.1em]">{option.helper}</span>
+                </span>
+              </span>
+              <span className="mt-2 block text-xs font-semibold leading-5">{option.description}</span>
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
 function FlashcardsPagination({ currentPage, totalPages, totalCards, pageStart, pageCount, disabled, onPrevious, onNext }) {
   const start = totalCards ? pageStart + 1 : 0;
   const end = Math.min(totalCards, pageStart + pageCount);
@@ -784,7 +859,17 @@ function FlashcardsBuilderSkeleton() {
     <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
       <div className="h-4 w-52 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
       <section className="mt-4 rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
-        <div className="h-10 w-40 animate-pulse rounded-2xl bg-[color:var(--color-surface-2)]" />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]">
+            <SaveProgressDonut progress={42} active size="lg" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xl font-black text-[color:var(--color-text)]">Loading flashcard editor</p>
+            <p className="mt-2 text-sm font-semibold text-[color:var(--color-text-muted)]">
+              Preparing the set, card difficulties, and saved draft state.
+            </p>
+          </div>
+        </div>
         <div className="mt-6 h-10 w-72 animate-pulse rounded-2xl bg-[color:var(--color-surface-2)]" />
         <div className="mt-6 h-14 animate-pulse rounded-xl bg-[color:var(--color-surface-2)]" />
         <div className="mt-3 h-14 animate-pulse rounded-xl bg-[color:var(--color-surface-2)]" />
