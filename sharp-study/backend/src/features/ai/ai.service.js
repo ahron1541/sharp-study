@@ -618,6 +618,7 @@ const AI_DIFFICULTY_PROFILES = Object.freeze({
     ],
   },
 });
+const AI_DIFFICULTY_ORDER = Object.freeze(['easy', 'normal', 'hard', 'expert']);
 
 function normalizeDifficulty(difficulty = 'normal') {
   const key = String(difficulty || 'normal').trim().toLowerCase();
@@ -634,9 +635,10 @@ ${rules.map((rule) => `- ${rule}`).join('\n')}
 `;
 }
 
-function buildFlashcardsPrompt(extractedText, difficulty = 'normal') {
+function buildFlashcardsPrompt(extractedText, difficulty = 'normal', count = 15) {
+  const targetCount = Math.max(4, Math.min(Number(count) || 15, 20));
   return `
-Create 12 high-accuracy flashcards from the lesson text below.
+Create ${targetCount} high-accuracy flashcards from the lesson text below.
 Respond ONLY with a valid JSON array, no markdown, no explanation.
 Format: [{ "front": "Question?", "back": "Short answer", "hint": "Brief clue", "support_snippet": "Exact supporting phrase from the lesson" }]
 
@@ -651,7 +653,7 @@ Rules:
 - Avoid duplicate questions or questions that ask the same fact in different words.
 - The hint must help recall the answer without revealing the full answer.
 - The support_snippet must copy a short phrase from the lesson that supports the answer.
-- If the lesson cannot support 12 flashcards, return fewer accurate cards instead of filler.
+- If the lesson cannot support ${targetCount} flashcards, return fewer accurate cards instead of filler.
 
 Text:
 """
@@ -660,9 +662,10 @@ ${extractedText.substring(0, 10000)}
   `;
 }
 
-function buildQuizPrompt(extractedText, difficulty = 'normal') {
+function buildQuizPrompt(extractedText, difficulty = 'normal', count = 20) {
+  const targetCount = Math.max(5, Math.min(Number(count) || 20, 24));
   return `
-Create up to 24 high-accuracy quiz questions from the lesson text below.
+Create up to ${targetCount} high-accuracy quiz questions from the lesson text below.
 Respond ONLY with a valid JSON array. No markdown, no explanation.
 Format:
 [{
@@ -697,7 +700,7 @@ Rules:
 - Identification answers should be short enough for a student to type, usually 1 to 5 words.
 - Do not include sentences as identification answers. Use the keyword only.
 - The support_snippet must copy a short phrase from the lesson that supports the answer.
-- If the lesson cannot support 24 questions, return fewer accurate questions instead of filler.
+- If the lesson cannot support ${targetCount} questions, return fewer accurate questions instead of filler.
 
 Lesson text:
 """
@@ -720,15 +723,16 @@ async function generateDiscussionQuestions(extractedText, requestOptions = {}) {
   return generateJsonWithFallback(buildDiscussionPrompt(extractedText), requestOptions, 'discussion question generation');
 }
 
-async function generateFlashcards(extractedText, requestOptions = {}, difficulty = 'normal') {
-  return generateJsonWithFallback(buildFlashcardsPrompt(extractedText, difficulty), requestOptions, `${normalizeDifficulty(difficulty)} flashcard generation`);
+async function generateFlashcards(extractedText, requestOptions = {}, difficulty = 'normal', count = 15) {
+  return generateJsonWithFallback(buildFlashcardsPrompt(extractedText, difficulty, count), requestOptions, `${normalizeDifficulty(difficulty)} flashcard generation`);
 }
 
-async function generateQuiz(extractedText, requestOptions = {}, difficulty = 'normal') {
-  return generateJsonWithFallback(buildQuizPrompt(extractedText, difficulty), requestOptions, `${normalizeDifficulty(difficulty)} quiz generation`);
+async function generateQuiz(extractedText, requestOptions = {}, difficulty = 'normal', count = 20) {
+  return generateJsonWithFallback(buildQuizPrompt(extractedText, difficulty, count), requestOptions, `${normalizeDifficulty(difficulty)} quiz generation`);
 }
 
 module.exports = {
+  AI_DIFFICULTY_ORDER,
   generateStudyGuide,
   generateKeyReferences,
   generateDiscussionQuestions,

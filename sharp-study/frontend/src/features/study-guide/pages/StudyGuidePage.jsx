@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Edit2, FileQuestion, Flame, Layers3, Loader2, PanelLeftClose, PanelLeftOpen, ShieldCheck, Sparkles, Trophy, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, Edit2, FileQuestion, Layers3, Loader2, PanelLeftClose, PanelLeftOpen, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useAuth } from '../../auth/context/AuthContext';
@@ -27,13 +27,6 @@ const HIGHLIGHT_COLORS = [
   { name: 'Purple', value: 'purple', swatch: '#ddd6fe' },
   { name: 'Orange', value: 'orange', swatch: '#fed7aa' },
 ];
-const AI_DIFFICULTIES = [
-  { value: 'easy', label: 'Easy', helper: 'Direct recall', flashcardNote: 'Clear beginner cards', quizNote: '+5 XP base quiz', icon: Sparkles, color: '#22c55e' },
-  { value: 'normal', label: 'Normal', helper: 'Balanced review', flashcardNote: 'Mixed recall cards', quizNote: '+10 XP base quiz', icon: ShieldCheck, color: '#8b3dff' },
-  { value: 'hard', label: 'Hard', helper: 'Applied recall', flashcardNote: 'Subtle hints later', quizNote: '+20 XP base quiz', icon: Flame, color: '#f97316' },
-  { value: 'expert', label: 'Expert', helper: 'Strict recall', flashcardNote: 'Scenario style', quizNote: '+35 XP base quiz', icon: Trophy, color: '#facc15' },
-];
-
 const DRAFT_SYNC_DELAY_MS = 2 * 60 * 1000;
 const draftStorageKey = (guideId) => `sharp-study-guide-draft:${guideId}`;
 const contentCacheKey = (guideId) => `sharp-study-guide-content:${guideId}`;
@@ -70,10 +63,6 @@ function writeStudyGuideContentCache(guideId, payload) {
   } catch (error) {
     console.warn('[StudyGuideCache] Failed to write local content cache.', error);
   }
-}
-
-function getAiDifficulty(value = 'normal') {
-  return AI_DIFFICULTIES.find((item) => item.value === value) || AI_DIFFICULTIES[1];
 }
 
 function formatRelativeSyncTime(timestamp) {
@@ -122,8 +111,6 @@ export default function StudyGuidePage() {
   const [quizId, setQuizId] = useState(() => cachedContent?.quizId || '');
   const [quizGeneration, setQuizGeneration] = useState(null);
   const [quizProgress, setQuizProgress] = useState({ value: 0, title: '', detail: '' });
-  const [generationPrompt, setGenerationPrompt] = useState(null);
-  const [generationDifficulty, setGenerationDifficulty] = useState('normal');
   const [pendingNavigation, setPendingNavigation] = useState(null);
   const [selectionToolbar, setSelectionToolbar] = useState({
     visible: false,
@@ -400,41 +387,22 @@ export default function StudyGuidePage() {
     window.speechSynthesis.speak(utterance);
   }, [plainTextContent, speaking, stopReading]);
 
-  const requestCreateFlashcards = useCallback(() => {
-    if (flashcardSetId) {
-      navigate(`/flashcards/${flashcardSetId}`);
-      return;
-    }
-    setGenerationPrompt('flashcards');
-  }, [flashcardSetId, navigate]);
-
-  const requestCreateQuiz = useCallback(() => {
-    if (quizId) {
-      navigate(`/quiz/${quizId}`);
-      return;
-    }
-    setGenerationPrompt('quiz');
-  }, [navigate, quizId]);
-
-  const handleCreateFlashcards = useCallback(async (difficulty = generationDifficulty) => {
-    const selectedDifficulty = getAiDifficulty(difficulty);
+  const handleCreateFlashcards = useCallback(async () => {
     if (flashcardSetId) {
       navigate(`/flashcards/${flashcardSetId}`);
       return;
     }
 
-    setGenerationPrompt(null);
     setFlashcardGeneration({ status: 'starting' });
     setFlashcardProgress({
       value: 12,
       title: 'Preparing flashcards',
-      detail: `Reading this study guide and preparing ${selectedDifficulty.label.toLowerCase()} flashcards.`,
+      detail: 'Reading this study guide and preparing all challenge levels.',
     });
 
     try {
       const response = await apiRequest(`/api/ai/study-guide/${id}/flashcards`, {
         method: 'POST',
-        body: JSON.stringify({ difficulty: selectedDifficulty.value }),
       });
       const queuedJob = response.job;
       if (!queuedJob?.id) throw new Error('The AI queue did not return a valid job id.');
@@ -443,7 +411,7 @@ export default function StudyGuidePage() {
       setFlashcardProgress({
         value: queuedJob.progressValue || 12,
         title: queuedJob.message || 'Queued for flashcards',
-        detail: queuedJob.detail || `Your ${selectedDifficulty.label.toLowerCase()} flashcard set is waiting for generation.`,
+        detail: queuedJob.detail || 'Your flashcards are waiting for generation.',
       });
 
       const token = localStorage.getItem('sharp-study-token');
@@ -488,27 +456,24 @@ export default function StudyGuidePage() {
       setFlashcardGeneration(null);
       toast.error(error.message || 'Could not start flashcard generation.');
     }
-  }, [flashcardSetId, generationDifficulty, id, navigate]);
+  }, [flashcardSetId, id, navigate]);
 
-  const handleCreateQuiz = useCallback(async (difficulty = generationDifficulty) => {
-    const selectedDifficulty = getAiDifficulty(difficulty);
+  const handleCreateQuiz = useCallback(async () => {
     if (quizId) {
       navigate(`/quiz/${quizId}`);
       return;
     }
 
-    setGenerationPrompt(null);
     setQuizGeneration({ status: 'starting' });
     setQuizProgress({
       value: 12,
       title: 'Preparing quiz',
-      detail: `Reading this study guide and preparing a ${selectedDifficulty.label.toLowerCase()} quiz.`,
+      detail: 'Reading this study guide and preparing all challenge levels.',
     });
 
     try {
       const response = await apiRequest(`/api/ai/study-guide/${id}/quiz`, {
         method: 'POST',
-        body: JSON.stringify({ difficulty: selectedDifficulty.value }),
       });
       const queuedJob = response.job;
       if (!queuedJob?.id) throw new Error('The AI queue did not return a valid job id.');
@@ -517,7 +482,7 @@ export default function StudyGuidePage() {
       setQuizProgress({
         value: queuedJob.progressValue || 12,
         title: queuedJob.message || 'Queued for quiz',
-        detail: queuedJob.detail || `Your ${selectedDifficulty.label.toLowerCase()} quiz is waiting for generation.`,
+        detail: queuedJob.detail || 'Your quiz is waiting for generation.',
       });
 
       const token = localStorage.getItem('sharp-study-token');
@@ -562,7 +527,23 @@ export default function StudyGuidePage() {
       setQuizGeneration(null);
       toast.error(error.message || 'Could not start quiz generation.');
     }
-  }, [generationDifficulty, id, navigate, quizId]);
+  }, [id, navigate, quizId]);
+
+  const requestCreateFlashcards = useCallback(() => {
+    if (flashcardSetId) {
+      navigate(`/flashcards/${flashcardSetId}`);
+      return;
+    }
+    handleCreateFlashcards();
+  }, [flashcardSetId, handleCreateFlashcards, navigate]);
+
+  const requestCreateQuiz = useCallback(() => {
+    if (quizId) {
+      navigate(`/quiz/${quizId}`);
+      return;
+    }
+    handleCreateQuiz();
+  }, [handleCreateQuiz, navigate, quizId]);
 
   useEffect(() => {
     return () => stopReading();
@@ -1247,28 +1228,6 @@ export default function StudyGuidePage() {
       </main>
 
       <Modal
-        isOpen={Boolean(generationPrompt)}
-        onClose={() => setGenerationPrompt(null)}
-        title={generationPrompt === 'quiz' ? 'Choose quiz difficulty' : 'Choose flashcard difficulty'}
-        size="md"
-      >
-        <GenerationDifficultyPrompt
-          type={generationPrompt}
-          value={generationDifficulty}
-          onChange={setGenerationDifficulty}
-          onCancel={() => setGenerationPrompt(null)}
-          onConfirm={() => {
-            const difficulty = getAiDifficulty(generationDifficulty).value;
-            if (generationPrompt === 'quiz') {
-              handleCreateQuiz(difficulty);
-            } else {
-              handleCreateFlashcards(difficulty);
-            }
-          }}
-        />
-      </Modal>
-
-      <Modal
         isOpen={Boolean(flashcardGeneration)}
         onClose={() => {}}
         title="Creating flashcards"
@@ -1372,80 +1331,6 @@ export default function StudyGuidePage() {
         </div>
       </Modal>
     </>
-  );
-}
-
-function GenerationDifficultyPrompt({ type, value, onChange, onCancel, onConfirm }) {
-  const selected = getAiDifficulty(value);
-  const isQuiz = type === 'quiz';
-
-  return (
-    <div className="space-y-5">
-      <p className="text-sm leading-7 text-[color:var(--color-text-muted)]">
-        {isQuiz
-          ? 'Difficulty changes how the AI writes questions and sets the default quiz challenge later.'
-          : 'Difficulty changes how the AI writes cards. Harder cards lean more on application, comparison, and stricter recall.'}
-      </p>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        {AI_DIFFICULTIES.map((option) => {
-          const Icon = option.icon;
-          const active = option.value === value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => onChange(option.value)}
-              aria-pressed={active}
-              className={`rounded-[1.25rem] border p-4 text-left transition hover:-translate-y-0.5 ${
-                active
-                  ? 'bg-[color:var(--color-surface-2)] text-[color:var(--color-text)] shadow-[0_14px_34px_rgba(15,23,42,0.12)]'
-                  : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text-muted)]'
-              }`}
-              style={{ borderColor: active ? option.color : undefined }}
-            >
-              <span className="flex items-center gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl" style={{ background: `${option.color}22`, color: option.color }}>
-                  <Icon size={19} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-base font-black">{option.label}</span>
-                  <span className="mt-0.5 block text-xs font-bold">{option.helper}</span>
-                </span>
-              </span>
-              <span className="mt-3 block text-xs font-semibold leading-5">
-                {isQuiz ? option.quizNote : option.flashcardNote}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4">
-        <p className="text-xs font-black uppercase tracking-[0.18em] text-[color:var(--color-text-muted)]">Selected</p>
-        <p className="mt-1 text-sm font-bold text-[color:var(--color-text)]">
-          {selected.label} {isQuiz ? 'quiz' : 'flashcards'}
-        </p>
-      </div>
-
-      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-2xl border border-[color:var(--color-border)] px-5 py-3 font-bold text-[color:var(--color-text-muted)]"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-black text-[color:var(--color-accent-text)]"
-        >
-          <Sparkles size={18} />
-          Generate {selected.label}
-        </button>
-      </div>
-    </div>
   );
 }
 

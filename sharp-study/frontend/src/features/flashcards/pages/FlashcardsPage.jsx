@@ -220,21 +220,37 @@ export default function FlashcardsPage() {
   const cardStartedAtRef = useRef(0);
   const pendingProgressRef = useRef(null);
 
+  const difficultyMeta = useMemo(() => getFlashcardDifficulty(difficulty), [difficulty]);
+  const difficultyCounts = useMemo(() => (
+    FLASHCARD_DIFFICULTIES.reduce((acc, option) => {
+      acc[option.value] = cards.filter((card) => getFlashcardDifficulty(card.difficulty).value === option.value).length;
+      return acc;
+    }, {})
+  ), [cards]);
+  const activeCards = useMemo(
+    () => cards.filter((card) => getFlashcardDifficulty(card.difficulty).value === difficultyMeta.value),
+    [cards, difficultyMeta.value]
+  );
+
   const orderedCards = useMemo(() => {
-    const byId = new Map(cards.map((card) => [card.id, card]));
+    const byId = new Map(activeCards.map((card) => [card.id, card]));
     const ordered = progress.order.map((cardId) => byId.get(cardId)).filter(Boolean);
-    const missing = cards.filter((card) => !progress.order.includes(card.id));
+    const missing = activeCards.filter((card) => !progress.order.includes(card.id));
     return [...ordered, ...missing];
-  }, [cards, progress.order]);
+  }, [activeCards, progress.order]);
 
   const currentIndex = clampIndex(progress.currentIndex, orderedCards.length);
   const currentCard = orderedCards[currentIndex] || null;
-  const knownCount = Object.values(progress.statuses).filter((status) => status === 'known').length;
-  const learningCount = Object.values(progress.statuses).filter((status) => status === 'learning').length;
+  const activeCardIds = useMemo(() => new Set(activeCards.map((card) => card.id)), [activeCards]);
+  const activeStatuses = useMemo(
+    () => Object.entries(progress.statuses).filter(([cardId]) => activeCardIds.has(cardId)),
+    [activeCardIds, progress.statuses]
+  );
+  const knownCount = activeStatuses.filter(([, status]) => status === 'known').length;
+  const learningCount = activeStatuses.filter(([, status]) => status === 'learning').length;
   const reviewedCount = knownCount + learningCount;
   const completed = orderedCards.length > 0 && reviewedCount >= orderedCards.length;
   const percent = orderedCards.length ? Math.round((knownCount / orderedCards.length) * 100) : 0;
-  const difficultyMeta = useMemo(() => getFlashcardDifficulty(difficulty), [difficulty]);
   const hintsLocked = difficultyMeta.hintsLocked;
 
   useEffect(() => {
@@ -496,16 +512,22 @@ export default function FlashcardsPage() {
     const next = getFlashcardDifficulty(value);
     setDifficulty(next.value);
     if (next.hintsLocked) setHintVisible(false);
-  }, []);
+    setFlipped(false);
+    setReviewStarted(false);
+    updateProgress((current) => ({ ...current, currentIndex: 0 }));
+  }, [updateProgress]);
 
   const startReview = useCallback(() => {
-    if (!orderedCards.length) return;
+    if (!orderedCards.length) {
+      toast.error(`No ${difficultyMeta.label.toLowerCase()} cards are available in this set yet.`);
+      return;
+    }
     stopReading();
     setFlipped(false);
     setHintVisible(false);
     setReviewStarted(true);
     cardStartedAtRef.current = Date.now();
-  }, [orderedCards.length, stopReading]);
+  }, [difficultyMeta.label, orderedCards.length, stopReading]);
 
   const flipCard = useCallback(() => {
     withLock(() => {
@@ -719,12 +741,12 @@ export default function FlashcardsPage() {
           />
         ) : !reviewStarted ? (
           <FlashcardPreview
-            set={set}
             cards={orderedCards}
             knownCount={knownCount}
             learningCount={learningCount}
             difficulty={difficultyMeta.value}
             difficulties={FLASHCARD_DIFFICULTIES}
+            difficultyCounts={difficultyCounts}
             attemptLog={attemptLog}
             attemptPagination={attemptPagination}
             attemptLogLoading={attemptLogLoading}
@@ -880,6 +902,7 @@ export default function FlashcardsPage() {
               <FlashcardDifficultyPanel
                 value={difficultyMeta.value}
                 options={FLASHCARD_DIFFICULTIES}
+                counts={difficultyCounts}
                 onChange={changeDifficulty}
               />
               <FlashcardAttemptLog
@@ -948,12 +971,12 @@ export default function FlashcardsPage() {
 }
 
 function FlashcardPreview({
-  set,
   cards,
   knownCount,
   learningCount,
   difficulty,
   difficulties,
+  difficultyCounts,
   attemptLog,
   attemptPagination,
   attemptLogLoading,
@@ -966,6 +989,7 @@ function FlashcardPreview({
   const selected = getFlashcardDifficulty(difficulty);
   const Icon = selected.icon;
   const remaining = Math.max(0, cards.length - knownCount - learningCount);
+  const selectedCount = Number(difficultyCounts?.[selected.value] || 0);
 
   return (
     <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -975,20 +999,21 @@ function FlashcardPreview({
             <p className="text-[0.68rem] font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">Review setup</p>
             <h2 className="mt-2 text-3xl font-black leading-tight text-[color:var(--color-text)]">Choose your flashcard challenge.</h2>
             <p className="mt-3 max-w-3xl text-sm font-semibold leading-7 text-[color:var(--color-text-muted)]">
-              This set was prepared as {getFlashcardDifficulty(set?.difficulty).label} difficulty, but you can pick the pressure you want for this review session.
+              This set includes multiple challenge levels when generated by AI. Pick the pressure you want for this review session.
             </p>
           </div>
           <div className="grid min-w-[min(100%,22rem)] grid-cols-3 gap-2 rounded-[1.35rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-2 text-center">
-            <Stat label="Cards" value={cards.length} tone="accent" />
-            <Stat label="Known" value={knownCount} tone="success" />
-            <Stat label="Left" value={remaining} tone="warning" />
-          </div>
+              <Stat label="Cards" value={cards.length} tone="accent" />
+              <Stat label="Known" value={knownCount} tone="success" />
+              <Stat label="Left" value={remaining} tone="warning" />
+            </div>
         </div>
 
         <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
           <DifficultyOptionGrid
             value={difficulty}
             options={difficulties}
+            counts={difficultyCounts}
             onChange={onDifficultyChange}
           />
 
@@ -1003,6 +1028,9 @@ function FlashcardPreview({
               </div>
             </div>
             <p className="mt-4 text-sm font-semibold leading-7 text-[color:var(--color-text-muted)]">{selected.description}</p>
+            <p className="mt-2 text-sm font-black text-[color:var(--color-text)]">
+              {selectedCount} {selected.label.toLowerCase()} card{selectedCount === 1 ? '' : 's'} ready.
+            </p>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <StartStat label="Know" value={`+${selected.knownXp} XP`} />
               <StartStat label="Learning" value={`+${selected.learningXp} XP`} />
@@ -1011,7 +1039,8 @@ function FlashcardPreview({
               <button
                 type="button"
                 onClick={onStart}
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-black text-[color:var(--color-accent-text)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-[color:var(--color-accent)]/50"
+                disabled={selectedCount < 1}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-black text-[color:var(--color-accent-text)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-4 focus-visible:outline-[color:var(--color-accent)]/50"
               >
                 <PlayCircle size={20} aria-hidden="true" />
                 Start flashcards
@@ -1041,7 +1070,7 @@ function FlashcardPreview({
   );
 }
 
-function DifficultyOptionGrid({ value, options, onChange }) {
+function DifficultyOptionGrid({ value, options, counts = {}, onChange }) {
   return (
     <fieldset>
       <legend className="text-sm font-black text-[color:var(--color-text)]">Difficulty</legend>
@@ -1049,6 +1078,7 @@ function DifficultyOptionGrid({ value, options, onChange }) {
         {options.map((option) => {
           const Icon = option.icon;
           const active = option.value === value;
+          const count = Number(counts[option.value] || 0);
           return (
             <button
               key={option.value}
@@ -1072,6 +1102,7 @@ function DifficultyOptionGrid({ value, options, onChange }) {
                 </span>
               </span>
               <span className="mt-3 block text-sm font-semibold leading-6">{option.description}</span>
+              <span className="mt-2 block text-xs font-black uppercase tracking-[0.12em]">{count} ready</span>
             </button>
           );
         })}
@@ -1186,7 +1217,7 @@ function Stat({ label, value, tone }) {
   );
 }
 
-function FlashcardDifficultyPanel({ value, options, onChange }) {
+function FlashcardDifficultyPanel({ value, options, counts = {}, onChange }) {
   const selected = getFlashcardDifficulty(value);
   return (
     <section className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
@@ -1202,6 +1233,7 @@ function FlashcardDifficultyPanel({ value, options, onChange }) {
         {options.map((option) => {
           const Icon = option.icon;
           const active = option.value === value;
+          const count = Number(counts[option.value] || 0);
           return (
             <button
               key={option.value}
@@ -1221,7 +1253,7 @@ function FlashcardDifficultyPanel({ value, options, onChange }) {
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-black">{option.label}</span>
-                  <span className="block truncate text-[0.68rem] font-bold">{option.helper}</span>
+                  <span className="block truncate text-[0.68rem] font-bold">{count} ready</span>
                 </span>
               </span>
             </button>

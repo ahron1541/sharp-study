@@ -5,6 +5,7 @@ const AdmZip = require('adm-zip');
 const { supabaseAdmin } = require('../../config/supabase');
 const { sanitizeStudyGuideContent } = require('../../utils/studyGuideSanitize');
 const {
+  AI_DIFFICULTY_ORDER,
   generateStudyGuide,
   generateKeyReferences,
   generateDiscussionQuestions,
@@ -12,7 +13,6 @@ const {
   generateQuiz,
 } = require('./ai.service');
 const { invalidateDashboardCache } = require('../dashboard/dashboard.cache');
-const { normalizeDifficulty } = require('../gamification/gamification.service');
 const { ACTIVITY_TYPES, recordStudyActivity } = require('../streaks/streaks.service');
 const {
   buildSnapshot,
@@ -30,6 +30,18 @@ const DIFFICULTY_LABELS = Object.freeze({
   normal: 'Normal',
   hard: 'Hard',
   expert: 'Expert',
+});
+const FLASHCARD_TARGETS = Object.freeze({
+  easy: 15,
+  normal: 15,
+  hard: 15,
+  expert: 15,
+});
+const QUIZ_TARGETS = Object.freeze({
+  easy: 15,
+  normal: 20,
+  hard: 20,
+  expert: 20,
 });
 
 const upload = multer({
@@ -133,6 +145,11 @@ function sanitizeGeneratedPlainText(value = '', maxLength = 600) {
     .slice(0, maxLength);
 }
 
+function normalizeDifficulty(difficulty = 'normal') {
+  const key = String(difficulty || 'normal').trim().toLowerCase();
+  return AI_DIFFICULTY_ORDER.includes(key) ? key : 'normal';
+}
+
 async function logAiQuizEvent(userId, event, metadata = {}) {
   try {
     await supabaseAdmin.from('audit_logs').insert({
@@ -145,9 +162,10 @@ async function logAiQuizEvent(userId, event, metadata = {}) {
   }
 }
 
-function normalizeGeneratedFlashcards(items = [], sourceText = '', difficulty = 'normal') {
+function normalizeGeneratedFlashcards(items = [], sourceText = '', difficulty = 'normal', limit = 15) {
   const seen = new Set();
   const normalizedDifficulty = normalizeDifficulty(difficulty);
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 15, 20));
 
   return items
     .map((item) => {
@@ -176,12 +194,13 @@ function normalizeGeneratedFlashcards(items = [], sourceText = '', difficulty = 
       };
     })
     .filter(Boolean)
-    .slice(0, 16);
+    .slice(0, safeLimit);
 }
 
-function normalizeGeneratedQuiz(items = [], sourceText = '', difficulty = 'normal') {
+function normalizeGeneratedQuiz(items = [], sourceText = '', difficulty = 'normal', limit = 20) {
   const seen = new Set();
   const normalizedDifficulty = normalizeDifficulty(difficulty);
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 20, 24));
 
   return (Array.isArray(items) ? items : [])
     .map((item, index) => {
@@ -268,7 +287,47 @@ function normalizeGeneratedQuiz(items = [], sourceText = '', difficulty = 'norma
       };
     })
     .filter(Boolean)
-    .slice(0, 24);
+    .slice(0, safeLimit);
+}
+
+function dedupeByKey(items = [], buildKey) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = normalizeForMatch(buildKey(item));
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function generateAllDifficultyFlashcards(cleanedExtractedText, requestOptions, onStage = () => {}) {
+  const batches = [];
+
+  for (const difficulty of AI_DIFFICULTY_ORDER) {
+    const label = DIFFICULTY_LABELS[difficulty] || difficulty;
+    const target = FLASHCARD_TARGETS[difficulty] || 15;
+    onStage(difficulty, target, label);
+    const generated = await generateFlashcards(cleanedExtractedText, requestOptions, difficulty, target);
+    const normalized = normalizeGeneratedFlashcards(generated, cleanedExtractedText, difficulty, target);
+    batches.push(...normalized);
+  }
+
+  return dedupeByKey(batches, (card) => card.front).slice(0, 60);
+}
+
+async function generateAllDifficultyQuiz(cleanedExtractedText, requestOptions, onStage = () => {}) {
+  const batches = [];
+
+  for (const difficulty of AI_DIFFICULTY_ORDER) {
+    const label = DIFFICULTY_LABELS[difficulty] || difficulty;
+    const target = QUIZ_TARGETS[difficulty] || 20;
+    onStage(difficulty, target, label);
+    const generated = await generateQuiz(cleanedExtractedText, requestOptions, difficulty, target);
+    const normalized = normalizeGeneratedQuiz(generated, cleanedExtractedText, difficulty, target);
+    batches.push(...normalized);
+  }
+
+  return dedupeByKey(batches, (question) => question.question).slice(0, 75);
 }
 
 function normalizeGeneratedDiscussionQuestions(items = [], sourceText = '') {
@@ -413,8 +472,6 @@ async function extractText(file) {
 
 async function processGenerationJob(job) {
   const { file, generateOptions, userId, sourceStudyGuideId } = job.payload;
-  const difficulty = normalizeDifficulty(job.payload?.difficulty);
-  const difficultyLabel = DIFFICULTY_LABELS[difficulty] || DIFFICULTY_LABELS.normal;
   const docTitle = file?.originalname ? file.originalname.replace(/\.[^.]+$/, '') : '';
   let documentId = null;
   let sourceStudyGuide = null;
@@ -444,14 +501,13 @@ async function processGenerationJob(job) {
         .from('flashcard_sets')
         .select('id, title')
         .eq('user_id', userId)
-        .eq('is_archived', false)
-        .eq('difficulty', difficulty);
+        .eq('is_archived', false);
 
       existingSetQuery = guide.document_id
         ? existingSetQuery.eq('document_id', guide.document_id)
         : existingSetQuery.eq('source_study_guide_id', guide.id);
 
-      const { data: existingSet, error: existingSetError } = await existingSetQuery.maybeSingle();
+      const { data: existingSet, error: existingSetError } = await existingSetQuery.limit(1).maybeSingle();
       if (existingSetError) throw existingSetError;
       if (existingSet) {
         return {
@@ -468,8 +524,7 @@ async function processGenerationJob(job) {
         .from('quizzes')
         .select('id, title')
         .eq('user_id', userId)
-        .eq('is_archived', false)
-        .eq('difficulty', difficulty);
+        .eq('is_archived', false);
 
       existingQuizQuery = guide.document_id
         ? existingQuizQuery.eq('document_id', guide.document_id)
@@ -586,12 +641,20 @@ async function processGenerationJob(job) {
     if (generateOptions.includes('flashcards')) {
       updateJob(job.id, {
         message: 'Generating flashcards',
-        detail: `Gemini AI is drafting ${difficultyLabel.toLowerCase()} question and answer cards, then the server checks support against the lesson.`,
+        detail: 'Gemini AI is preparing Easy, Normal, Hard, and Expert cards from the same lesson.',
         progressValue: 64,
       });
 
-      const generatedCards = await generateFlashcards(cleanedExtractedText, requestOptions, difficulty);
-      const cards = normalizeGeneratedFlashcards(generatedCards, cleanedExtractedText, difficulty);
+      const cards = await generateAllDifficultyFlashcards(
+        cleanedExtractedText,
+        requestOptions,
+        (difficulty, target, label) => updateJob(job.id, {
+          message: `Creating ${label.toLowerCase()} flashcards`,
+          detail: `Building up to ${target} ${label.toLowerCase()} cards, then checking each answer against the lesson text.`,
+          progressValue: 48 + (AI_DIFFICULTY_ORDER.indexOf(difficulty) + 1) * 9,
+        })
+      );
+
       if (!cards.length) {
         throw new Error('The AI response did not contain enough lesson-supported flashcards. Please try again with clearer lesson content.');
       }
@@ -603,7 +666,7 @@ async function processGenerationJob(job) {
           document_id: doc?.id || null,
           source_study_guide_id: sourceStudyGuide?.id || null,
           title: `Flashcards: ${sourceStudyGuide?.title || docTitle}`,
-          difficulty,
+          difficulty: 'normal',
         })
         .select()
         .single();
@@ -617,7 +680,7 @@ async function processGenerationJob(job) {
             front: c.front,
             back: c.back,
             hint: c.hint || null,
-            difficulty: c.difficulty || difficulty,
+            difficulty: c.difficulty || 'normal',
           }))
         );
         if (cardsError) {
@@ -626,18 +689,26 @@ async function processGenerationJob(job) {
         }
       }
 
-      createdRecords.flashcards = set ? { id: set.id, title: set.title, difficulty } : null;
+      createdRecords.flashcards = set ? { id: set.id, title: set.title, difficulty: 'mixed', card_count: cards.length } : null;
     }
 
     if (generateOptions.includes('quiz')) {
       updateJob(job.id, {
         message: 'Generating quiz',
-        detail: `Gemini AI is creating a ${difficultyLabel.toLowerCase()} quiz with supported questions, answer keys, and explanations from your lesson.`,
+        detail: 'Gemini AI is preparing Easy, Normal, Hard, and Expert quiz questions from your lesson.',
         progressValue: 64,
       });
 
-      const generatedQuestions = await generateQuiz(cleanedExtractedText, requestOptions, difficulty);
-      const questions = normalizeGeneratedQuiz(generatedQuestions, cleanedExtractedText, difficulty);
+      const questions = await generateAllDifficultyQuiz(
+        cleanedExtractedText,
+        requestOptions,
+        (difficulty, target, label) => updateJob(job.id, {
+          message: `Creating ${label.toLowerCase()} quiz questions`,
+          detail: `Building up to ${target} ${label.toLowerCase()} questions with answer keys, explanations, and lesson support.`,
+          progressValue: 48 + (AI_DIFFICULTY_ORDER.indexOf(difficulty) + 1) * 9,
+        })
+      );
+
       if (!questions.length) {
         throw new Error('The AI response did not contain enough lesson-supported quiz questions. Please try again with clearer lesson content.');
       }
@@ -648,7 +719,7 @@ async function processGenerationJob(job) {
           user_id: userId,
           document_id: doc?.id || null,
           title: `Quiz: ${sourceStudyGuide?.title || docTitle}`,
-          difficulty,
+          difficulty: 'normal',
         })
         .select()
         .single();
@@ -662,7 +733,7 @@ async function processGenerationJob(job) {
             question: q.question,
             options: q.options,
             correct_index: q.correct_index,
-            difficulty: q.difficulty || difficulty,
+            difficulty: q.difficulty || 'normal',
           }))
         );
         if (questionError) {
@@ -671,12 +742,12 @@ async function processGenerationJob(job) {
         }
       }
 
-      createdRecords.quiz = quiz ? { id: quiz.id, title: quiz.title, difficulty } : null;
+      createdRecords.quiz = quiz ? { id: quiz.id, title: quiz.title, difficulty: 'mixed', question_count: questions.length } : null;
       await logAiQuizEvent(userId, AI_QUIZ_GENERATED_EVENT, {
         quiz_id: quiz?.id || null,
         quiz_title: quiz?.title || null,
         question_count: questions.length,
-        difficulty,
+        difficulties: AI_DIFFICULTY_ORDER,
         source_study_guide_id: sourceStudyGuide?.id || null,
         document_id: doc?.id || null,
       });
@@ -706,7 +777,7 @@ async function processGenerationJob(job) {
       await logAiQuizEvent(userId, AI_QUIZ_FAILED_EVENT, {
         source_study_guide_id: sourceStudyGuide?.id || sourceStudyGuideId || null,
         document_id: documentId || null,
-        difficulty,
+        difficulties: AI_DIFFICULTY_ORDER,
         message: sanitizeGeneratedPlainText(err.message || 'Quiz generation failed.', 500),
         job_id: job.id,
       });
@@ -745,7 +816,6 @@ const generateMaterials = [
       if (!generateOptions.length) {
         return res.status(400).json({ error: 'Select at least one generation option.' });
       }
-      const difficulty = normalizeDifficulty(req.body.difficulty || req.body.generation_difficulty);
 
       const abortController = new AbortController();
       const job = enqueueJob({
@@ -754,7 +824,6 @@ const generateMaterials = [
         payload: {
           file,
           generateOptions,
-          difficulty,
           userId: req.user.id,
           abortController,
         },
@@ -780,7 +849,6 @@ async function generateFlashcardsFromStudyGuide(req, res) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sourceStudyGuideId)) {
       return res.status(400).json({ error: 'Invalid study guide id.' });
     }
-    const difficulty = normalizeDifficulty(req.body?.difficulty);
 
     const abortController = new AbortController();
     const job = enqueueJob({
@@ -789,7 +857,6 @@ async function generateFlashcardsFromStudyGuide(req, res) {
       payload: {
         file: null,
         generateOptions: ['flashcards'],
-        difficulty,
         userId: req.user.id,
         sourceStudyGuideId,
         abortController,
@@ -813,7 +880,6 @@ async function generateQuizFromStudyGuide(req, res) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sourceStudyGuideId)) {
       return res.status(400).json({ error: 'Invalid study guide id.' });
     }
-    const difficulty = normalizeDifficulty(req.body?.difficulty);
 
     const abortController = new AbortController();
     const job = enqueueJob({
@@ -822,7 +888,6 @@ async function generateQuizFromStudyGuide(req, res) {
       payload: {
         file: null,
         generateOptions: ['quiz'],
-        difficulty,
         userId: req.user.id,
         sourceStudyGuideId,
         abortController,

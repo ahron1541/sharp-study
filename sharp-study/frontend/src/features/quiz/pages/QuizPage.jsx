@@ -352,16 +352,26 @@ export default function QuizPage() {
   const submitLockRef = useRef(false);
   const warningToastRef = useRef(false);
 
+  const difficultyCounts = useMemo(() => (
+    QUIZ_DIFFICULTIES.reduce((acc, option) => {
+      acc[option.value] = questions.filter((question) => getQuizDifficulty(question.difficulty).value === option.value).length;
+      return acc;
+    }, {})
+  ), [questions]);
+  const questionsForDifficulty = useMemo(
+    () => questions.filter((question) => getQuizDifficulty(question.difficulty).value === getQuizDifficulty(settings.difficulty).value),
+    [questions, settings.difficulty]
+  );
   const questionCounts = useMemo(() => ({
-    all: questions.length,
-    multiple_choice: questions.filter((question) => question.type === 'multiple_choice').length,
-    identification: questions.filter((question) => question.type === 'identification').length,
-  }), [questions]);
+    all: questionsForDifficulty.length,
+    multiple_choice: questionsForDifficulty.filter((question) => question.type === 'multiple_choice').length,
+    identification: questionsForDifficulty.filter((question) => question.type === 'identification').length,
+  }), [questionsForDifficulty]);
 
   const availableQuestions = useMemo(() => {
-    if (settings.questionType === 'mixed') return questions;
-    return questions.filter((question) => question.type === settings.questionType);
-  }, [questions, settings.questionType]);
+    if (settings.questionType === 'mixed') return questionsForDifficulty;
+    return questionsForDifficulty.filter((question) => question.type === settings.questionType);
+  }, [questionsForDifficulty, settings.questionType]);
 
   const maxItemCount = Math.max(1, availableQuestions.length || questions.length || 1);
   const answeredCount = useMemo(
@@ -605,12 +615,26 @@ export default function QuizPage() {
         return { ...current, timeMinutes: Math.max(1, Math.min(Number(value) || 1, 240)) };
       }
       if (key === 'questionType') {
+        const currentDifficulty = getQuizDifficulty(current.difficulty).value;
+        const difficultyPool = questions.filter((question) => getQuizDifficulty(question.difficulty).value === currentDifficulty);
         const nextAvailable = value === 'mixed'
-          ? questions.length
-          : questions.filter((question) => question.type === value).length;
+          ? difficultyPool.length
+          : difficultyPool.filter((question) => question.type === value).length;
         return {
           ...current,
           questionType: value,
+          itemCount: Math.min(current.itemCount, Math.max(1, nextAvailable || 1)),
+        };
+      }
+      if (key === 'difficulty') {
+        const nextDifficulty = getQuizDifficulty(value).value;
+        const difficultyPool = questions.filter((question) => getQuizDifficulty(question.difficulty).value === nextDifficulty);
+        const nextAvailable = current.questionType === 'mixed'
+          ? difficultyPool.length
+          : difficultyPool.filter((question) => question.type === current.questionType).length;
+        return {
+          ...current,
+          difficulty: nextDifficulty,
           itemCount: Math.min(current.itemCount, Math.max(1, nextAvailable || 1)),
         };
       }
@@ -825,10 +849,11 @@ export default function QuizPage() {
         {phase === 'preview' ? (
           <PreviewScreen
             quiz={quiz}
-            questions={questions}
+            questions={questionsForDifficulty}
             attempts={attempts}
             settings={settings}
             questionCounts={questionCounts}
+            difficultyCounts={difficultyCounts}
             availableCount={availableQuestions.length}
             maxItemCount={maxItemCount}
             savedSession={savedSession}
@@ -928,6 +953,7 @@ export default function QuizPage() {
           settings={settings}
           itemCount={Math.min(settings.itemCount, availableQuestions.length)}
           availableCount={availableQuestions.length}
+          difficultyCounts={difficultyCounts}
           onCancel={closeStartPrompt}
           onDifficultyChange={(value) => updateSetting('difficulty', value)}
           onBegin={beginStartCountdown}
@@ -1002,7 +1028,7 @@ export default function QuizPage() {
   );
 }
 
-function StartQuizModalContent({ countdown, settings, itemCount, availableCount, onCancel, onDifficultyChange, onBegin }) {
+function StartQuizModalContent({ countdown, settings, itemCount, availableCount, difficultyCounts, onCancel, onDifficultyChange, onBegin }) {
   const countingDown = countdown !== null;
   const countdownLabel = countdown === 0 ? 'Go' : countdown;
   const modeLabel = settings.sessionType === 'practice' ? 'Practice mode' : 'Test mode';
@@ -1056,6 +1082,7 @@ function StartQuizModalContent({ countdown, settings, itemCount, availableCount,
         <QuizDifficultyChooser
           value={settings.difficulty}
           onChange={onDifficultyChange}
+          counts={difficultyCounts}
           compact
         />
       ) : null}
@@ -1104,7 +1131,7 @@ function StartSummary({ label, value }) {
   );
 }
 
-function QuizDifficultyChooser({ value, onChange, compact = false }) {
+function QuizDifficultyChooser({ value, onChange, compact = false, counts = {} }) {
   return (
     <fieldset className={`rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] ${compact ? 'p-3' : 'p-4'}`}>
       <legend className="px-1 text-sm font-black text-[color:var(--color-text)]">Difficulty</legend>
@@ -1112,6 +1139,7 @@ function QuizDifficultyChooser({ value, onChange, compact = false }) {
         {QUIZ_DIFFICULTIES.map((option) => {
           const Icon = option.icon;
           const active = option.value === value;
+          const count = Number(counts[option.value] || 0);
           return (
             <button
               key={option.value}
@@ -1131,7 +1159,7 @@ function QuizDifficultyChooser({ value, onChange, compact = false }) {
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-black">{option.label}</span>
-                  <span className="block text-xs font-bold">{`+${option.quizXp} XP · ${option.timerLabel}`}</span>
+                  <span className="block text-xs font-bold">{count ? `${count} ready` : `+${option.quizXp} XP · ${option.timerLabel}`}</span>
                 </span>
               </span>
               {!compact ? (
@@ -1151,6 +1179,7 @@ function PreviewScreen({
   attempts,
   settings,
   questionCounts,
+  difficultyCounts,
   availableCount,
   maxItemCount,
   savedSession,
@@ -1222,6 +1251,7 @@ function PreviewScreen({
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <QuizDifficultyChooser
                 value={settings.difficulty}
+                counts={difficultyCounts}
                 onChange={(value) => onUpdateSetting('difficulty', value)}
               />
               <SegmentedSetting
