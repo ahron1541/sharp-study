@@ -583,7 +583,15 @@ router.post('/:id/attempts', async (req, res) => {
       });
 
     if (insertError) throw insertError;
-    await recordStudyActivity(req.user.id, ACTIVITY_TYPES.FLASHCARD_REVIEW);
+    await recordStudyActivity(req.user.id, ACTIVITY_TYPES.FLASHCARD_REVIEW, {
+      sourceType: 'flashcards',
+      sourceId: set.id,
+      metadata: {
+        set_id: set.id,
+        card_id: card.id,
+        result: parsed.data.result,
+      },
+    });
     return res.status(201).json({ success: true });
   } catch (error) {
     console.error('[FLASHCARDS] Failed to save flashcard attempt:', error.message);

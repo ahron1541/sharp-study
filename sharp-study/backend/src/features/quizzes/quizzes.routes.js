@@ -4,6 +4,7 @@ const { z } = require('zod');
 const { supabaseAdmin } = require('../../config/supabase');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { sanitizePlainText } = require('../../utils/studyGuideSanitize');
+const { awardPerfectQuizReward } = require('../gamification/gamification.service');
 const { ACTIVITY_TYPES, recordStudyActivity } = require('../streaks/streaks.service');
 
 const router = express.Router();
@@ -655,7 +656,16 @@ router.post('/:id/attempts', async (req, res) => {
       .single();
 
     if (logError) throw logError;
-    await recordStudyActivity(req.user.id, ACTIVITY_TYPES.QUIZ_ATTEMPT);
+    await recordStudyActivity(req.user.id, ACTIVITY_TYPES.QUIZ_ATTEMPT, {
+      sourceType: 'quiz',
+      sourceId: quiz.id,
+      metadata: {
+        quiz_id: quiz.id,
+        attempt_id: log.id,
+        percent,
+      },
+    });
+    await awardPerfectQuizReward(req.user.id, quiz.id, log.id, percent);
 
     return res.status(201).json({
       success: true,

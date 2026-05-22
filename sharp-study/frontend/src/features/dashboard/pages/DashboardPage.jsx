@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, CalendarDays, CreditCard, Flame, HelpCircle, Sparkles, Trophy, Zap } from 'lucide-react';
+import { ArrowRight, Award, CalendarDays, CreditCard, Crown, Flame, HelpCircle, Info, Sparkles, Star, Trophy, Zap } from 'lucide-react';
 
 import { useDashboard } from '../hooks/useDashboard';
+import { useGamification } from '../hooks/useGamification';
 import { useStreak } from '../hooks/useStreak';
 import { useAuth as useAuthCore } from '../../auth/context/AuthContext';
 import MaterialTypeIcon from '../../library/components/MaterialTypeIcon';
@@ -18,50 +19,24 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { items = { study_guides: [], flashcards: [], quizzes: [] }, loading } = useDashboard({ limit: 3 });
   const { streak: streakStats, loading: streakLoading, error: streakError } = useStreak({ days: 35 });
+  const { gamification, loading: gamificationLoading, error: gamificationError } = useGamification({ days: 35 });
   const { profile } = useAuthCore();
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [streakNoticeOpen, setStreakNoticeOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const calendarRef = useRef(null);
+  const streakNoticeRef = useRef(null);
 
   const firstName = profile?.first_name || 'Student';
   const streak = Number(streakStats.current || 0);
   const longestStreak = Number(streakStats.longest || 0);
   const streakHistory = useMemo(() => resolveStreakHistory(streakStats), [streakStats]);
+  const streakRecords = useMemo(() => resolveStreakRecords(streakStats), [streakStats]);
   const weeklyProgress = useMemo(() => buildWeeklyProgress(streakHistory, now), [streakHistory, now]);
+  const nextStreakMilestone = gamification.next_streak_milestone;
   const isFirstTime = items.study_guides.length === 0 && items.flashcards.length === 0 && items.quizzes.length === 0;
 
-  const streakMeta = useMemo(() => {
-    if (streak >= 14) {
-      return {
-        icon: Trophy,
-        accent: 'text-amber-500',
-        badge: 'bg-amber-500/10',
-        message: 'You have built a strong study rhythm. Keep protecting it with one focused activity today.',
-      };
-    }
-    if (streak >= 7) {
-      return {
-        icon: Zap,
-        accent: 'text-orange-500',
-        badge: 'bg-orange-500/10',
-        message: 'A full week of real study activity is progress worth keeping warm.',
-      };
-    }
-    if (streak === 0) {
-      return {
-        icon: Flame,
-        accent: 'text-text-muted',
-        badge: 'bg-surface-2',
-        message: 'Complete one flashcard review, quiz attempt, or study guide save today to start your streak.',
-      };
-    }
-    return {
-      icon: Flame,
-      accent: 'text-streak',
-      badge: 'bg-streak/10',
-      message: 'Every active study day counts. A short focused action today keeps the streak alive.',
-    };
-  }, [streak]);
+  const streakMeta = useMemo(() => getStreakMeta(streak), [streak]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -93,6 +68,29 @@ export default function DashboardPage() {
       document.removeEventListener('keydown', handleEscape);
     };
   }, [calendarOpen]);
+
+  useEffect(() => {
+    if (!streakNoticeOpen) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (streakNoticeRef.current && !streakNoticeRef.current.contains(event.target)) {
+        setStreakNoticeOpen(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setStreakNoticeOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [streakNoticeOpen]);
 
   if (loading) {
     return (
@@ -145,7 +143,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(18rem,0.9fr)]">
+      <section className="grid gap-6 lg:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.85fr)_minmax(18rem,0.9fr)]">
         <div className="rounded-[2rem] border border-border bg-surface p-6 shadow-card">
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -178,10 +176,48 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        <GamificationCard
+          gamification={gamification}
+          loading={gamificationLoading}
+          error={gamificationError}
+        />
+
         <div className="rounded-[2rem] border border-border bg-surface p-6 shadow-card">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">Study Streak</p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">Study Streak</p>
+                <div className="relative" ref={streakNoticeRef}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStreakNoticeOpen((value) => !value);
+                      setCalendarOpen(false);
+                    }}
+                    aria-label="How study streaks work"
+                    aria-expanded={streakNoticeOpen}
+                    aria-haspopup="dialog"
+                    aria-controls="streak-notice-popover"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface-2 text-text-muted transition-colors hover:text-text"
+                  >
+                    <Info size={14} aria-hidden="true" />
+                  </button>
+
+                  {streakNoticeOpen ? (
+                    <div
+                      id="streak-notice-popover"
+                      role="dialog"
+                      aria-label="Study streak notice"
+                      className="absolute left-0 top-[calc(100%+0.65rem)] z-30 w-[min(20rem,calc(100vw-3rem))] rounded-[1.25rem] border border-border bg-surface p-4 text-left shadow-[0_20px_60px_rgba(15,23,42,0.22)]"
+                    >
+                      <p className="text-sm font-black text-text">Keep your streak alive</p>
+                      <p className="mt-2 text-sm leading-6 text-text-muted">
+                        Complete at least one study action each day, like a flashcard review, quiz attempt, or study guide save. If you miss a full day, your current streak resets to 0, but your best streak stays saved.
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
               <div className="mt-2 flex items-end gap-2">
                 <span className="text-5xl font-display font-black text-text">{streakLoading ? '...' : streak}</span>
                 <span className="pb-2 text-sm font-bold text-text-muted">days</span>
@@ -196,6 +232,11 @@ export default function DashboardPage() {
           {longestStreak > 0 ? (
             <p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-text-muted">
               Best streak: {longestStreak} days
+            </p>
+          ) : null}
+          {nextStreakMilestone ? (
+            <p className="mt-2 text-xs font-bold uppercase tracking-[0.14em] text-text-muted">
+              Next: {nextStreakMilestone.label} in {formatDayCount(nextStreakMilestone.remaining)} (+{nextStreakMilestone.xp} XP)
             </p>
           ) : null}
           {streakError ? (
@@ -228,7 +269,7 @@ export default function DashboardPage() {
                   aria-label="Study streak calendar"
                   className="absolute right-0 top-[calc(100%+0.75rem)] z-20 w-[min(24rem,calc(100vw-3rem))] rounded-[1.5rem] border border-border bg-surface p-4 shadow-[0_20px_60px_rgba(15,23,42,0.22)]"
                 >
-                  <StreakCalendar history={streakHistory} now={now} />
+                  <StreakCalendar history={streakRecords} now={now} />
                 </div>
               ) : null}
             </div>
@@ -340,6 +381,145 @@ function QuickAccessCard({ icon, label, sub, onClick }) {
   );
 }
 
+function GamificationCard({ gamification, loading, error }) {
+  const progress = gamification?.level_progress || {};
+  const recentEvents = (gamification?.recent_events || []).filter((event) => Number(event.xp_delta || 0) > 0).slice(0, 3);
+  const badges = (gamification?.badges || []).slice(0, 3);
+  const percent = Math.max(0, Math.min(100, Number(progress.percent || 0)));
+
+  return (
+    <div className="rounded-[2rem] border border-border bg-surface p-6 shadow-card">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">Progress Level</p>
+          <div className="mt-2 flex items-end gap-2">
+            <span className="text-5xl font-display font-black text-text">{loading ? '...' : gamification.level}</span>
+            <span className="pb-2 text-sm font-bold text-text-muted">level</span>
+          </div>
+        </div>
+        <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-xp/10 text-xp">
+          <Star size={28} aria-hidden="true" />
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <div className="flex items-center justify-between text-xs font-bold uppercase tracking-[0.14em] text-text-muted">
+          <span>{gamification.xp_total} XP</span>
+          <span>{progress.xp_needed || 0} XP to level {progress.next_level || 2}</span>
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+          <div className="h-full rounded-full bg-xp transition-[width] duration-500" style={{ width: `${percent}%` }} />
+        </div>
+      </div>
+
+      {error ? (
+        <p className="mt-4 text-xs font-semibold text-text-muted">Rewards sync is unavailable right now.</p>
+      ) : null}
+
+      <div className="mt-5 space-y-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-text-muted">Recent Rewards</p>
+          <div className="mt-2 space-y-2">
+            {recentEvents.length ? recentEvents.map((event) => (
+              <div key={event.id} className="flex items-center justify-between gap-3 text-sm">
+                <span className="truncate font-bold text-text">{event.label}</span>
+                <span className="shrink-0 font-black text-xp">+{event.xp_delta} XP</span>
+              </div>
+            )) : (
+              <p className="text-sm leading-6 text-text-muted">Study today to earn your first reward.</p>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-text-muted">Badges</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {badges.length ? badges.map((badge) => (
+              <span key={badge.badge_key} className="rounded-full border border-border bg-surface-2 px-3 py-1 text-xs font-bold text-text">
+                {badge.label}
+              </span>
+            )) : (
+              <span className="rounded-full border border-border bg-surface-2 px-3 py-1 text-xs font-bold text-text-muted">
+                No badges yet
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getStreakMeta(streak) {
+  if (streak >= 100) {
+    return {
+      icon: Star,
+      accent: 'text-yellow-300',
+      badge: 'bg-yellow-300/10',
+      message: 'Century Scholar energy. Keep the rhythm steady with one focused action today.',
+    };
+  }
+  if (streak >= 50) {
+    return {
+      icon: Crown,
+      accent: 'text-yellow-400',
+      badge: 'bg-yellow-400/10',
+      message: 'That is a serious study rhythm. Protect it with one small win today.',
+    };
+  }
+  if (streak >= 20) {
+    return {
+      icon: Trophy,
+      accent: 'text-amber-500',
+      badge: 'bg-amber-500/10',
+      message: 'Momentum is doing its quiet work now. Keep showing up.',
+    };
+  }
+  if (streak >= 10) {
+    return {
+      icon: Award,
+      accent: 'text-orange-500',
+      badge: 'bg-orange-500/10',
+      message: 'Focus Flame unlocked. A short session today keeps it alive.',
+    };
+  }
+  if (streak >= 7) {
+    return {
+      icon: Zap,
+      accent: 'text-orange-500',
+      badge: 'bg-orange-500/10',
+      message: 'A full week of real study activity is progress worth keeping warm.',
+    };
+  }
+  if (streak >= 3) {
+    return {
+      icon: Sparkles,
+      accent: 'text-streak',
+      badge: 'bg-streak/10',
+      message: 'First Spark is building. Keep it going with one focused action today.',
+    };
+  }
+  if (streak === 0) {
+    return {
+      icon: Flame,
+      accent: 'text-text-muted',
+      badge: 'bg-surface-2',
+      message: 'Complete one flashcard review, quiz attempt, or study guide save today to start your streak.',
+    };
+  }
+  return {
+    icon: Flame,
+    accent: 'text-streak',
+    badge: 'bg-streak/10',
+    message: 'Every active study day counts. A short focused action today keeps the streak alive.',
+  };
+}
+
+function formatDayCount(value) {
+  const days = Number(value || 0);
+  return `${days} ${days === 1 ? 'day' : 'days'}`;
+}
+
 function resolveStreakHistory(streakPrefs) {
   const history = Array.isArray(streakPrefs?.history) ? streakPrefs.history : [];
   if (history.length) {
@@ -366,14 +546,42 @@ function resolveStreakHistory(streakPrefs) {
   return dates;
 }
 
+function resolveStreakRecords(streakPrefs) {
+  const history = Array.isArray(streakPrefs?.history) ? streakPrefs.history : [];
+  if (history.length) {
+    return history
+      .map((entry) => {
+        const date = normalizeDateKey(typeof entry === 'string' ? entry : entry?.date);
+        if (!date) return null;
+        return {
+          date,
+          activity_count: Number(entry?.activity_count || 1),
+          activity_counts: entry?.activity_counts && typeof entry.activity_counts === 'object'
+            ? entry.activity_counts
+            : {},
+        };
+      })
+      .filter(Boolean);
+  }
+
+  return resolveStreakHistory(streakPrefs).map((date) => ({
+    date,
+    activity_count: 1,
+    activity_counts: {},
+  }));
+}
+
 function buildWeeklyProgress(history, now = new Date()) {
   const set = new Set(history);
   const values = [];
   const today = startOfDay(now);
+  const mondayOffset = (today.getDay() + 6) % 7;
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - mondayOffset);
 
-  for (let offset = 6; offset >= 0; offset -= 1) {
-    const next = new Date(today);
-    next.setDate(today.getDate() - offset);
+  for (let offset = 0; offset < 7; offset += 1) {
+    const next = new Date(weekStart);
+    next.setDate(weekStart.getDate() + offset);
     values.push(set.has(formatLocalDateKey(next)));
   }
 
@@ -381,7 +589,8 @@ function buildWeeklyProgress(history, now = new Date()) {
 }
 
 function StreakCalendar({ history, now }) {
-  const hitDays = new Set(history);
+  const recordsByDate = new Map((history || []).map((entry) => [entry.date, entry]));
+  const hitDays = new Set(recordsByDate.keys());
   const today = startOfDay(now);
   const year = today.getFullYear();
   const month = today.getMonth();
@@ -396,7 +605,7 @@ function StreakCalendar({ history, now }) {
         <p className="text-sm font-bold text-text">
           {today.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })}
         </p>
-        <p className="text-xs text-text-muted">Future dates stay dimmed.</p>
+        <p className="text-xs text-text-muted">Active days are highlighted.</p>
       </div>
 
       <div className="grid grid-cols-7 gap-2 text-center text-xs font-bold text-text-muted">
@@ -418,13 +627,13 @@ function StreakCalendar({ history, now }) {
           return (
             <div
               key={index}
-              className={`flex h-10 items-center justify-center rounded-xl border text-sm font-bold ${
+              className={`flex h-12 items-center justify-center rounded-xl border text-sm font-bold ${
                 !inMonth
                   ? 'border-transparent bg-transparent text-transparent'
                   : isFuture
                     ? 'border-border bg-surface opacity-45 text-text-muted'
                     : isActive
-                      ? 'border-accent bg-accent text-accent-text'
+                      ? 'border-streak bg-streak text-white'
                       : isToday
                         ? 'border-text bg-surface text-text'
                         : 'border-border bg-surface text-text'

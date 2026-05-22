@@ -1,4 +1,5 @@
 const { supabaseAdmin } = require('../../config/supabase');
+const { awardStudyActivityRewards } = require('../gamification/gamification.service');
 
 const DEFAULT_STREAK_TIMEZONE = process.env.STREAK_TIMEZONE || 'Asia/Manila';
 const ACTIVITY_TYPES = Object.freeze({
@@ -65,7 +66,11 @@ async function recordStudyActivity(userId, activityType, options = {}) {
     });
 
     if (error) throw error;
-    return Array.isArray(data) ? data[0] || null : data || null;
+    const streakResult = Array.isArray(data) ? data[0] || null : data || null;
+    if (streakResult) {
+      await awardStudyActivityRewards(userId, normalizeActivityType(activityType), streakResult, options);
+    }
+    return streakResult;
   } catch (error) {
     console.error('[STREAKS] Failed to record study activity:', error.message);
     if (options.throwOnError) throw error;
