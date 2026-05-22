@@ -6,9 +6,13 @@ import {
   ChevronDown,
   ChevronUp,
   FileQuestion,
+  Flame,
   Plus,
   Save,
   Settings2,
+  ShieldCheck,
+  Sparkles,
+  Trophy,
   Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -20,6 +24,16 @@ import XpNotice from '../../gamification/components/XpNotice';
 
 const DRAFT_PREFIX = 'sharp-study-quiz-builder-draft';
 const DEFAULT_CHOICES = ['Option A', 'Option B', 'Option C', 'Option D'];
+const QUIZ_DIFFICULTIES = [
+  { value: 'easy', label: 'Easy', helper: 'Calmer recall', description: 'Best for warmups and beginner checks.', color: '#22c55e', icon: Sparkles },
+  { value: 'normal', label: 'Normal', helper: 'Balanced', description: 'A steady default for regular quiz review.', color: '#8b3dff', icon: ShieldCheck },
+  { value: 'hard', label: 'Hard', helper: 'Applied', description: 'Better for comparison and deeper thinking.', color: '#f97316', icon: Flame },
+  { value: 'expert', label: 'Expert', helper: 'Strict', description: 'Use for the toughest challenge questions.', color: '#facc15', icon: Trophy },
+];
+
+function getQuizDifficulty(value = 'normal') {
+  return QUIZ_DIFFICULTIES.find((item) => item.value === value) || QUIZ_DIFFICULTIES[1];
+}
 
 function createClientId() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID();
@@ -46,6 +60,7 @@ function createBlankQuestion(type = 'multiple_choice') {
     accepted_answers: [],
     explanation: '',
     support_snippet: '',
+    difficulty: 'normal',
   };
 }
 
@@ -74,6 +89,7 @@ function normalizeBuilderQuestion(question, index = 0) {
       : [],
     explanation: cleanText(question?.explanation, 1200),
     support_snippet: cleanText(question?.support_snippet, 500),
+    difficulty: getQuizDifficulty(question?.difficulty).value,
     order: index,
   };
 }
@@ -93,6 +109,7 @@ function snapshotOf(title, questions) {
         accepted_answers: normalized.accepted_answers,
         explanation: normalized.explanation,
         support_snippet: normalized.support_snippet,
+        difficulty: normalized.difficulty,
         order: index,
       };
     }),
@@ -172,6 +189,7 @@ function buildPayload(title, questions) {
       explanation: question.explanation,
       wrong_explanations: [],
       support_snippet: question.support_snippet,
+      difficulty: question.difficulty,
       order: index,
     })),
   };
@@ -707,6 +725,11 @@ function QuestionEditor({ question, index, total, onChange, onChoiceChange, onMo
         </div>
       </div>
 
+      <QuizDifficultyPicker
+        value={question.difficulty}
+        onChange={(difficulty) => onChange({ difficulty })}
+      />
+
       <label className="mt-4 block">
         <span className="text-sm font-black text-[color:var(--color-text)]">Question or definition</span>
         <textarea
@@ -795,6 +818,57 @@ function QuestionEditor({ question, index, total, onChange, onChoiceChange, onMo
         </label>
       </div>
     </article>
+  );
+}
+
+function QuizDifficultyPicker({ value, onChange }) {
+  const selected = getQuizDifficulty(value);
+
+  return (
+    <fieldset className="mt-4 rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
+      <legend className="px-1 text-xs font-black uppercase tracking-[0.16em] text-[color:var(--color-text-muted)]">
+        Question difficulty
+      </legend>
+      <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs font-bold text-[color:var(--color-text-muted)]">
+          Controls which quiz challenge this question appears in.
+        </p>
+        <p className="text-xs font-bold text-[color:var(--color-text-muted)]">
+          Current: <span className="text-[color:var(--color-text)]">{selected.label}</span>
+        </p>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {QUIZ_DIFFICULTIES.map((option) => {
+          const Icon = option.icon;
+          const active = option.value === selected.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              aria-pressed={active}
+              className={`min-h-[4.25rem] rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-[color:var(--color-accent)]/50 ${
+                active
+                  ? 'bg-[color:var(--color-surface)] text-[color:var(--color-text)] shadow-[0_12px_30px_rgba(15,23,42,0.1)]'
+                  : 'border-[color:var(--color-border)] text-[color:var(--color-text-muted)] hover:bg-[color:var(--color-surface)]'
+              }`}
+              style={{ borderColor: active ? option.color : undefined }}
+            >
+              <span className="flex items-center gap-2">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl" style={{ background: `${option.color}22`, color: option.color }}>
+                  <Icon size={18} aria-hidden="true" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-black">{option.label}</span>
+                  <span className="block truncate text-[0.68rem] font-bold uppercase tracking-[0.1em]">{option.helper}</span>
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 

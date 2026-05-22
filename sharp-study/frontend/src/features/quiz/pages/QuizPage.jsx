@@ -14,7 +14,6 @@ import {
   Flame,
   HelpCircle,
   History,
-  Info,
   Keyboard,
   Loader2,
   RotateCcw,
@@ -943,7 +942,7 @@ export default function QuizPage() {
         isOpen={startPromptOpen && phase === 'preview'}
         onClose={closeStartPrompt}
         title={startCountdown === null ? 'Ready to start?' : 'Starting quiz'}
-        size="md"
+        size="lg"
         closeOnBackdrop={startCountdown === null}
         closeOnEscape={startCountdown === null}
         showCloseButton={startCountdown === null}
@@ -953,9 +952,7 @@ export default function QuizPage() {
           settings={settings}
           itemCount={Math.min(settings.itemCount, availableQuestions.length)}
           availableCount={availableQuestions.length}
-          difficultyCounts={difficultyCounts}
           onCancel={closeStartPrompt}
-          onDifficultyChange={(value) => updateSetting('difficulty', value)}
           onBegin={beginStartCountdown}
         />
       </Modal>
@@ -1028,10 +1025,10 @@ export default function QuizPage() {
   );
 }
 
-function StartQuizModalContent({ countdown, settings, itemCount, availableCount, difficultyCounts, onCancel, onDifficultyChange, onBegin }) {
+function StartQuizModalContent({ countdown, settings, itemCount, availableCount, onCancel, onBegin }) {
   const countingDown = countdown !== null;
   const countdownLabel = countdown === 0 ? 'Go' : countdown;
-  const modeLabel = settings.sessionType === 'practice' ? 'Practice mode' : 'Test mode';
+  const modeLabel = settings.sessionType === 'practice' ? 'Practice' : 'Test';
   const difficulty = getQuizDifficulty(settings.difficulty);
   const timeLimit = getQuizTimeLimitSeconds(settings);
 
@@ -1071,21 +1068,12 @@ function StartQuizModalContent({ countdown, settings, itemCount, availableCount,
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StartSummary label="Mode" value={modeLabel} />
-        <StartSummary label="Difficulty" value={`${difficulty.label} +${difficulty.quizXp} XP`} />
-        <StartSummary label="Items" value={`${Math.max(0, itemCount)} of ${availableCount}`} />
+        <StartSummary label="Difficulty" value={difficulty.label} />
+        <StartSummary label="Items" value={`${Math.max(0, itemCount)}/${availableCount}`} />
         <StartSummary label="Timer" value={formatTimer(timeLimit)} />
       </div>
-
-      {!countingDown ? (
-        <QuizDifficultyChooser
-          value={settings.difficulty}
-          onChange={onDifficultyChange}
-          counts={difficultyCounts}
-          compact
-        />
-      ) : null}
 
       {!countingDown ? (
         <div className="rounded-[1.25rem] border border-amber-500/30 bg-amber-500/10 p-4">
@@ -1124,18 +1112,18 @@ function StartQuizModalContent({ countdown, settings, itemCount, availableCount,
 
 function StartSummary({ label, value }) {
   return (
-    <div className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3 text-center">
+    <div className="flex min-h-[5.25rem] flex-col justify-center rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3 text-center">
       <p className="text-[0.68rem] font-black uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">{label}</p>
-      <p className="mt-1 truncate text-sm font-black text-[color:var(--color-text)]">{value}</p>
+      <p className="mt-1 text-base font-black leading-tight text-[color:var(--color-text)]">{value}</p>
     </div>
   );
 }
 
 function QuizDifficultyChooser({ value, onChange, compact = false, counts = {} }) {
   return (
-    <fieldset className={`rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] ${compact ? 'p-3' : 'p-4'}`}>
+    <fieldset className={`rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] ${compact ? 'p-3' : 'p-3 sm:p-4'}`}>
       <legend className="px-1 text-sm font-black text-[color:var(--color-text)]">Difficulty</legend>
-      <div className={`mt-3 grid gap-2 ${compact ? 'sm:grid-cols-2' : 'sm:grid-cols-2'}`}>
+      <div className={`mt-3 grid gap-2 ${compact ? 'sm:grid-cols-2' : 'sm:grid-cols-2 xl:grid-cols-4'}`}>
         {QUIZ_DIFFICULTIES.map((option) => {
           const Icon = option.icon;
           const active = option.value === value;
@@ -1146,7 +1134,7 @@ function QuizDifficultyChooser({ value, onChange, compact = false, counts = {} }
               type="button"
               onClick={() => onChange(option.value)}
               aria-pressed={active}
-              className={`min-h-[5.25rem] rounded-xl border px-3 py-2 text-left transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-[color:var(--color-accent)]/50 ${
+              className={`min-h-[4.25rem] rounded-xl border px-3 py-2 text-left transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-4 focus-visible:outline-[color:var(--color-accent)]/50 ${
                 active
                   ? 'bg-[color:var(--color-surface)] text-[color:var(--color-text)] shadow-[0_12px_32px_rgba(15,23,42,0.12)]'
                   : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)]/70 text-[color:var(--color-text-muted)]'
@@ -1162,9 +1150,6 @@ function QuizDifficultyChooser({ value, onChange, compact = false, counts = {} }
                   <span className="block text-xs font-bold">{count ? `${count} ready` : `+${option.quizXp} XP · ${option.timerLabel}`}</span>
                 </span>
               </span>
-              {!compact ? (
-                <span className="mt-2 block text-xs font-semibold leading-5">{option.description}</span>
-              ) : null}
             </button>
           );
         })}
@@ -1242,93 +1227,87 @@ function PreviewScreen({
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(21rem,28rem)]">
         <div className="space-y-5">
-          <section className="rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-5">
-            <div className="flex items-center gap-2">
-              <Target className="text-[color:var(--color-accent)]" size={20} />
-              <h2 className="text-2xl font-black text-[color:var(--color-text)]">Setup</h2>
+          <section className="rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Target className="text-[color:var(--color-accent)]" size={20} />
+                <h2 className="text-2xl font-black text-[color:var(--color-text)]">Setup</h2>
+              </div>
+              <XpNotice
+                eyebrow="Quiz rules"
+                ariaLabel="Show quiz rules"
+                buttonTitle="Show quiz rules"
+                title="Know the quiz flow before starting."
+              >
+                Answer before the timer reaches zero. Practice mode checks answers immediately, test mode hides feedback until results, and your attempt syncs to score history after submission.
+              </XpNotice>
             </div>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <div className="mt-4 space-y-3">
               <QuizDifficultyChooser
                 value={settings.difficulty}
                 counts={difficultyCounts}
                 onChange={(value) => onUpdateSetting('difficulty', value)}
               />
-              <SegmentedSetting
-                label="Quiz mode"
-                value={settings.sessionType}
-                options={[
-                  { value: 'practice', label: 'Practice', icon: <Sparkles size={16} /> },
-                  { value: 'test', label: 'Test', icon: <ShieldCheck size={16} /> },
-                ]}
-                onChange={(value) => onUpdateSetting('sessionType', value)}
-              />
-              <SegmentedSetting
-                label="Question layout"
-                value={settings.layout}
-                options={[
-                  { value: 'single', label: 'One at a time', icon: <FileQuestion size={16} /> },
-                  { value: 'page', label: 'Five per page', icon: <BookOpen size={16} /> },
-                ]}
-                onChange={(value) => onUpdateSetting('layout', value)}
-              />
-              <label className="block rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4">
-                <span className="text-sm font-black text-[color:var(--color-text)]">Question type</span>
-                <select
-                  value={settings.questionType}
-                  onChange={(event) => onUpdateSetting('questionType', event.target.value)}
-                  className="mt-3 h-11 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-sm font-bold text-[color:var(--color-text)] outline-none focus:border-[color:var(--color-accent)]"
-                >
-                  <option value="mixed">Mixed ({questionCounts.all})</option>
-                  <option value="multiple_choice">Multiple choice ({questionCounts.multiple_choice})</option>
-                  <option value="identification">Identification ({questionCounts.identification})</option>
-                </select>
-              </label>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4">
-                  <span className="text-sm font-black text-[color:var(--color-text)]">Items</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max={maxItemCount}
-                    value={settings.itemCount}
-                    onChange={(event) => onUpdateSetting('itemCount', event.target.value)}
-                    className="mt-3 h-11 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-sm font-bold text-[color:var(--color-text)] outline-none focus:border-[color:var(--color-accent)]"
-                  />
-                  <span className="mt-2 block text-xs font-semibold text-[color:var(--color-text-muted)]">{availableCount} available</span>
-                </label>
-                <label className="block rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4">
-                  <span className="text-sm font-black text-[color:var(--color-text)]">Minutes</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="240"
-                    value={settings.timeMinutes}
-                    onChange={(event) => onUpdateSetting('timeMinutes', event.target.value)}
-                    className="mt-3 h-11 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-sm font-bold text-[color:var(--color-text)] outline-none focus:border-[color:var(--color-accent)]"
-                  />
-                  <span className="mt-2 block text-xs font-semibold text-[color:var(--color-text-muted)]">Auto-submit at 0:00</span>
-                </label>
-              </div>
-            </div>
-          </section>
 
-          <section className="rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-5">
-            <div className="flex items-center gap-2">
-              <Info className="text-[color:var(--color-accent)]" size={20} />
-              <h2 className="text-2xl font-black text-[color:var(--color-text)]">Rules</h2>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {[
-                'Answer before the timer reaches zero. The quiz submits automatically when time runs out.',
-                'Practice mode checks answers immediately and explains missed items.',
-                'Test mode keeps feedback hidden until the final results page.',
-                'Your attempt is saved locally first, then synced to your score history.',
-              ].map((rule) => (
-                <div key={rule} className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4 text-sm leading-6 text-[color:var(--color-text-muted)]">
-                  {rule}
+              <div className="grid items-start gap-3 md:grid-cols-2">
+                <SegmentedSetting
+                  label="Quiz mode"
+                  value={settings.sessionType}
+                  options={[
+                    { value: 'practice', label: 'Practice', icon: <Sparkles size={16} /> },
+                    { value: 'test', label: 'Test', icon: <ShieldCheck size={16} /> },
+                  ]}
+                  onChange={(value) => onUpdateSetting('sessionType', value)}
+                />
+                <SegmentedSetting
+                  label="Question layout"
+                  value={settings.layout}
+                  options={[
+                    { value: 'single', label: 'One at a time', icon: <FileQuestion size={16} /> },
+                    { value: 'page', label: 'Five per page', icon: <BookOpen size={16} /> },
+                  ]}
+                  onChange={(value) => onUpdateSetting('layout', value)}
+                />
+                <label className="block rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3 sm:p-4">
+                  <span className="text-sm font-black text-[color:var(--color-text)]">Question type</span>
+                  <select
+                    value={settings.questionType}
+                    onChange={(event) => onUpdateSetting('questionType', event.target.value)}
+                    className="mt-3 h-11 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-sm font-bold text-[color:var(--color-text)] outline-none focus:border-[color:var(--color-accent)]"
+                  >
+                    <option value="mixed">Mixed ({questionCounts.all})</option>
+                    <option value="multiple_choice">Multiple choice ({questionCounts.multiple_choice})</option>
+                    <option value="identification">Identification ({questionCounts.identification})</option>
+                  </select>
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2 md:col-span-2">
+                  <label className="block rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3 sm:p-4">
+                    <span className="text-sm font-black text-[color:var(--color-text)]">Items</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max={maxItemCount}
+                      value={settings.itemCount}
+                      onChange={(event) => onUpdateSetting('itemCount', event.target.value)}
+                      className="mt-3 h-11 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-sm font-bold text-[color:var(--color-text)] outline-none focus:border-[color:var(--color-accent)]"
+                    />
+                    <span className="mt-2 block text-xs font-semibold text-[color:var(--color-text-muted)]">{availableCount} available</span>
+                  </label>
+                  <label className="block rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3 sm:p-4">
+                    <span className="text-sm font-black text-[color:var(--color-text)]">Minutes</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="240"
+                      value={settings.timeMinutes}
+                      onChange={(event) => onUpdateSetting('timeMinutes', event.target.value)}
+                      className="mt-3 h-11 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-sm font-bold text-[color:var(--color-text)] outline-none focus:border-[color:var(--color-accent)]"
+                    />
+                    <span className="mt-2 block text-xs font-semibold text-[color:var(--color-text-muted)]">Auto-submit at 0:00</span>
+                  </label>
                 </div>
-              ))}
+              </div>
             </div>
           </section>
 
@@ -1774,24 +1753,24 @@ function AttemptLog({ attempts }) {
 
 function SegmentedSetting({ label, value, options, onChange }) {
   return (
-    <div className="rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4">
+    <div className="rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3 sm:p-4">
       <p className="text-sm font-black text-[color:var(--color-text)]">{label}</p>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
         {options.map((option) => (
           <button
             key={option.value}
             type="button"
             onClick={() => onChange(option.value)}
             aria-pressed={value === option.value}
-            className={`inline-flex min-h-11 flex-col items-center justify-center gap-1 rounded-xl border px-3 py-2 text-center text-sm font-black transition ${
+            className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-center text-sm font-black leading-tight transition ${
               value === option.value
                 ? 'border-[color:var(--color-accent)] bg-[color:var(--color-accent)] text-[color:var(--color-accent-text)]'
                 : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text)] hover:border-[color:var(--color-accent)]'
             }`}
           >
-            <span className="inline-flex items-center justify-center gap-2">
+            <span className="inline-flex min-w-0 items-center justify-center gap-2">
               {option.icon}
-              {option.label}
+              <span className="min-w-0">{option.label}</span>
             </span>
             {option.caption ? (
               <span className={`text-[0.68rem] font-bold ${value === option.value ? 'opacity-80' : 'text-[color:var(--color-text-muted)]'}`}>

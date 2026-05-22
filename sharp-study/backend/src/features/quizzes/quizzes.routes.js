@@ -27,6 +27,7 @@ const questionPayloadSchema = z.object({
   wrong_explanations: z.array(z.string().max(320)).optional().default([]),
   support_snippet: z.string().max(500).optional().default(''),
   order: z.number().int().min(0).max(200).optional(),
+  difficulty: difficultySchema.default('normal'),
 });
 
 const upsertQuizSchema = z.object({
@@ -70,6 +71,7 @@ function toStoredOptions(question, order) {
   const cleanQuestion = cleanPlainText(question.question, 800);
   const explanation = cleanPlainText(question.explanation, 1200);
   const supportSnippet = cleanPlainText(question.support_snippet, 500);
+  const difficulty = normalizeDifficulty(question.difficulty);
 
   if (!cleanQuestion) {
     throw httpError(400, 'Each question needs question text.');
@@ -100,6 +102,7 @@ function toStoredOptions(question, order) {
           support_snippet: supportSnippet,
           order,
         },
+        difficulty,
       },
       id: question.id || null,
     };
@@ -138,6 +141,7 @@ function toStoredOptions(question, order) {
         support_snippet: supportSnippet,
         order,
       },
+      difficulty,
     },
     id: question.id || null,
   };
@@ -353,6 +357,7 @@ router.post('/', async (req, res) => {
       question: row.question,
       options: row.options,
       correct_index: row.correct_index,
+      difficulty: row.difficulty,
     }));
 
     const { data: insertedQuestions, error: questionError } = await supabaseAdmin
@@ -504,6 +509,7 @@ router.patch('/:id', async (req, res) => {
         question: row.question,
         options: row.options,
         correct_index: row.correct_index,
+        difficulty: row.difficulty,
       };
       if (questionId) {
         updates.push({ id: questionId, ...record });
@@ -519,6 +525,7 @@ router.patch('/:id', async (req, res) => {
           question: update.question,
           options: update.options,
           correct_index: update.correct_index,
+          difficulty: update.difficulty,
         })
         .eq('quiz_id', quiz.id)
         .eq('id', update.id);
