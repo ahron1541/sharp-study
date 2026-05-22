@@ -30,6 +30,45 @@ const BADGES = Object.freeze({
   },
 });
 
+const DIFFICULTY_LEVELS = Object.freeze({
+  easy: {
+    key: 'easy',
+    label: 'Easy',
+    flashcardKnownXp: 1,
+    flashcardLearningXp: 1,
+    quizBaseXp: 5,
+    quizAccuracyBonus: { passing: 2, strong: 4, perfect: 6 },
+    timerMultiplier: 1.25,
+  },
+  normal: {
+    key: 'normal',
+    label: 'Normal',
+    flashcardKnownXp: 2,
+    flashcardLearningXp: 1,
+    quizBaseXp: 10,
+    quizAccuracyBonus: { passing: 3, strong: 6, perfect: 10 },
+    timerMultiplier: 1,
+  },
+  hard: {
+    key: 'hard',
+    label: 'Hard',
+    flashcardKnownXp: 4,
+    flashcardLearningXp: 2,
+    quizBaseXp: 20,
+    quizAccuracyBonus: { passing: 6, strong: 12, perfect: 18 },
+    timerMultiplier: 0.8,
+  },
+  expert: {
+    key: 'expert',
+    label: 'Expert',
+    flashcardKnownXp: 6,
+    flashcardLearningXp: 3,
+    quizBaseXp: 35,
+    quizAccuracyBonus: { passing: 10, strong: 20, perfect: 30 },
+    timerMultiplier: 0.6,
+  },
+});
+
 function calculateLevel(xpTotal = 0) {
   return Math.floor(Math.sqrt(Math.max(Number(xpTotal) || 0, 0) / 100)) + 1;
 }
@@ -52,6 +91,29 @@ function buildLevelProgress(xpTotal = 0) {
     xp_needed: xpNeeded,
     percent: Math.max(0, Math.min(100, Math.round((xpIntoLevel / levelSpan) * 100))),
   };
+}
+
+function normalizeDifficulty(difficulty = 'normal') {
+  const key = String(difficulty || 'normal').trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(DIFFICULTY_LEVELS, key) ? key : 'normal';
+}
+
+function getDifficultyConfig(difficulty = 'normal') {
+  return DIFFICULTY_LEVELS[normalizeDifficulty(difficulty)];
+}
+
+function getQuizAccuracyBonus(percent = 0, difficultyConfig = DIFFICULTY_LEVELS.normal) {
+  const scorePercent = Number(percent || 0);
+  if (scorePercent >= 100) {
+    return { tier: 'perfect', label: 'Perfect Accuracy Bonus', xp: difficultyConfig.quizAccuracyBonus.perfect };
+  }
+  if (scorePercent >= 90) {
+    return { tier: 'strong', label: 'Strong Accuracy Bonus', xp: difficultyConfig.quizAccuracyBonus.strong };
+  }
+  if (scorePercent >= 75) {
+    return { tier: 'passing', label: 'Passing Accuracy Bonus', xp: difficultyConfig.quizAccuracyBonus.passing };
+  }
+  return null;
 }
 
 function normalizeEventInput(event = {}) {
@@ -196,6 +258,79 @@ async function awardPerfectQuizReward(userId, quizId, attemptId, percent) {
   });
 }
 
+async function awardFlashcardReviewXp(userId, attempt = {}) {
+  if (!userId || !attempt?.id) return null;
+
+  const difficultyConfig = getDifficultyConfig(attempt.difficulty);
+  const result = attempt.result === 'learning' ? 'learning' : 'known';
+  const xpDelta = result === 'known'
+    ? difficultyConfig.flashcardKnownXp
+    : difficultyConfig.flashcardLearningXp;
+
+  return awardGamificationEvent(userId, {
+    eventType: 'flashcard_review_xp',
+    label: `${difficultyConfig.label} Flashcard Review`,
+    xpDelta,
+    idempotencyKey: `flashcard-review-xp:${attempt.id}`,
+    sourceType: 'flashcard_attempt',
+    sourceId: attempt.id,
+    metadata: {
+      difficulty: difficultyConfig.key,
+      result,
+      set_id: attempt.set_id || null,
+      card_id: attempt.card_id || null,
+      response_ms: Number.isFinite(Number(attempt.response_ms)) ? Number(attempt.response_ms) : null,
+    },
+  });
+}
+
+async function awardQuizAttemptXp(userId, attempt = {}) {
+  if (!userId || !attempt?.id) return [];
+
+  const difficultyConfig = getDifficultyConfig(attempt.difficulty);
+  const percent = Number(attempt.percent || 0);
+  const metadata = {
+    quiz_id: attempt.quiz_id || null,
+    attempt_id: attempt.id,
+    difficulty: difficultyConfig.key,
+    percent,
+    score: Number(attempt.score || 0),
+    total: Number(attempt.total || 0),
+    session_type: attempt.session_type === 'practice' ? 'practice' : 'test',
+  };
+
+  const awarded = [];
+  const baseReward = await awardGamificationEvent(userId, {
+    eventType: 'quiz_attempt_xp',
+    label: `${difficultyConfig.label} Quiz Complete`,
+    xpDelta: difficultyConfig.quizBaseXp,
+    idempotencyKey: `quiz-attempt-xp:${attempt.id}`,
+    sourceType: 'quiz_attempt',
+    sourceId: attempt.id,
+    metadata,
+  });
+  if (baseReward) awarded.push(baseReward);
+
+  const bonus = getQuizAccuracyBonus(percent, difficultyConfig);
+  if (bonus?.xp) {
+    const bonusReward = await awardGamificationEvent(userId, {
+      eventType: 'quiz_accuracy_bonus',
+      label: `${difficultyConfig.label} ${bonus.label}`,
+      xpDelta: bonus.xp,
+      idempotencyKey: `quiz-accuracy-bonus:${attempt.id}:${bonus.tier}`,
+      sourceType: 'quiz_attempt',
+      sourceId: attempt.id,
+      metadata: {
+        ...metadata,
+        accuracy_tier: bonus.tier,
+      },
+    });
+    if (bonusReward) awarded.push(bonusReward);
+  }
+
+  return awarded;
+}
+
 function getNextStreakMilestone(currentStreak = 0) {
   const current = Number(currentStreak || 0);
   const milestone = STREAK_MILESTONES.find((item) => current < item.days) || null;
@@ -276,12 +411,16 @@ async function getGamificationSummary(userId, streak = null) {
 
 module.exports = {
   BADGES,
+  DIFFICULTY_LEVELS,
   STREAK_MILESTONES,
   awardBadgeReward,
+  awardFlashcardReviewXp,
   awardGamificationEvent,
   awardPerfectQuizReward,
+  awardQuizAttemptXp,
   awardStudyActivityRewards,
   calculateLevel,
   getGamificationSummary,
   getNextStreakMilestone,
+  normalizeDifficulty,
 };

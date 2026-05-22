@@ -22,7 +22,7 @@ export default function SelectionToolbar({
         left: `${Math.max(16, position.left)}px`,
       }}
     >
-      <div className="flex items-center gap-2 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 shadow-2xl shadow-black/20 backdrop-blur">
+      <div className="relative flex items-center gap-2 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 shadow-2xl shadow-black/20 backdrop-blur">
         <span className="hidden max-w-[180px] truncate text-xs font-semibold text-[color:var(--color-text-muted)] sm:block">
           {selectedText}
         </span>
@@ -43,7 +43,10 @@ export default function SelectionToolbar({
           Highlight
         </button>
         {highlightOpen && highlightColors.length > 0 && (
-          <div id="selection-highlight-colors" className="flex items-center gap-1 rounded-full bg-[color:var(--color-surface-2)] p-1">
+          <div
+            id="selection-highlight-colors"
+            className="absolute left-1/2 top-[calc(100%+0.5rem)] flex -translate-x-1/2 items-center gap-1 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-1 shadow-xl shadow-black/20"
+          >
             {highlightColors.map((color) => (
               <button
                 key={color.name}

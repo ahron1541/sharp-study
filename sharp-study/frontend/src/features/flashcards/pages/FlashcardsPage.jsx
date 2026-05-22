@@ -5,13 +5,16 @@ import {
   BookOpen,
   Check,
   ChevronLeft,
+  Flame,
   HelpCircle,
   Keyboard,
   Library,
   Loader2,
   RotateCcw,
+  ShieldCheck,
   Shuffle,
   Sparkles,
+  Star,
   Trash2,
   Volume2,
   VolumeX,
@@ -25,13 +28,34 @@ import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { apiRequest } from '../../../config/api';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
+import XpNotice from '../../gamification/components/XpNotice';
 
 const HINT_DELAY_MS = 45000;
 const SYNC_DELAY_MS = 20000;
 const progressKey = (setId) => `sharp-study-flashcards-progress:${setId}`;
 const contentCacheKey = (setId) => `sharp-study-flashcards-content:${setId}`;
+const difficultyKey = (setId) => `sharp-study-flashcards-difficulty:${setId}`;
 const tutorialKey = 'sharp-study-flashcards-tutorial-seen';
 const MotionDiv = motion.div;
+const FLASHCARD_DIFFICULTIES = [
+  { value: 'easy', label: 'Easy', helper: 'Hints stay open', knownXp: 1, learningXp: 1, color: '#22c55e', icon: Sparkles, hintsLocked: false },
+  { value: 'normal', label: 'Normal', helper: 'Balanced review', knownXp: 2, learningXp: 1, color: '#8b3dff', icon: ShieldCheck, hintsLocked: false },
+  { value: 'hard', label: 'Hard', helper: 'Hints locked', knownXp: 4, learningXp: 2, color: '#f97316', icon: Flame, hintsLocked: true },
+  { value: 'expert', label: 'Expert', helper: 'Strict recall', knownXp: 6, learningXp: 3, color: '#facc15', icon: Star, hintsLocked: true },
+];
+
+function getFlashcardDifficulty(value = 'normal') {
+  return FLASHCARD_DIFFICULTIES.find((item) => item.value === value) || FLASHCARD_DIFFICULTIES[1];
+}
+
+function readFlashcardDifficulty(setId, fallback = 'normal') {
+  try {
+    const stored = localStorage.getItem(difficultyKey(setId));
+    return getFlashcardDifficulty(stored || fallback).value;
+  } catch {
+    return getFlashcardDifficulty(fallback).value;
+  }
+}
 
 function createInitialProgress(cards = []) {
   return {
@@ -142,6 +166,7 @@ export default function FlashcardsPage() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [speaking, setSpeaking] = useState(false);
+  const [difficulty, setDifficulty] = useState(() => readFlashcardDifficulty(id));
 
   const syncTimerRef = useRef(null);
   const utteranceRef = useRef(null);
@@ -163,6 +188,16 @@ export default function FlashcardsPage() {
   const reviewedCount = knownCount + learningCount;
   const completed = orderedCards.length > 0 && reviewedCount >= orderedCards.length;
   const percent = orderedCards.length ? Math.round((knownCount / orderedCards.length) * 100) : 0;
+  const difficultyMeta = useMemo(() => getFlashcardDifficulty(difficulty), [difficulty]);
+  const hintsLocked = difficultyMeta.hintsLocked;
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(difficultyKey(id), difficultyMeta.value);
+    } catch {
+      // Difficulty is a local preference; review can continue without saving it.
+    }
+  }, [difficultyMeta.value, id]);
 
   const saveProgressLocally = useCallback((nextProgress) => {
     try {
@@ -247,10 +282,15 @@ export default function FlashcardsPage() {
     const load = async () => {
       const cached = readFlashcardsContentCache(id);
       if (cached) {
+        const cachedDifficulty = readFlashcardDifficulty(id, cached.set?.difficulty);
         setSet(cached.set);
         setCards(cached.cards);
         setRelatedStudyGuideId(cached.relatedStudyGuideId || '');
         setRelatedQuizId(cached.relatedQuizId || '');
+        setDifficulty(cachedDifficulty);
+        if (getFlashcardDifficulty(cachedDifficulty).hintsLocked) {
+          setHintVisible(false);
+        }
         setLoading(false);
       } else {
         setLoading(true);
@@ -309,8 +349,13 @@ export default function FlashcardsPage() {
 
       const nextRelatedStudyGuideId = sanitizePlainText(response.relatedStudyGuideId || '');
       const nextRelatedQuizId = sanitizePlainText(response.relatedQuizId || '');
+      const nextDifficulty = readFlashcardDifficulty(id, setData.difficulty);
       setRelatedStudyGuideId(nextRelatedStudyGuideId);
       setRelatedQuizId(nextRelatedQuizId);
+      setDifficulty(nextDifficulty);
+      if (getFlashcardDifficulty(nextDifficulty).hintsLocked) {
+        setHintVisible(false);
+      }
 
       writeFlashcardsContentCache(id, {
         set: setData,
@@ -346,10 +391,10 @@ export default function FlashcardsPage() {
   }, [cards, id, relatedQuizId, relatedStudyGuideId, set]);
 
   useEffect(() => {
-    if (!currentCard || flipped || completed) return undefined;
+    if (!currentCard || flipped || completed || hintsLocked) return undefined;
     const timer = window.setTimeout(() => setHintVisible(true), HINT_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [completed, currentCard, flipped]);
+  }, [completed, currentCard, flipped, hintsLocked]);
 
   const withLock = useCallback((callback) => {
     if (actionLock || saving) return;
@@ -357,6 +402,12 @@ export default function FlashcardsPage() {
     callback();
     window.setTimeout(() => setActionLock(false), 220);
   }, [actionLock, saving]);
+
+  const changeDifficulty = useCallback((value) => {
+    const next = getFlashcardDifficulty(value);
+    setDifficulty(next.value);
+    if (next.hintsLocked) setHintVisible(false);
+  }, []);
 
   const flipCard = useCallback(() => {
     withLock(() => {
@@ -396,6 +447,7 @@ export default function FlashcardsPage() {
             card_id: currentCard.id,
             result: status,
             response_ms: responseMs,
+            difficulty: difficultyMeta.value,
           }),
         }).catch((error) => {
           console.warn('[FlashcardsProgress] Attempt sync failed.', error);
@@ -404,7 +456,7 @@ export default function FlashcardsPage() {
       setFlipped(false);
       setHintVisible(false);
     });
-  }, [currentCard, id, orderedCards.length, reviewedCount, stopReading, updateProgress, user, withLock]);
+  }, [currentCard, difficultyMeta.value, id, orderedCards.length, reviewedCount, stopReading, updateProgress, user, withLock]);
 
   const goBackToLastQuestion = useCallback(() => {
     const previous = progress.history[progress.history.length - 1];
@@ -520,10 +572,15 @@ export default function FlashcardsPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 rounded-[1.1rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-1.5 text-center sm:min-w-72">
-              <Stat label="Known" value={knownCount} tone="success" />
-              <Stat label="Learning" value={learningCount} tone="warning" />
-              <Stat label="Progress" value={`${percent}%`} tone="accent" />
+            <div className="flex shrink-0 items-start justify-end gap-3">
+              <XpNotice className="mt-1" title="Flashcard reviews can earn XP.">
+                Mark a card as Know or Still learning to record a review. Harder modes give more XP, and Hard or Expert lock hints for stricter recall.
+              </XpNotice>
+              <div className="grid grid-cols-3 gap-2 rounded-[1.1rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-1.5 text-center sm:min-w-72">
+                <Stat label="Known" value={knownCount} tone="success" />
+                <Stat label="Learning" value={learningCount} tone="warning" />
+                <Stat label="Progress" value={`${percent}%`} tone="accent" />
+              </div>
             </div>
           </div>
 
@@ -553,7 +610,7 @@ export default function FlashcardsPage() {
             onQuiz={() => relatedQuizId ? navigate(`/quiz/${relatedQuizId}`) : navigate('/library?tab=quiz')}
           />
         ) : (
-          <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_16rem]">
+          <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-3 text-sm font-bold">
@@ -594,17 +651,19 @@ export default function FlashcardsPage() {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2 text-sm font-bold text-[color:var(--color-text-muted)]">
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setHintVisible(true);
-                        }}
-                        className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm transition hover:bg-[color:var(--color-surface)]"
-                      >
-                        <HelpCircle size={16} />
-                        Hint
-                      </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (!hintsLocked) setHintVisible(true);
+                          }}
+                          disabled={hintsLocked}
+                          title={hintsLocked ? `${difficultyMeta.label} mode locks hints for higher XP.` : 'Show hint'}
+                          className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm transition hover:bg-[color:var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <HelpCircle size={16} />
+                          {hintsLocked ? 'Hints locked' : 'Hint'}
+                        </button>
                       </div>
                       <button
                         type="button"
@@ -692,7 +751,12 @@ export default function FlashcardsPage() {
               </div>
             </div>
 
-            <aside className="space-y-2 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3">
+            <aside className="space-y-3 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3">
+              <FlashcardDifficultyPanel
+                value={difficultyMeta.value}
+                options={FLASHCARD_DIFFICULTIES}
+                onChange={changeDifficulty}
+              />
               <button onClick={() => navigate(`/flashcards/${id}/edit`)} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl border border-[color:var(--color-border)] px-3 py-2.5 text-sm font-bold text-[color:var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50">
                 <BookOpen size={18} />
                 Edit current
@@ -758,6 +822,52 @@ function Stat({ label, value, tone }) {
       <p className="text-lg font-black leading-tight" style={{ color }}>{value}</p>
       <p className="text-[0.68rem] font-bold leading-tight text-[color:var(--color-text-muted)]">{label}</p>
     </div>
+  );
+}
+
+function FlashcardDifficultyPanel({ value, options, onChange }) {
+  const selected = getFlashcardDifficulty(value);
+  return (
+    <section className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[0.68rem] font-black uppercase tracking-[0.16em] text-[color:var(--color-text-muted)]">Difficulty</p>
+          <p className="mt-1 text-sm font-bold text-[color:var(--color-text-muted)]">
+            Know +{selected.knownXp} XP · Learning +{selected.learningXp} XP
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {options.map((option) => {
+          const Icon = option.icon;
+          const active = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              aria-pressed={active}
+              className={`min-h-[4.7rem] rounded-xl border p-2 text-left transition hover:-translate-y-0.5 ${
+                active
+                  ? 'bg-[color:var(--color-surface)] text-[color:var(--color-text)] shadow-[0_12px_30px_rgba(15,23,42,0.12)]'
+                  : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)]/70 text-[color:var(--color-text-muted)]'
+              }`}
+              style={{ borderColor: active ? option.color : undefined }}
+            >
+              <span className="flex items-center gap-2">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: `${option.color}22`, color: option.color }}>
+                  <Icon size={16} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-black">{option.label}</span>
+                  <span className="block truncate text-[0.68rem] font-bold">{option.helper}</span>
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

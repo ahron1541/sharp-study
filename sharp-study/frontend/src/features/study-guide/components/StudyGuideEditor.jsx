@@ -441,7 +441,7 @@ export default function StudyGuideEditor({
                 </div>
               ) : null}
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setHighlightOpen((value) => !value)}
@@ -455,31 +455,34 @@ export default function StudyGuideEditor({
                   <span>Highlight</span>
                 </button>
                 {highlightOpen ? (
-                <div id="study-guide-highlight-colors" className="flex flex-wrap items-center gap-2">
-                  {HIGHLIGHT_COLORS.map((color) => (
-                    <button
-                      key={color.name}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        editor.chain().focus().setMark('highlight', { color: color.value }).run();
-                      }}
-                      disabled={saving}
-                      className="h-9 w-9 rounded-2xl border border-black/10 transition hover:-translate-y-0.5 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-40"
-                      aria-label={`Highlight selected text with ${color.name}`}
-                      title={`Highlight selected text with ${color.name}`}
-                      style={{ backgroundColor: color.swatch }}
-                    />
-                  ))}
-                  <ToolButton
-                    label="Remove highlight"
-                    onClick={() => editor.chain().focus().unsetMark('highlight').run()}
-                    active={editor.isActive('highlight')}
-                    disabled={saving}
+                  <div
+                    id="study-guide-highlight-colors"
+                    className="absolute left-0 top-11 z-30 flex w-[min(19rem,calc(100vw_-_2rem))] flex-wrap items-center gap-2 rounded-[1.35rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-2 shadow-[0_18px_44px_rgba(15,23,42,0.18)]"
                   >
-                    <Eraser size={16} />
-                  </ToolButton>
-                </div>
+                    {HIGHLIGHT_COLORS.map((color) => (
+                      <button
+                        key={color.name}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          editor.chain().focus().setMark('highlight', { color: color.value }).run();
+                        }}
+                        disabled={saving}
+                        className="h-9 w-9 rounded-2xl border border-black/10 transition hover:-translate-y-0.5 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={`Highlight selected text with ${color.name}`}
+                        title={`Highlight selected text with ${color.name}`}
+                        style={{ backgroundColor: color.swatch }}
+                      />
+                    ))}
+                    <ToolButton
+                      label="Remove highlight"
+                      onClick={() => editor.chain().focus().unsetMark('highlight').run()}
+                      active={editor.isActive('highlight')}
+                      disabled={saving}
+                    >
+                      <Eraser size={16} />
+                    </ToolButton>
+                  </div>
                 ) : null}
               </div>
             </div>

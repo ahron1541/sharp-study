@@ -20,6 +20,7 @@ import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { apiRequest } from '../../../config/api';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
+import XpNotice from '../../gamification/components/XpNotice';
 
 const CARD_PAGE_SIZE = 5;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -455,7 +456,10 @@ export default function FlashcardsCreatePage() {
               </h1>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
+              <XpNotice title={isEdit ? 'Saving flashcard changes can count as study activity.' : 'Creating flashcards can count as study activity.'}>
+                Rewards are recorded after the flashcard set syncs. Practicing the cards afterward can also unlock the Card Starter badge and daily XP.
+              </XpNotice>
               <button
                 type="button"
                 onClick={() => saveSet('save')}

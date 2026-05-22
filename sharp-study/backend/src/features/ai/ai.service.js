@@ -564,11 +564,83 @@ ${extractedText.substring(0, 7000)}
   `;
 }
 
-function buildFlashcardsPrompt(extractedText) {
+const AI_DIFFICULTY_PROFILES = Object.freeze({
+  easy: {
+    label: 'Easy',
+    flashcards: [
+      'Favor direct recall questions: definitions, names, dates, steps, and simple cause/effect facts.',
+      'Keep wording short and clear so a beginner can answer after one careful reading.',
+      'Hints may be fairly helpful, but must not reveal the full answer.',
+    ],
+    quiz: [
+      'Favor direct factual recall and comprehension questions.',
+      'Use mostly multiple-choice questions, with only a few identification questions when the keyword is obvious from the lesson.',
+      'Wrong choices should be clearly wrong from the lesson, not tricky or confusing.',
+    ],
+  },
+  normal: {
+    label: 'Normal',
+    flashcards: [
+      'Use a balanced mix of definitions, examples, causes, effects, steps, and comparisons.',
+      'Questions should require understanding the lesson, not just spotting one word.',
+      'Hints should guide recall without giving away the answer.',
+    ],
+    quiz: [
+      'Use a balanced mix of recall, comprehension, examples, and comparison questions.',
+      'Include both multiple-choice and identification questions when the lesson supports both.',
+      'Wrong choices should be plausible but still clearly contradicted or unsupported by the lesson.',
+    ],
+  },
+  hard: {
+    label: 'Hard',
+    flashcards: [
+      'Favor applied recall: comparisons, why/how questions, consequences, relationships, and cause/effect chains.',
+      'Questions may require connecting two nearby lesson details, but must still be answerable from the lesson alone.',
+      'Hints should be subtle and should not reveal the key term or exact answer.',
+    ],
+    quiz: [
+      'Favor application, comparison, cause/effect, and detail-discrimination questions.',
+      'Use stronger distractors that are plausible from nearby lesson ideas but still clearly wrong.',
+      'Include more identification questions when the lesson provides exact terms, names, dates, laws, or short phrases.',
+    ],
+  },
+  expert: {
+    label: 'Expert',
+    flashcards: [
+      'Favor strict recall and synthesis: scenario-style, multi-step, contrast, consequence, and exception-style questions.',
+      'Questions may require combining two or three supported lesson facts, but must not require outside knowledge.',
+      'Hints should be minimal, abstract, and never include the answer wording.',
+    ],
+    quiz: [
+      'Favor scenario-based, multi-step, comparison, exception, and strict identification questions.',
+      'Distractors should be highly plausible but resolvable by careful reading of the lesson.',
+      'Use identification questions generously for exact terms, names, dates, laws, places, and short phrases supported by the lesson.',
+    ],
+  },
+});
+
+function normalizeDifficulty(difficulty = 'normal') {
+  const key = String(difficulty || 'normal').trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(AI_DIFFICULTY_PROFILES, key) ? key : 'normal';
+}
+
+function buildDifficultyRules(kind, difficulty = 'normal') {
+  const profile = AI_DIFFICULTY_PROFILES[normalizeDifficulty(difficulty)];
+  const rules = kind === 'quiz' ? profile.quiz : profile.flashcards;
+  return `
+Difficulty target: ${profile.label}
+Difficulty rules:
+${rules.map((rule) => `- ${rule}`).join('\n')}
+`;
+}
+
+function buildFlashcardsPrompt(extractedText, difficulty = 'normal') {
   return `
 Create 12 high-accuracy flashcards from the lesson text below.
 Respond ONLY with a valid JSON array, no markdown, no explanation.
 Format: [{ "front": "Question?", "back": "Short answer", "hint": "Brief clue", "support_snippet": "Exact supporting phrase from the lesson" }]
+
+${buildDifficultyRules('flashcards', difficulty)}
 
 Rules:
 - Every front must be a direct question ending in a question mark.
@@ -588,7 +660,7 @@ ${extractedText.substring(0, 10000)}
   `;
 }
 
-function buildQuizPrompt(extractedText) {
+function buildQuizPrompt(extractedText, difficulty = 'normal') {
   return `
 Create up to 24 high-accuracy quiz questions from the lesson text below.
 Respond ONLY with a valid JSON array. No markdown, no explanation.
@@ -610,6 +682,8 @@ Format:
   "explanation": "Why this keyword is right, based only on the lesson.",
   "support_snippet": "Exact supporting phrase from the lesson"
 }]
+
+${buildDifficultyRules('quiz', difficulty)}
 
 Rules:
 - Use a mix of multiple_choice and identification questions when the lesson supports both.
@@ -646,12 +720,12 @@ async function generateDiscussionQuestions(extractedText, requestOptions = {}) {
   return generateJsonWithFallback(buildDiscussionPrompt(extractedText), requestOptions, 'discussion question generation');
 }
 
-async function generateFlashcards(extractedText, requestOptions = {}) {
-  return generateJsonWithFallback(buildFlashcardsPrompt(extractedText), requestOptions, 'flashcard generation');
+async function generateFlashcards(extractedText, requestOptions = {}, difficulty = 'normal') {
+  return generateJsonWithFallback(buildFlashcardsPrompt(extractedText, difficulty), requestOptions, `${normalizeDifficulty(difficulty)} flashcard generation`);
 }
 
-async function generateQuiz(extractedText, requestOptions = {}) {
-  return generateJsonWithFallback(buildQuizPrompt(extractedText), requestOptions, 'quiz generation');
+async function generateQuiz(extractedText, requestOptions = {}, difficulty = 'normal') {
+  return generateJsonWithFallback(buildQuizPrompt(extractedText, difficulty), requestOptions, `${normalizeDifficulty(difficulty)} quiz generation`);
 }
 
 module.exports = {

@@ -32,6 +32,7 @@ import { apiRequest } from '../../../config/api';
 import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
+import XpNotice from '../../gamification/components/XpNotice';
 
 const SESSION_STORAGE_PREFIX = 'sharp-study-quiz-session';
 const CONTENT_STORAGE_PREFIX = 'sharp-study-quiz-content';
@@ -44,7 +45,14 @@ const DEFAULT_SETTINGS = {
   layout: 'single',
   itemCount: 10,
   timeMinutes: 15,
+  difficulty: 'normal',
 };
+const QUIZ_DIFFICULTIES = [
+  { value: 'easy', label: 'Easy', quizXp: 5, timerMultiplier: 1.25, timerLabel: 'More time', icon: Sparkles },
+  { value: 'normal', label: 'Normal', quizXp: 10, timerMultiplier: 1, timerLabel: 'Standard', icon: Target },
+  { value: 'hard', label: 'Hard', quizXp: 20, timerMultiplier: 0.8, timerLabel: 'Faster', icon: Flame },
+  { value: 'expert', label: 'Expert', quizXp: 35, timerMultiplier: 0.6, timerLabel: 'Strict', icon: Trophy },
+];
 const WRONG_FEEDBACK_MESSAGES = [
   'No problem. You are still learning.',
   'Good attempt. This is part of locking it in.',
@@ -171,6 +179,7 @@ function normalizeClientQuestion(question) {
       ? question.wrong_explanations.map((entry) => sanitizePlainText(entry)).slice(0, 4)
       : [],
     support_snippet: sanitizePlainText(question.support_snippet || ''),
+    difficulty: getQuizDifficulty(question.difficulty).value,
   };
 }
 
@@ -184,6 +193,7 @@ function normalizeAttemptSummary(attempt) {
     percent: Number(attempt?.percent || 0),
     duration_seconds: Number(attempt?.duration_seconds || 0),
     timed_out: Boolean(attempt?.timed_out),
+    difficulty: getQuizDifficulty(attempt?.difficulty || attempt?.settings?.difficulty).value,
     pending: Boolean(attempt?.pending),
   };
 }
@@ -201,6 +211,16 @@ function formatTimer(totalSeconds = 0) {
   const minutes = Math.floor(safeSeconds / 60);
   const seconds = safeSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function getQuizDifficulty(value = 'normal') {
+  return QUIZ_DIFFICULTIES.find((item) => item.value === value) || QUIZ_DIFFICULTIES[1];
+}
+
+function getQuizTimeLimitSeconds(settings = DEFAULT_SETTINGS) {
+  const minutes = Math.max(1, Math.min(Number(settings.timeMinutes) || DEFAULT_SETTINGS.timeMinutes, 240));
+  const difficulty = getQuizDifficulty(settings.difficulty);
+  return Math.max(30, Math.round(minutes * 60 * difficulty.timerMultiplier));
 }
 
 function normalizeAnswer(value = '') {
@@ -261,6 +281,7 @@ function buildLocalAttempt({ quiz, questions, answers, settings, startedAt, time
     quiz_id: quiz.id,
     quiz_title: quiz.title,
     session_type: settings.sessionType,
+    difficulty: getQuizDifficulty(settings.difficulty).value,
     score,
     total,
     percent: total ? Math.round((score / total) * 100) : 0,
@@ -315,13 +336,15 @@ export default function QuizPage() {
   const [feedback, setFeedback] = useState({});
   const [currentPage, setCurrentPage] = useState(0);
   const [startedAt, setStartedAt] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(DEFAULT_SETTINGS.timeMinutes * 60);
+  const [timeLeft, setTimeLeft] = useState(getQuizTimeLimitSeconds(DEFAULT_SETTINGS));
   const [result, setResult] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [streak, setStreak] = useState(0);
   const [bestStreak, setBestStreak] = useState(0);
   const [savedSession, setSavedSession] = useState(() => readSavedSession(id));
   const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem(TUTORIAL_KEY));
+  const [startPromptOpen, setStartPromptOpen] = useState(false);
+  const [startCountdown, setStartCountdown] = useState(null);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [exitConfirm, setExitConfirm] = useState({ open: false, target: 'preview' });
   const [expandedExplanations, setExpandedExplanations] = useState({});
@@ -355,7 +378,8 @@ export default function QuizPage() {
     ? activeQuestions.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE)
     : activeQuestions.slice(currentPage, currentPage + 1);
   const progressPercent = activeQuestions.length ? Math.round((answeredCount / activeQuestions.length) * 100) : 0;
-  const urgentTime = timeLeft <= Math.max(60, settings.timeMinutes * 6);
+  const sessionLimitSeconds = useMemo(() => getQuizTimeLimitSeconds(settings), [settings]);
+  const urgentTime = timeLeft <= Math.max(60, Math.round(sessionLimitSeconds * 0.1));
 
   const loadQuiz = useCallback(async () => {
     setError('');
@@ -376,6 +400,7 @@ export default function QuizPage() {
       setSettings((current) => ({
         ...current,
         itemCount: Math.min(Math.max(1, current.itemCount), Math.max(1, nextQuestions.length || 1)),
+        difficulty: getQuizDifficulty(nextQuiz.difficulty || nextQuestions[0]?.difficulty || current.difficulty).value,
       }));
       writeContentCache(id, {
         quiz: nextQuiz,
@@ -489,6 +514,7 @@ export default function QuizPage() {
     const durationSeconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
     const payload = {
       session_type: settings.sessionType,
+      difficulty: getQuizDifficulty(settings.difficulty).value,
       question_ids: activeQuestions.map((question) => question.id),
       answers: activeQuestions.map((question) => {
         const answer = answers[question.id];
@@ -505,6 +531,7 @@ export default function QuizPage() {
         layout: settings.layout,
         item_count: activeQuestions.length,
         time_minutes: settings.timeMinutes,
+        difficulty: getQuizDifficulty(settings.difficulty).value,
       },
     };
 
@@ -591,7 +618,7 @@ export default function QuizPage() {
     });
   };
 
-  const startSession = (questionIds = null, overrideSettings = null) => {
+  const startSession = useCallback((questionIds = null, overrideSettings = null) => {
     const effectiveSettings = overrideSettings || settings;
     const pool = questionIds
       ? questionIds.map((questionId) => questions.find((question) => question.id === questionId)).filter(Boolean)
@@ -614,7 +641,7 @@ export default function QuizPage() {
     setExpandedExplanations({});
     setCurrentPage(0);
     setStartedAt(startTime);
-    setTimeLeft(effectiveSettings.timeMinutes * 60);
+    setTimeLeft(getQuizTimeLimitSeconds(effectiveSettings));
     setResult(null);
     setStreak(0);
     setBestStreak(0);
@@ -622,6 +649,40 @@ export default function QuizPage() {
     setPhase('taking');
     clearSavedSession(id);
     setSavedSession(null);
+  }, [availableQuestions, id, questions, settings]);
+
+  useEffect(() => {
+    if (startCountdown === null) return undefined;
+
+    if (startCountdown <= 0) {
+      const timer = window.setTimeout(() => {
+        setStartPromptOpen(false);
+        setStartCountdown(null);
+        startSession();
+      }, 280);
+      return () => window.clearTimeout(timer);
+    }
+
+    const timer = window.setTimeout(() => {
+      setStartCountdown((current) => (current === null ? null : current - 1));
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [startCountdown, startSession]);
+
+  const requestStartSession = () => {
+    setShowTutorial(false);
+    setStartCountdown(null);
+    setStartPromptOpen(true);
+  };
+
+  const closeStartPrompt = () => {
+    if (startCountdown !== null) return;
+    setStartPromptOpen(false);
+  };
+
+  const beginStartCountdown = () => {
+    setStartCountdown(3);
   };
 
   const resumeSession = () => {
@@ -642,7 +703,7 @@ export default function QuizPage() {
     setExpandedExplanations(savedSession.expandedExplanations || {});
     setCurrentPage(Number(savedSession.currentPage || 0));
     setStartedAt(Number(savedSession.startedAt || Date.now()));
-    setTimeLeft(Number(savedSession.timeLeft || DEFAULT_SETTINGS.timeMinutes * 60));
+    setTimeLeft(Number(savedSession.timeLeft || getQuizTimeLimitSeconds({ ...DEFAULT_SETTINGS, ...savedSession.settings })));
     setStreak(Number(savedSession.streak || 0));
     setBestStreak(Number(savedSession.bestStreak || 0));
     setPhase('taking');
@@ -774,7 +835,7 @@ export default function QuizPage() {
             onBack={() => navigate('/library?tab=quiz')}
             onEdit={() => navigate(`/quiz/${quiz.id}/edit`)}
             onUpdateSetting={updateSetting}
-            onStart={() => startSession()}
+            onStart={requestStartSession}
             onResume={resumeSession}
           />
         ) : null}
@@ -854,6 +915,25 @@ export default function QuizPage() {
       </Modal>
 
       <Modal
+        isOpen={startPromptOpen && phase === 'preview'}
+        onClose={closeStartPrompt}
+        title={startCountdown === null ? 'Ready to start?' : 'Starting quiz'}
+        size="md"
+        closeOnBackdrop={startCountdown === null}
+        closeOnEscape={startCountdown === null}
+        showCloseButton={startCountdown === null}
+      >
+        <StartQuizModalContent
+          countdown={startCountdown}
+          settings={settings}
+          itemCount={Math.min(settings.itemCount, availableQuestions.length)}
+          availableCount={availableQuestions.length}
+          onCancel={closeStartPrompt}
+          onBegin={beginStartCountdown}
+        />
+      </Modal>
+
+      <Modal
         isOpen={showSubmitConfirm}
         onClose={() => setShowSubmitConfirm(false)}
         title="Submit quiz?"
@@ -921,6 +1001,100 @@ export default function QuizPage() {
   );
 }
 
+function StartQuizModalContent({ countdown, settings, itemCount, availableCount, onCancel, onBegin }) {
+  const countingDown = countdown !== null;
+  const countdownLabel = countdown === 0 ? 'Go' : countdown;
+  const modeLabel = settings.sessionType === 'practice' ? 'Practice mode' : 'Test mode';
+  const difficulty = getQuizDifficulty(settings.difficulty);
+  const timeLimit = getQuizTimeLimitSeconds(settings);
+
+  return (
+    <div className="space-y-5">
+      <div className="overflow-hidden rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4 sm:p-5">
+        <div className="grid gap-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+          <div className="relative mx-auto flex h-28 w-28 items-center justify-center sm:mx-0">
+            <div className={`absolute inset-0 rounded-full border border-[color:var(--color-accent)]/25 ${countingDown ? 'quiz-countdown-ring' : ''}`} />
+            <div className="absolute inset-2 rounded-full bg-[color:var(--color-accent)]/10" />
+            <div
+              key={countdownLabel || 'ready'}
+              className={`relative flex h-20 w-20 items-center justify-center rounded-full bg-[color:var(--color-accent)] text-[color:var(--color-accent-text)] shadow-[0_18px_42px_color-mix(in_srgb,var(--color-accent)_24%,transparent)] ${countingDown ? 'quiz-countdown-pop' : ''}`}
+              aria-live="polite"
+            >
+              {countingDown ? (
+                <span className="text-3xl font-black">{countdownLabel}</span>
+              ) : (
+                <Clock size={34} aria-hidden="true" />
+              )}
+            </div>
+          </div>
+
+          <div className="min-w-0 text-center sm:text-left">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">
+              {countingDown ? 'Timer starts after countdown' : 'Before you begin'}
+            </p>
+            <h3 className="mt-2 text-2xl font-black leading-tight text-[color:var(--color-text)]">
+              {countingDown ? 'Get ready.' : 'The quiz timer starts immediately.'}
+            </h3>
+            <p className="mt-3 text-sm font-semibold leading-7 text-[color:var(--color-text-muted)]">
+              {countingDown
+                ? 'Focus on the first question. Your countdown is preparing the session now.'
+                : 'Once you continue, a short countdown appears, then the timed quiz begins right away.'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-4">
+        <StartSummary label="Mode" value={modeLabel} />
+        <StartSummary label="Difficulty" value={`${difficulty.label} +${difficulty.quizXp} XP`} />
+        <StartSummary label="Items" value={`${Math.max(0, itemCount)} of ${availableCount}`} />
+        <StartSummary label="Timer" value={formatTimer(timeLimit)} />
+      </div>
+
+      {!countingDown ? (
+        <div className="rounded-[1.25rem] border border-amber-500/30 bg-amber-500/10 p-4">
+          <div className="flex gap-3">
+            <AlertTriangle className="mt-1 shrink-0 text-amber-500" size={20} aria-hidden="true" />
+            <p className="text-sm font-semibold leading-7 text-[color:var(--color-text-muted)]">
+              Make sure you are ready before starting. Difficulty changes both XP and timer pressure, and the timer will not pause once the quiz begins.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        {!countingDown ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-2xl border border-[color:var(--color-border)] px-5 py-3 font-bold text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface-2)]"
+          >
+            Not yet
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={onBegin}
+          disabled={countingDown}
+          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-black text-[color:var(--color-accent-text)] transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-90"
+        >
+          <Sparkles size={18} aria-hidden="true" />
+          {countingDown ? 'Starting...' : 'Start countdown'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StartSummary({ label, value }) {
+  return (
+    <div className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3 text-center">
+      <p className="text-[0.68rem] font-black uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">{label}</p>
+      <p className="mt-1 truncate text-sm font-black text-[color:var(--color-text)]">{value}</p>
+    </div>
+  );
+}
+
 function PreviewScreen({
   quiz,
   questions,
@@ -937,6 +1111,7 @@ function PreviewScreen({
   onResume,
 }) {
   const sampleQuestions = questions.slice(0, 3);
+  const difficulty = getQuizDifficulty(settings.difficulty);
 
   return (
     <div className="space-y-6">
@@ -967,10 +1142,15 @@ function PreviewScreen({
             </p>
           </div>
 
-          <div className="grid min-w-[min(100%,22rem)] grid-cols-3 gap-2 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
-            <Stat label="Pool" value={questionCounts.all} tone="accent" />
-            <Stat label="MCQ" value={questionCounts.multiple_choice} tone="success" />
-            <Stat label="ID" value={questionCounts.identification} tone="warning" />
+          <div className="flex shrink-0 items-start justify-end gap-3">
+            <XpNotice className="mt-1" title="Submitting a quiz attempt can earn XP.">
+              Difficulty controls quiz XP. Harder modes give more base XP, while strong scores can add an accuracy bonus after the attempt syncs.
+            </XpNotice>
+            <div className="grid min-w-[min(100%,22rem)] grid-cols-3 gap-2 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
+              <Stat label="Pool" value={questionCounts.all} tone="accent" />
+              <Stat label="MCQ" value={questionCounts.multiple_choice} tone="success" />
+              <Stat label="ID" value={questionCounts.identification} tone="warning" />
+            </div>
           </div>
         </div>
       </section>
@@ -984,6 +1164,20 @@ function PreviewScreen({
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <SegmentedSetting
+                label="Difficulty"
+                value={settings.difficulty}
+                options={QUIZ_DIFFICULTIES.map((option) => {
+                  const Icon = option.icon;
+                  return {
+                    value: option.value,
+                    label: option.label,
+                    caption: `+${option.quizXp} XP · ${option.timerLabel}`,
+                    icon: <Icon size={16} />,
+                  };
+                })}
+                onChange={(value) => onUpdateSetting('difficulty', value)}
+              />
               <SegmentedSetting
                 label="Quiz mode"
                 value={settings.sessionType}
@@ -1087,7 +1281,7 @@ function PreviewScreen({
               <h2 className="text-xl font-black text-[color:var(--color-text)]">Ready check</h2>
             </div>
             <p className="mt-3 text-sm leading-7 text-[color:var(--color-text-muted)]">
-              A calm start beats a rushed one. Take a breath, scan the rules, then go.
+              {difficulty.label} mode starts with +{difficulty.quizXp} XP and a {formatTimer(getQuizTimeLimitSeconds(settings))} timer. Take a breath, scan the rules, then go.
             </p>
             <div className="mt-5 space-y-3">
               {savedSession ? (
@@ -1141,6 +1335,7 @@ function TakingScreen({
   const pageLabel = settings.layout === 'page'
     ? `Page ${currentPage + 1} of ${totalPages}`
     : `Question ${currentPage + 1} of ${questions.length}`;
+  const difficulty = getQuizDifficulty(settings.difficulty);
 
   return (
     <div className="space-y-4">
@@ -1148,7 +1343,7 @@ function TakingScreen({
         <div className="mx-auto flex max-w-7xl flex-col gap-2">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[0.68rem] font-black uppercase tracking-[0.18em] text-[color:var(--color-text-muted)]">{settings.sessionType === 'practice' ? 'Practice quiz' : 'Test mode'}</p>
+              <p className="text-[0.68rem] font-black uppercase tracking-[0.18em] text-[color:var(--color-text-muted)]">{settings.sessionType === 'practice' ? 'Practice quiz' : 'Test mode'} · {difficulty.label}</p>
               <h1 className="truncate text-lg font-black text-[color:var(--color-text)] sm:text-xl">{quiz?.title}</h1>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1364,6 +1559,7 @@ function FeedbackPanel({ question, selectedIndex, isCorrect, message, expanded, 
 function ResultsScreen({ quiz, result, attempts, onBackToPreview, onRetake, onRetakeMissed, onLibrary }) {
   const percent = Number(result.percent || 0);
   const missed = (result.answers || []).filter((answer) => !answer.is_correct).length;
+  const difficulty = getQuizDifficulty(result.difficulty || result.settings?.difficulty);
 
   return (
     <div className="space-y-6">
@@ -1373,7 +1569,7 @@ function ResultsScreen({ quiz, result, attempts, onBackToPreview, onRetake, onRe
             <p className="text-xs font-black uppercase tracking-[0.22em] text-[color:var(--color-text-muted)]">Results</p>
             <h1 className="mt-2 text-3xl font-black leading-tight text-[color:var(--color-text)] sm:text-4xl">{getResultMessage(percent, result.session_type)}</h1>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-[color:var(--color-text-muted)]">
-              {quiz?.title} · {result.pending ? 'This attempt is saved locally and will sync when the server is reachable.' : 'This attempt is saved in your score history.'}
+              {quiz?.title} · {difficulty.label} difficulty · {result.pending ? 'This attempt is saved locally and will sync when the server is reachable.' : 'This attempt is saved in your score history.'}
             </p>
           </div>
           <div className="grid grid-cols-3 gap-2 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
@@ -1437,19 +1633,22 @@ function AttemptLog({ attempts }) {
         <h2 className="text-xl font-black text-[color:var(--color-text)]">Past performance</h2>
       </div>
       <div className="mt-4 space-y-3">
-        {attempts.length ? attempts.map((attempt) => (
-          <div key={attempt.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-black text-[color:var(--color-text)]">
-                {new Date(attempt.created_at).toLocaleDateString()} · {attempt.session_type === 'practice' ? 'Practice' : 'Test'}
-              </p>
-              <p className="mt-1 text-xs font-semibold text-[color:var(--color-text-muted)]">
-                {attempt.score}/{attempt.total} · {formatDuration(attempt.duration_seconds)}{attempt.pending ? ' · pending sync' : ''}
-              </p>
+        {attempts.length ? attempts.map((attempt) => {
+          const difficulty = getQuizDifficulty(attempt.difficulty);
+          return (
+            <div key={attempt.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black text-[color:var(--color-text)]">
+                  {new Date(attempt.created_at).toLocaleDateString()} · {attempt.session_type === 'practice' ? 'Practice' : 'Test'} · {difficulty.label}
+                </p>
+                <p className="mt-1 text-xs font-semibold text-[color:var(--color-text-muted)]">
+                  {attempt.score}/{attempt.total} · {formatDuration(attempt.duration_seconds)}{attempt.pending ? ' · pending sync' : ''}
+                </p>
+              </div>
+              <span className="rounded-full bg-[color:var(--color-surface)] px-3 py-2 text-sm font-black text-[color:var(--color-text)]">{attempt.percent}%</span>
             </div>
-            <span className="rounded-full bg-[color:var(--color-surface)] px-3 py-2 text-sm font-black text-[color:var(--color-text)]">{attempt.percent}%</span>
-          </div>
-        )) : (
+          );
+        }) : (
           <div className="rounded-[1.25rem] border border-dashed border-[color:var(--color-border)] p-4 text-sm leading-6 text-[color:var(--color-text-muted)]">
             Your retakes and scores will show here after the first attempt.
           </div>
@@ -1470,14 +1669,21 @@ function SegmentedSetting({ label, value, options, onChange }) {
             type="button"
             onClick={() => onChange(option.value)}
             aria-pressed={value === option.value}
-            className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-black transition ${
+            className={`inline-flex min-h-11 flex-col items-center justify-center gap-1 rounded-xl border px-3 py-2 text-center text-sm font-black transition ${
               value === option.value
                 ? 'border-[color:var(--color-accent)] bg-[color:var(--color-accent)] text-[color:var(--color-accent-text)]'
                 : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text)] hover:border-[color:var(--color-accent)]'
             }`}
           >
-            {option.icon}
-            {option.label}
+            <span className="inline-flex items-center justify-center gap-2">
+              {option.icon}
+              {option.label}
+            </span>
+            {option.caption ? (
+              <span className={`text-[0.68rem] font-bold ${value === option.value ? 'opacity-80' : 'text-[color:var(--color-text-muted)]'}`}>
+                {option.caption}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>

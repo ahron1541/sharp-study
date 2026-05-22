@@ -4,7 +4,7 @@ const { z } = require('zod');
 const { supabaseAdmin } = require('../../config/supabase');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { sanitizePlainText } = require('../../utils/studyGuideSanitize');
-const { awardPerfectQuizReward } = require('../gamification/gamification.service');
+const { awardPerfectQuizReward, awardQuizAttemptXp, normalizeDifficulty } = require('../gamification/gamification.service');
 const { ACTIVITY_TYPES, recordStudyActivity } = require('../streaks/streaks.service');
 
 const router = express.Router();
@@ -13,6 +13,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const ATTEMPT_EVENT = 'quiz_attempt_submitted';
 const QUIZ_CREATED_EVENT = 'quiz.created';
 const QUIZ_UPDATED_EVENT = 'quiz.updated';
+const difficultySchema = z.enum(['easy', 'normal', 'hard', 'expert']);
 
 const questionPayloadSchema = z.object({
   id: z.string().uuid().optional(),
@@ -36,6 +37,7 @@ const upsertQuizSchema = z.object({
 
 const submitAttemptSchema = z.object({
   session_type: z.enum(['practice', 'test']).default('test'),
+  difficulty: difficultySchema.default('normal'),
   question_ids: z.array(z.string().uuid()).min(1).max(80),
   answers: z.array(z.object({
     question_id: z.string().uuid(),
@@ -49,6 +51,7 @@ const submitAttemptSchema = z.object({
     layout: z.enum(['single', 'page']).optional(),
     item_count: z.number().int().min(1).max(80).optional(),
     time_minutes: z.number().int().min(1).max(240).optional(),
+    difficulty: difficultySchema.optional(),
   }).passthrough().optional(),
 });
 
@@ -259,6 +262,7 @@ function normalizeQuestion(row) {
     wrong_explanations: meta.wrongExplanations,
     support_snippet: meta.supportSnippet,
     order: meta.order,
+    difficulty: normalizeDifficulty(row.difficulty),
     created_at: row.created_at,
   };
 }
@@ -305,13 +309,14 @@ function summarizeAttempt(row) {
     percent: Number(metadata.percent || 0),
     duration_seconds: Number(metadata.duration_seconds || 0),
     timed_out: Boolean(metadata.timed_out),
+    difficulty: normalizeDifficulty(metadata.difficulty || metadata.settings?.difficulty),
   };
 }
 
 async function getQuizForUser(quizId, userId) {
   const { data: quiz, error: quizError } = await supabaseAdmin
     .from('quizzes')
-    .select('id, user_id, document_id, title, is_archived, created_at')
+    .select('id, user_id, document_id, title, difficulty, is_archived, created_at')
     .eq('id', quizId)
     .eq('user_id', userId)
     .maybeSingle();
@@ -337,7 +342,7 @@ router.post('/', async (req, res) => {
         title: payload.title,
         is_archived: false,
       })
-      .select('id, user_id, document_id, title, is_archived, created_at')
+      .select('id, user_id, document_id, title, difficulty, is_archived, created_at')
       .single();
 
     if (quizError) throw quizError;
@@ -353,7 +358,7 @@ router.post('/', async (req, res) => {
     const { data: insertedQuestions, error: questionError } = await supabaseAdmin
       .from('quiz_questions')
       .insert(questionRows)
-      .select('id, quiz_id, question, options, correct_index, created_at');
+      .select('id, quiz_id, question, options, correct_index, difficulty, created_at');
 
     if (questionError) throw questionError;
 
@@ -370,6 +375,7 @@ router.post('/', async (req, res) => {
         id: quiz.id,
         title: sanitizePlainText(quiz.title),
         document_id: quiz.document_id,
+        difficulty: normalizeDifficulty(quiz.difficulty),
         created_at: quiz.created_at,
       },
       questions: (insertedQuestions || []).map(normalizeQuestion).sort(sortQuestionsByOrder),
@@ -400,7 +406,7 @@ router.get('/:id', async (req, res) => {
     const [{ data: questionRows, error: questionError }, { data: attemptRows, error: attemptError }] = await Promise.all([
       supabaseAdmin
         .from('quiz_questions')
-        .select('id, quiz_id, question, options, correct_index, created_at')
+        .select('id, quiz_id, question, options, correct_index, difficulty, created_at')
         .eq('quiz_id', quiz.id)
         .order('created_at', { ascending: true }),
       supabaseAdmin
@@ -427,6 +433,7 @@ router.get('/:id', async (req, res) => {
         id: quiz.id,
         title: sanitizePlainText(quiz.title),
         document_id: quiz.document_id,
+        difficulty: normalizeDifficulty(quiz.difficulty),
         created_at: quiz.created_at,
       },
       questions,
@@ -528,13 +535,13 @@ router.patch('/:id', async (req, res) => {
     const [{ data: updatedQuiz, error: updatedQuizError }, { data: questionRows, error: questionError }] = await Promise.all([
       supabaseAdmin
         .from('quizzes')
-        .select('id, user_id, document_id, title, is_archived, created_at')
+        .select('id, user_id, document_id, title, difficulty, is_archived, created_at')
         .eq('id', quiz.id)
         .eq('user_id', req.user.id)
         .single(),
       supabaseAdmin
         .from('quiz_questions')
-        .select('id, quiz_id, question, options, correct_index, created_at')
+        .select('id, quiz_id, question, options, correct_index, difficulty, created_at')
         .eq('quiz_id', quiz.id)
         .order('created_at', { ascending: true }),
     ]);
@@ -555,6 +562,7 @@ router.patch('/:id', async (req, res) => {
         id: updatedQuiz.id,
         title: sanitizePlainText(updatedQuiz.title),
         document_id: updatedQuiz.document_id,
+        difficulty: normalizeDifficulty(updatedQuiz.difficulty),
         created_at: updatedQuiz.created_at,
       },
       questions: (questionRows || []).map(normalizeQuestion).sort(sortQuestionsByOrder),
@@ -584,7 +592,7 @@ router.post('/:id/attempts', async (req, res) => {
 
     const { data: questionRows, error: questionError } = await supabaseAdmin
       .from('quiz_questions')
-      .select('id, quiz_id, question, options, correct_index, created_at')
+      .select('id, quiz_id, question, options, correct_index, difficulty, created_at')
       .eq('quiz_id', quiz.id)
       .in('id', parsed.data.question_ids);
 
@@ -632,16 +640,21 @@ router.post('/:id/attempts', async (req, res) => {
     const score = checkedAnswers.filter((answer) => answer.is_correct).length;
     const total = checkedAnswers.length;
     const percent = total ? Math.round((score / total) * 100) : 0;
+    const difficulty = normalizeDifficulty(parsed.data.difficulty || parsed.data.settings?.difficulty);
     const metadata = {
       quiz_id: quiz.id,
       quiz_title: sanitizePlainText(quiz.title),
       session_type: parsed.data.session_type,
+      difficulty,
       score,
       total,
       percent,
       duration_seconds: parsed.data.duration_seconds,
       timed_out: parsed.data.timed_out,
-      settings: parsed.data.settings || {},
+      settings: {
+        ...(parsed.data.settings || {}),
+        difficulty,
+      },
       answers: checkedAnswers,
     };
 
@@ -663,9 +676,19 @@ router.post('/:id/attempts', async (req, res) => {
         quiz_id: quiz.id,
         attempt_id: log.id,
         percent,
+        difficulty,
       },
     });
     await awardPerfectQuizReward(req.user.id, quiz.id, log.id, percent);
+    await awardQuizAttemptXp(req.user.id, {
+      id: log.id,
+      quiz_id: quiz.id,
+      difficulty,
+      percent,
+      score,
+      total,
+      session_type: parsed.data.session_type,
+    });
 
     return res.status(201).json({
       success: true,

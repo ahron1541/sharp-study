@@ -2,6 +2,7 @@ const express = require('express');
 const { z } = require('zod');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { supabaseAdmin } = require('../../config/supabase');
+const { awardFlashcardReviewXp } = require('../gamification/gamification.service');
 const { ACTIVITY_TYPES, recordStudyActivity } = require('../streaks/streaks.service');
 
 const router = express.Router();
@@ -16,6 +17,7 @@ function sanitizePlainText(value = '', maxLength = 1000) {
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const difficultySchema = z.enum(['easy', 'normal', 'hard', 'expert']);
 
 const createFlashcardSetSchema = z.object({
   title: z.string().trim().min(1).max(180),
@@ -31,6 +33,7 @@ const flashcardAttemptSchema = z.object({
   card_id: z.string().regex(UUID_PATTERN),
   result: z.enum(['known', 'learning']),
   response_ms: z.number().int().min(0).max(24 * 60 * 60 * 1000).optional().nullable(),
+  difficulty: difficultySchema.default('normal'),
 });
 
 const flashcardProgressSchema = z.object({
@@ -55,7 +58,7 @@ function normalizeCardPayload(cards = []) {
 async function getOwnedSet(setId, userId) {
   const { data, error } = await supabaseAdmin
     .from('flashcard_sets')
-    .select('id, user_id, document_id, source_study_guide_id, title, is_archived, created_at')
+    .select('id, user_id, document_id, source_study_guide_id, title, difficulty, is_archived, created_at')
     .eq('id', setId)
     .eq('user_id', userId)
     .maybeSingle();
@@ -71,6 +74,7 @@ function normalizeCardRow(card) {
     front: sanitizePlainText(card.front, 500),
     back: sanitizePlainText(card.back, 1000),
     hint: sanitizePlainText(card.hint || '', 180),
+    difficulty: card.difficulty || 'normal',
     created_at: card.created_at,
   };
 }
@@ -125,7 +129,7 @@ function normalizeProgressPayload(progress, cards = []) {
 async function getSetCards(setId) {
   const { data, error } = await supabaseAdmin
     .from('flashcards')
-    .select('id, set_id, front, back, hint, created_at')
+    .select('id, set_id, front, back, hint, difficulty, created_at')
     .eq('set_id', setId)
     .order('created_at', { ascending: true });
 
@@ -245,7 +249,7 @@ router.post('/', async (req, res) => {
         document_id: null,
         is_archived: false,
       })
-      .select('id, user_id, document_id, source_study_guide_id, title, is_archived, created_at')
+      .select('id, user_id, document_id, source_study_guide_id, title, difficulty, is_archived, created_at')
       .single();
 
     if (setError) throw setError;
@@ -261,7 +265,7 @@ router.post('/', async (req, res) => {
           hint: card.hint,
         }))
       )
-      .select('id, set_id, front, back, hint, created_at');
+      .select('id, set_id, front, back, hint, difficulty, created_at');
 
     if (cardsError) throw cardsError;
 
@@ -275,6 +279,7 @@ router.post('/', async (req, res) => {
         title: sanitizePlainText(set.title, 180),
         document_id: set.document_id,
         source_study_guide_id: set.source_study_guide_id,
+        difficulty: set.difficulty || 'normal',
         created_at: set.created_at,
       },
       cards: (createdCards || []).map(normalizeCardRow),
@@ -315,6 +320,7 @@ router.get('/:id', async (req, res) => {
         title: sanitizePlainText(set.title, 180),
         document_id: set.document_id,
         source_study_guide_id: set.source_study_guide_id,
+        difficulty: set.difficulty || 'normal',
         created_at: set.created_at,
       },
       cards: (cards || []).map(normalizeCardRow),
@@ -416,13 +422,13 @@ router.patch('/:id', async (req, res) => {
     ] = await Promise.all([
       supabaseAdmin
         .from('flashcard_sets')
-        .select('id, user_id, document_id, source_study_guide_id, title, is_archived, created_at')
+        .select('id, user_id, document_id, source_study_guide_id, title, difficulty, is_archived, created_at')
         .eq('id', set.id)
         .eq('user_id', req.user.id)
         .single(),
       supabaseAdmin
         .from('flashcards')
-        .select('id, set_id, front, back, hint, created_at')
+        .select('id, set_id, front, back, hint, difficulty, created_at')
         .eq('set_id', set.id)
         .order('created_at', { ascending: true }),
       getRelatedMaterialIds(set, req.user.id),
@@ -440,6 +446,7 @@ router.patch('/:id', async (req, res) => {
         title: sanitizePlainText(updatedSet.title, 180),
         document_id: updatedSet.document_id,
         source_study_guide_id: updatedSet.source_study_guide_id,
+        difficulty: updatedSet.difficulty || 'normal',
         created_at: updatedSet.created_at,
       },
       cards: (updatedCards || []).map(normalizeCardRow),
@@ -572,7 +579,7 @@ router.post('/:id/attempts', async (req, res) => {
       return res.status(404).json({ error: 'Flashcard not found.' });
     }
 
-    const { error: insertError } = await supabaseAdmin
+    const { data: attempt, error: insertError } = await supabaseAdmin
       .from('flashcard_attempts')
       .insert({
         user_id: req.user.id,
@@ -580,7 +587,10 @@ router.post('/:id/attempts', async (req, res) => {
         card_id: card.id,
         result: parsed.data.result,
         response_ms: parsed.data.response_ms ?? null,
-      });
+        difficulty: parsed.data.difficulty,
+      })
+      .select('id, created_at')
+      .single();
 
     if (insertError) throw insertError;
     await recordStudyActivity(req.user.id, ACTIVITY_TYPES.FLASHCARD_REVIEW, {
@@ -590,9 +600,26 @@ router.post('/:id/attempts', async (req, res) => {
         set_id: set.id,
         card_id: card.id,
         result: parsed.data.result,
+        difficulty: parsed.data.difficulty,
       },
     });
-    return res.status(201).json({ success: true });
+    await awardFlashcardReviewXp(req.user.id, {
+      id: attempt.id,
+      set_id: set.id,
+      card_id: card.id,
+      result: parsed.data.result,
+      response_ms: parsed.data.response_ms ?? null,
+      difficulty: parsed.data.difficulty,
+    });
+
+    return res.status(201).json({
+      success: true,
+      attempt: {
+        id: attempt.id,
+        created_at: attempt.created_at,
+        difficulty: parsed.data.difficulty,
+      },
+    });
   } catch (error) {
     console.error('[FLASHCARDS] Failed to save flashcard attempt:', error.message);
     return res.status(500).json({ error: 'Failed to save flashcard attempt.' });

@@ -8,6 +8,7 @@ import Modal from '../../../shared/components/Modal';
 import { apiRequest } from '../../../config/api';
 import { sanitizeHtml, sanitizePlainText } from '../../../shared/utils/sanitize';
 import { useAuth } from '../../auth/context/AuthContext';
+import XpNotice from '../../gamification/components/XpNotice';
 import StudyGuideEditor from '../components/StudyGuideEditor';
 import { createInstructionalStudyGuideTemplate } from '../utils/content';
 
@@ -292,11 +293,16 @@ export default function StudyGuideCreatePage() {
             </p>
           </div>
 
-          <div className="rounded-[1.6rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]/80 px-5 py-4">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">Writing tips</p>
-            <p className="mt-2 max-w-sm text-sm leading-7 text-[color:var(--color-text-muted)]">
-              Use short headings, bold keywords, and a quick review section so the final guide is easier to scan.
-            </p>
+          <div className="flex shrink-0 flex-col items-end gap-3 sm:flex-row sm:items-start">
+            <XpNotice title="Creating a study guide counts as study progress.">
+              After the guide saves successfully, it can count for your daily study streak and daily XP. Drafts only count when they are created on the server.
+            </XpNotice>
+            <div className="rounded-[1.6rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]/80 px-5 py-4">
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">Writing tips</p>
+              <p className="mt-2 max-w-sm text-sm leading-7 text-[color:var(--color-text-muted)]">
+                Use short headings, bold keywords, and a quick review section so the final guide is easier to scan.
+              </p>
+            </div>
           </div>
         </div>
       </section>

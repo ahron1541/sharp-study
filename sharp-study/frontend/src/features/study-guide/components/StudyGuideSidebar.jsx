@@ -9,11 +9,11 @@ export default function StudyGuideSidebar({
 }) {
   return (
     <aside
-      className={`study-guide-sidebar lg:sticky lg:top-5 lg:self-start lg:max-h-[calc(100vh-2.5rem)] ${
-        collapsed ? 'lg:w-[92px]' : 'lg:w-[296px]'
+      className={`study-guide-sidebar h-full min-h-0 ${
+        collapsed ? 'lg:w-[92px]' : 'lg:w-[clamp(17rem,20vw,20rem)]'
       }`}
     >
-      <nav className="flex h-full flex-col rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/96 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.1)] transition-[width,transform,box-shadow] duration-300">
+      <nav className="flex h-full min-h-0 flex-col rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/96 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.1)] transition-[width,transform,box-shadow] duration-300">
         <div className="flex items-center justify-between gap-3 border-b border-[color:var(--color-border)] pb-3">
           <div className={`flex min-w-0 items-center gap-2 ${collapsed ? 'justify-center' : ''}`}>
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-surface-2)] text-[color:var(--color-accent)]">
@@ -48,7 +48,7 @@ export default function StudyGuideSidebar({
               Jump through the study guide while you scroll.
             </p>
 
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+            <div className="study-guide-sidebar-list min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
               {sections.length ? sections.map((section) => {
                 const levelOffset = Math.max(0, Math.min(3, (section.level || 2) - 2));
                 const isActive = activeSectionId === section.id;
@@ -83,12 +83,12 @@ export default function StudyGuideSidebar({
             </div>
           </div>
         ) : (
-          <div className="mt-4 flex flex-1 flex-col items-center justify-start gap-3">
+          <div className="mt-4 flex min-h-0 flex-1 flex-col items-center justify-start gap-3">
             <div className="rounded-[1.5rem] border border-dashed border-[color:var(--color-border)] px-3 py-4 text-center text-xs font-bold uppercase tracking-[0.16em] text-[color:var(--color-text-muted)] [writing-mode:vertical-rl] [text-orientation:mixed]">
               Contents
             </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-              {sections.slice(0, 8).map((section) => {
+            <div className="study-guide-sidebar-list flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain">
+              {sections.map((section) => {
                 const isActive = activeSectionId === section.id;
                 return (
                   <button

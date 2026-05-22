@@ -4,11 +4,14 @@ import {
   Archive,
   ArrowRight,
   CheckCircle2,
+  Flame,
   Loader2,
   Plus,
   Search,
+  ShieldCheck,
   Sparkles,
   Trash2,
+  Trophy,
   Upload,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -37,6 +40,16 @@ const GENERATION_STEPS = [
   { value: 100, title: 'Finishing your library update', detail: 'Saving the result and refreshing your workspace.' },
 ];
 const GENERATION_CANCEL_DELAY_MS = 60000;
+const AI_DIFFICULTIES = [
+  { value: 'easy', label: 'Easy', helper: 'Direct recall', flashcardNote: 'Clear beginner cards', quizNote: '+5 XP base quiz', icon: Sparkles, color: '#22c55e' },
+  { value: 'normal', label: 'Normal', helper: 'Balanced review', flashcardNote: 'Mixed recall cards', quizNote: '+10 XP base quiz', icon: ShieldCheck, color: '#8b3dff' },
+  { value: 'hard', label: 'Hard', helper: 'Applied recall', flashcardNote: 'Subtle hints later', quizNote: '+20 XP base quiz', icon: Flame, color: '#f97316' },
+  { value: 'expert', label: 'Expert', helper: 'Strict recall', flashcardNote: 'Scenario style', quizNote: '+35 XP base quiz', icon: Trophy, color: '#facc15' },
+];
+
+function getAiDifficulty(value = 'normal') {
+  return AI_DIFFICULTIES.find((item) => item.value === value) || AI_DIFFICULTIES[1];
+}
 
 function createDefaultManualText(selectedType) {
   if (selectedType === 'quiz') return 'Write your question here';
@@ -59,6 +72,7 @@ export default function LibraryPage() {
   const [title, setTitle] = useState('');
   const [manualText, setManualText] = useState('');
   const [file, setFile] = useState(null);
+  const [generationDifficulty, setGenerationDifficulty] = useState('normal');
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState({ value: 0, title: '', detail: '' });
   const [generationJob, setGenerationJob] = useState(null);
@@ -194,6 +208,7 @@ export default function LibraryPage() {
     setTitle('');
     setManualText('');
     setFile(null);
+    setGenerationDifficulty('normal');
     setProgress({ value: 0, title: '', detail: '' });
     setGenerationJob(null);
     setGenerationElapsedMs(0);
@@ -207,6 +222,7 @@ export default function LibraryPage() {
     setTitle('');
     setManualText('');
     setFile(null);
+    setGenerationDifficulty('normal');
     setProgress({ value: 0, title: '', detail: '' });
     setGenerationJob(null);
     setGenerationElapsedMs(0);
@@ -338,6 +354,9 @@ export default function LibraryPage() {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('generate', JSON.stringify([MATERIAL_TYPES[selectedType].generateId]));
+    if (selectedType === 'flashcards' || selectedType === 'quiz') {
+      formData.append('difficulty', getAiDifficulty(generationDifficulty).value);
+    }
 
     setSaving(true);
     setProgress(GENERATION_STEPS[0]);
@@ -774,9 +793,11 @@ export default function LibraryPage() {
         progress={progress}
         generationJob={generationJob}
         generationElapsedMs={generationElapsedMs}
+        generationDifficulty={generationDifficulty}
         onClose={closeWizard}
         onSelectType={handleSelectType}
         onSelectMode={handleSelectMode}
+        onGenerationDifficultyChange={setGenerationDifficulty}
         onTitleChange={setTitle}
         onManualTextChange={setManualText}
         onFileChange={handleFileChange}
@@ -843,6 +864,60 @@ export default function LibraryPage() {
   );
 }
 
+function GenerationDifficultyPicker({ type, value, onChange }) {
+  const isQuiz = type === 'quiz';
+
+  return (
+    <section className="rounded-[2rem] border border-border bg-surface p-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-text-muted">AI difficulty</p>
+          <h3 className="mt-1 text-lg font-black text-text">
+            Shape the generated {isQuiz ? 'quiz' : 'flashcards'}
+          </h3>
+        </div>
+        <p className="text-sm font-semibold text-text-muted">
+          {isQuiz ? 'Harder quizzes start with more XP.' : 'Harder cards ask for stricter recall.'}
+        </p>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {AI_DIFFICULTIES.map((option) => {
+          const Icon = option.icon;
+          const active = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              aria-pressed={active}
+              className={`rounded-[1.25rem] border p-3 text-left transition hover:-translate-y-0.5 ${
+                active
+                  ? 'bg-surface-2 text-text shadow-card'
+                  : 'border-border bg-surface text-text-muted'
+              }`}
+              style={{ borderColor: active ? option.color : undefined }}
+            >
+              <span className="flex items-center gap-2">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl" style={{ background: `${option.color}22`, color: option.color }}>
+                  <Icon size={18} />
+                </span>
+                <span>
+                  <span className="block text-sm font-black">{option.label}</span>
+                  <span className="block text-[0.68rem] font-bold">{option.helper}</span>
+                </span>
+              </span>
+              <span className="mt-2 block text-xs font-semibold leading-5">
+                {isQuiz ? option.quizNote : option.flashcardNote}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function CreateWizard({
   isOpen,
   selectedType,
@@ -854,9 +929,11 @@ function CreateWizard({
   progress,
   generationJob,
   generationElapsedMs,
+  generationDifficulty,
   onClose,
   onSelectType,
   onSelectMode,
+  onGenerationDifficultyChange,
   onTitleChange,
   onManualTextChange,
   onFileChange,
@@ -970,6 +1047,14 @@ function CreateWizard({
               </div>
               <input className="sr-only" type="file" accept=".txt,.pdf,.docx,.pptx" onChange={onFileChange} />
             </label>
+
+            {(selectedType === 'flashcards' || selectedType === 'quiz') ? (
+              <GenerationDifficultyPicker
+                type={selectedType}
+                value={generationDifficulty}
+                onChange={onGenerationDifficultyChange}
+              />
+            ) : null}
 
             {saving ? (
               <div className="rounded-[2rem] border border-border bg-surface p-5">

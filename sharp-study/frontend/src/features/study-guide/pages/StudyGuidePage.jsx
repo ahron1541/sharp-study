@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Edit2, FileQuestion, Layers3, Loader2, PanelLeftClose, PanelLeftOpen, Sparkles, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, Edit2, FileQuestion, Flame, Layers3, Loader2, PanelLeftClose, PanelLeftOpen, ShieldCheck, Sparkles, Trophy, Volume2, VolumeX } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useAuth } from '../../auth/context/AuthContext';
@@ -8,6 +8,7 @@ import { API_URL, apiRequest } from '../../../config/api';
 import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { sanitizeHtml } from '../../../shared/utils/sanitize';
+import XpNotice from '../../gamification/components/XpNotice';
 import StudyGuideEditor from '../components/StudyGuideEditor';
 import StudyGuideSidebar from '../components/StudyGuideSidebar';
 import SelectionToolbar from '../components/SelectionToolbar';
@@ -25,6 +26,12 @@ const HIGHLIGHT_COLORS = [
   { name: 'Pink', value: 'pink', swatch: '#fbcfe8' },
   { name: 'Purple', value: 'purple', swatch: '#ddd6fe' },
   { name: 'Orange', value: 'orange', swatch: '#fed7aa' },
+];
+const AI_DIFFICULTIES = [
+  { value: 'easy', label: 'Easy', helper: 'Direct recall', flashcardNote: 'Clear beginner cards', quizNote: '+5 XP base quiz', icon: Sparkles, color: '#22c55e' },
+  { value: 'normal', label: 'Normal', helper: 'Balanced review', flashcardNote: 'Mixed recall cards', quizNote: '+10 XP base quiz', icon: ShieldCheck, color: '#8b3dff' },
+  { value: 'hard', label: 'Hard', helper: 'Applied recall', flashcardNote: 'Subtle hints later', quizNote: '+20 XP base quiz', icon: Flame, color: '#f97316' },
+  { value: 'expert', label: 'Expert', helper: 'Strict recall', flashcardNote: 'Scenario style', quizNote: '+35 XP base quiz', icon: Trophy, color: '#facc15' },
 ];
 
 const DRAFT_SYNC_DELAY_MS = 2 * 60 * 1000;
@@ -63,6 +70,10 @@ function writeStudyGuideContentCache(guideId, payload) {
   } catch (error) {
     console.warn('[StudyGuideCache] Failed to write local content cache.', error);
   }
+}
+
+function getAiDifficulty(value = 'normal') {
+  return AI_DIFFICULTIES.find((item) => item.value === value) || AI_DIFFICULTIES[1];
 }
 
 function formatRelativeSyncTime(timestamp) {
@@ -111,6 +122,8 @@ export default function StudyGuidePage() {
   const [quizId, setQuizId] = useState(() => cachedContent?.quizId || '');
   const [quizGeneration, setQuizGeneration] = useState(null);
   const [quizProgress, setQuizProgress] = useState({ value: 0, title: '', detail: '' });
+  const [generationPrompt, setGenerationPrompt] = useState(null);
+  const [generationDifficulty, setGenerationDifficulty] = useState('normal');
   const [pendingNavigation, setPendingNavigation] = useState(null);
   const [selectionToolbar, setSelectionToolbar] = useState({
     visible: false,
@@ -387,21 +400,42 @@ export default function StudyGuidePage() {
     window.speechSynthesis.speak(utterance);
   }, [plainTextContent, speaking, stopReading]);
 
-  const handleCreateFlashcards = useCallback(async () => {
+  const requestCreateFlashcards = useCallback(() => {
+    if (flashcardSetId) {
+      navigate(`/flashcards/${flashcardSetId}`);
+      return;
+    }
+    setGenerationPrompt('flashcards');
+  }, [flashcardSetId, navigate]);
+
+  const requestCreateQuiz = useCallback(() => {
+    if (quizId) {
+      navigate(`/quiz/${quizId}`);
+      return;
+    }
+    setGenerationPrompt('quiz');
+  }, [navigate, quizId]);
+
+  const handleCreateFlashcards = useCallback(async (difficulty = generationDifficulty) => {
+    const selectedDifficulty = getAiDifficulty(difficulty);
     if (flashcardSetId) {
       navigate(`/flashcards/${flashcardSetId}`);
       return;
     }
 
+    setGenerationPrompt(null);
     setFlashcardGeneration({ status: 'starting' });
     setFlashcardProgress({
       value: 12,
       title: 'Preparing flashcards',
-      detail: 'Reading this study guide and checking whether a set already exists.',
+      detail: `Reading this study guide and preparing ${selectedDifficulty.label.toLowerCase()} flashcards.`,
     });
 
     try {
-      const response = await apiRequest(`/api/ai/study-guide/${id}/flashcards`, { method: 'POST' });
+      const response = await apiRequest(`/api/ai/study-guide/${id}/flashcards`, {
+        method: 'POST',
+        body: JSON.stringify({ difficulty: selectedDifficulty.value }),
+      });
       const queuedJob = response.job;
       if (!queuedJob?.id) throw new Error('The AI queue did not return a valid job id.');
 
@@ -409,7 +443,7 @@ export default function StudyGuidePage() {
       setFlashcardProgress({
         value: queuedJob.progressValue || 12,
         title: queuedJob.message || 'Queued for flashcards',
-        detail: queuedJob.detail || 'Your flashcard set is waiting for generation.',
+        detail: queuedJob.detail || `Your ${selectedDifficulty.label.toLowerCase()} flashcard set is waiting for generation.`,
       });
 
       const token = localStorage.getItem('sharp-study-token');
@@ -454,23 +488,28 @@ export default function StudyGuidePage() {
       setFlashcardGeneration(null);
       toast.error(error.message || 'Could not start flashcard generation.');
     }
-  }, [flashcardSetId, id, navigate]);
+  }, [flashcardSetId, generationDifficulty, id, navigate]);
 
-  const handleCreateQuiz = useCallback(async () => {
+  const handleCreateQuiz = useCallback(async (difficulty = generationDifficulty) => {
+    const selectedDifficulty = getAiDifficulty(difficulty);
     if (quizId) {
       navigate(`/quiz/${quizId}`);
       return;
     }
 
+    setGenerationPrompt(null);
     setQuizGeneration({ status: 'starting' });
     setQuizProgress({
       value: 12,
       title: 'Preparing quiz',
-      detail: 'Reading this study guide and checking whether a quiz already exists.',
+      detail: `Reading this study guide and preparing a ${selectedDifficulty.label.toLowerCase()} quiz.`,
     });
 
     try {
-      const response = await apiRequest(`/api/ai/study-guide/${id}/quiz`, { method: 'POST' });
+      const response = await apiRequest(`/api/ai/study-guide/${id}/quiz`, {
+        method: 'POST',
+        body: JSON.stringify({ difficulty: selectedDifficulty.value }),
+      });
       const queuedJob = response.job;
       if (!queuedJob?.id) throw new Error('The AI queue did not return a valid job id.');
 
@@ -478,7 +517,7 @@ export default function StudyGuidePage() {
       setQuizProgress({
         value: queuedJob.progressValue || 12,
         title: queuedJob.message || 'Queued for quiz',
-        detail: queuedJob.detail || 'Your quiz is waiting for generation.',
+        detail: queuedJob.detail || `Your ${selectedDifficulty.label.toLowerCase()} quiz is waiting for generation.`,
       });
 
       const token = localStorage.getItem('sharp-study-token');
@@ -523,7 +562,7 @@ export default function StudyGuidePage() {
       setQuizGeneration(null);
       toast.error(error.message || 'Could not start quiz generation.');
     }
-  }, [id, navigate, quizId]);
+  }, [generationDifficulty, id, navigate, quizId]);
 
   useEffect(() => {
     return () => stopReading();
@@ -731,6 +770,30 @@ export default function StudyGuidePage() {
     navigate(nextPath);
   }, [hasPendingChanges, navigate, stopReading]);
 
+  const returnToReadMode = useCallback(({ discardChanges = false } = {}) => {
+    stopReading();
+    clearSelectionToolbar();
+    setActiveTab('guide');
+
+    if (discardChanges) {
+      setContent(savedContent);
+      setGuide((currentGuide) => (currentGuide ? { ...currentGuide, content: savedContent } : currentGuide));
+      setSaveState('saved');
+      clearDraftFromLocalCache();
+    }
+
+    setEditing(false);
+  }, [clearDraftFromLocalCache, clearSelectionToolbar, savedContent, stopReading]);
+
+  const requestReadMode = useCallback(() => {
+    if (hasPendingChanges) {
+      setPendingNavigation({ kind: 'read-mode' });
+      return;
+    }
+
+    returnToReadMode();
+  }, [hasPendingChanges, returnToReadMode]);
+
   const showSelectionToolbar = () => {
     if (editing) return;
     const selection = window.getSelection();
@@ -839,17 +902,33 @@ export default function StudyGuidePage() {
       return;
     }
 
+    if (pendingNavigation?.kind === 'read-mode') {
+      returnToReadMode({ discardChanges: true });
+      return;
+    }
+
     if (pendingNavigation?.kind === 'path') {
       navigate(pendingNavigation.to);
     }
   };
 
   const handleSaveAndLeave = async () => {
-    const saved = await save({ showToast: false, reason: 'navigation-sync' });
+    const returningToReadMode = pendingNavigation?.kind === 'read-mode';
+    const saved = await save({
+      showToast: false,
+      reason: returningToReadMode ? 'read-mode-sync' : 'navigation-sync',
+      exitEditing: returningToReadMode,
+    });
     if (!saved) return;
 
     stopReading();
     setPendingNavigation(null);
+
+    if (returningToReadMode) {
+      setActiveTab('guide');
+      clearSelectionToolbar();
+      return;
+    }
 
     if (pendingNavigation?.kind === 'browser-back') {
       allowBrowserBackRef.current = true;
@@ -901,23 +980,28 @@ export default function StudyGuidePage() {
         />
 
         <section className="study-guide-fade-up mt-4 rounded-[2.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/96 p-5 shadow-[0_20px_65px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:p-6">
-          <div className="flex items-start gap-4">
-            <button
-              onClick={() => requestNavigation('/library')}
-              aria-label="Go back to library"
-              className="mt-1 rounded-full p-2 text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface-2)] hover:text-[color:var(--color-text)]"
-            >
-              <ArrowLeft size={20} />
-            </button>
-            <div className="min-w-0">
-              <p className="text-xs font-black uppercase tracking-[0.25em] text-[color:var(--color-text-muted)]">Study guide</p>
-              <h1 className="mt-2 text-[clamp(2.2rem,3.5vw,3.85rem)] font-black leading-[1.05] text-[color:var(--color-text)]">
-                {guide.title}
-              </h1>
-              <p className="mt-3 max-w-3xl text-sm leading-7 text-[color:var(--color-text-muted)] sm:text-base">
-                Built from the uploaded lesson and shaped for cleaner reading, quicker review, and steadier focus.
-              </p>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex min-w-0 flex-1 items-start gap-4">
+              <button
+                onClick={editing ? requestReadMode : () => requestNavigation('/library')}
+                aria-label={editing ? 'Back to study guide read mode' : 'Go back to library'}
+                className="mt-1 rounded-full p-2 text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface-2)] hover:text-[color:var(--color-text)]"
+              >
+                <ArrowLeft size={20} />
+              </button>
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-[color:var(--color-text-muted)]">Study guide</p>
+                <h1 className="mt-2 break-words text-[clamp(2.2rem,3.5vw,3.85rem)] font-black leading-[1.05] text-[color:var(--color-text)]">
+                  {guide.title}
+                </h1>
+                <p className="mt-3 max-w-3xl text-sm leading-7 text-[color:var(--color-text-muted)] sm:text-base">
+                  Built from the uploaded lesson and shaped for cleaner reading, quicker review, and steadier focus.
+                </p>
+              </div>
             </div>
+            <XpNotice className="shrink-0 self-end lg:self-start" panelPlacement="left" title="Saving this study guide can keep your streak active.">
+              Create or update a study guide to record a real study action. The first saved study action of the day gives daily XP once it reaches the server.
+            </XpNotice>
           </div>
         </section>
 
@@ -926,7 +1010,7 @@ export default function StudyGuidePage() {
             className="mt-6 grid items-start gap-6 transition-[grid-template-columns] duration-300 lg:grid-cols-[var(--study-guide-sidebar-width)_minmax(0,1fr)]"
             style={{ '--study-guide-sidebar-width': sidebarCollapsed ? '92px' : '296px' }}
           >
-            <div className="space-y-4 lg:self-start">
+            <div className="space-y-4 lg:sticky lg:top-5 lg:h-[calc(100dvh-9.5rem)] lg:min-h-[24rem] lg:self-start">
               <button
                 type="button"
                 onClick={() => setMobileSidebarOpen((value) => !value)}
@@ -941,7 +1025,7 @@ export default function StudyGuidePage() {
                 {mobileSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
               </button>
 
-              <div className={`${mobileSidebarOpen ? 'block' : 'hidden'} lg:block`}>
+              <div className={`${mobileSidebarOpen ? 'block' : 'hidden'} lg:block lg:h-full`}>
                 <StudyGuideSidebar
                   sections={sections}
                   onJumpToSection={jumpToSection}
@@ -1114,7 +1198,7 @@ export default function StudyGuidePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleCreateFlashcards}
+                  onClick={requestCreateFlashcards}
                   disabled={Boolean(flashcardGeneration || quizGeneration)}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 text-sm font-bold text-[color:var(--color-text)] transition-all duration-200 hover:bg-[color:var(--color-surface-2)] disabled:cursor-wait disabled:opacity-60"
                 >
@@ -1123,7 +1207,7 @@ export default function StudyGuidePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleCreateQuiz}
+                  onClick={requestCreateQuiz}
                   disabled={Boolean(flashcardGeneration || quizGeneration)}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 text-sm font-bold text-[color:var(--color-text)] transition-all duration-200 hover:bg-[color:var(--color-surface-2)] disabled:cursor-wait disabled:opacity-60"
                 >
@@ -1161,6 +1245,28 @@ export default function StudyGuidePage() {
           onClose={clearSelectionToolbar}
         />
       </main>
+
+      <Modal
+        isOpen={Boolean(generationPrompt)}
+        onClose={() => setGenerationPrompt(null)}
+        title={generationPrompt === 'quiz' ? 'Choose quiz difficulty' : 'Choose flashcard difficulty'}
+        size="md"
+      >
+        <GenerationDifficultyPrompt
+          type={generationPrompt}
+          value={generationDifficulty}
+          onChange={setGenerationDifficulty}
+          onCancel={() => setGenerationPrompt(null)}
+          onConfirm={() => {
+            const difficulty = getAiDifficulty(generationDifficulty).value;
+            if (generationPrompt === 'quiz') {
+              handleCreateQuiz(difficulty);
+            } else {
+              handleCreateFlashcards(difficulty);
+            }
+          }}
+        />
+      </Modal>
 
       <Modal
         isOpen={Boolean(flashcardGeneration)}
@@ -1236,7 +1342,9 @@ export default function StudyGuidePage() {
       >
         <div className="space-y-4">
           <p className="text-sm leading-7 text-[var(--text-color)]">
-            You still have study guide changes in progress. Save before leaving, discard them, or stay in edit mode.
+            {pendingNavigation?.kind === 'read-mode'
+              ? 'You still have study guide changes in progress. Save before returning to read mode, discard them, or stay in edit mode.'
+              : 'You still have study guide changes in progress. Save before leaving, discard them, or stay in edit mode.'}
           </p>
           <div className="flex flex-wrap justify-end gap-2">
             <button
@@ -1251,19 +1359,93 @@ export default function StudyGuidePage() {
               onClick={handleDiscardAndLeave}
               className="inline-flex items-center justify-center rounded-xl border border-[var(--card-border)] px-4 py-2 text-sm font-bold text-[var(--muted)] transition hover:bg-[var(--card-bg)]"
             >
-              Discard
+              {pendingNavigation?.kind === 'read-mode' ? 'Discard and return' : 'Discard'}
             </button>
             <button
               type="button"
               onClick={handleSaveAndLeave}
               className="inline-flex items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--accent-hover)]"
             >
-              Save and leave
+              {pendingNavigation?.kind === 'read-mode' ? 'Save and return' : 'Save and leave'}
             </button>
           </div>
         </div>
       </Modal>
     </>
+  );
+}
+
+function GenerationDifficultyPrompt({ type, value, onChange, onCancel, onConfirm }) {
+  const selected = getAiDifficulty(value);
+  const isQuiz = type === 'quiz';
+
+  return (
+    <div className="space-y-5">
+      <p className="text-sm leading-7 text-[color:var(--color-text-muted)]">
+        {isQuiz
+          ? 'Difficulty changes how the AI writes questions and sets the default quiz challenge later.'
+          : 'Difficulty changes how the AI writes cards. Harder cards lean more on application, comparison, and stricter recall.'}
+      </p>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {AI_DIFFICULTIES.map((option) => {
+          const Icon = option.icon;
+          const active = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              aria-pressed={active}
+              className={`rounded-[1.25rem] border p-4 text-left transition hover:-translate-y-0.5 ${
+                active
+                  ? 'bg-[color:var(--color-surface-2)] text-[color:var(--color-text)] shadow-[0_14px_34px_rgba(15,23,42,0.12)]'
+                  : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text-muted)]'
+              }`}
+              style={{ borderColor: active ? option.color : undefined }}
+            >
+              <span className="flex items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl" style={{ background: `${option.color}22`, color: option.color }}>
+                  <Icon size={19} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-base font-black">{option.label}</span>
+                  <span className="mt-0.5 block text-xs font-bold">{option.helper}</span>
+                </span>
+              </span>
+              <span className="mt-3 block text-xs font-semibold leading-5">
+                {isQuiz ? option.quizNote : option.flashcardNote}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4">
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-[color:var(--color-text-muted)]">Selected</p>
+        <p className="mt-1 text-sm font-bold text-[color:var(--color-text)]">
+          {selected.label} {isQuiz ? 'quiz' : 'flashcards'}
+        </p>
+      </div>
+
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-2xl border border-[color:var(--color-border)] px-5 py-3 font-bold text-[color:var(--color-text-muted)]"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-black text-[color:var(--color-accent-text)]"
+        >
+          <Sparkles size={18} />
+          Generate {selected.label}
+        </button>
+      </div>
+    </div>
   );
 }
 
