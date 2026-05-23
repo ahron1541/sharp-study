@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { MdLightMode, MdDarkMode } from 'react-icons/md';
 import { useAccessibility } from '../../../features/accessibility/context/useAccessibility';
 import styles from './LandingNav.module.css';
+import versoLogo from '../../../assets/logo/verso_w_name.svg';
 
 export default function LandingNav() {
   const { theme, toggleTheme } = useAccessibility();
@@ -13,7 +14,7 @@ export default function LandingNav() {
           {/* Logo */}
           <Link to="/" className={styles.logo} aria-label="Verso — Home">
             <img 
-              src="/src/assets/logo/verso_w_name.svg" 
+              src={versoLogo}
               alt="Verso" 
               className={styles.logoImg}
             />

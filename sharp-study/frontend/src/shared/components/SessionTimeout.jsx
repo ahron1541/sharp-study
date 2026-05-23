@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../features/auth/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Modal from './Modal';
@@ -14,7 +14,7 @@ export default function SessionTimeout() {
   const timerRef = useRef(null);
   const warnRef = useRef(null);
 
-  const reset = () => {
+  const reset = useCallback(() => {
     clearTimeout(timerRef.current);
     clearTimeout(warnRef.current);
     if (!user) return;
@@ -24,7 +24,7 @@ export default function SessionTimeout() {
       await signOut();
       navigate('/login?reason=timeout');
     }, TIMEOUT_MS);
-  };
+  }, [navigate, signOut, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -36,7 +36,7 @@ export default function SessionTimeout() {
       clearTimeout(timerRef.current);
       clearTimeout(warnRef.current);
     };
-  }, [user]);
+  }, [reset, user]);
 
   const stayLoggedIn = () => { setShowWarning(false); reset(); };
 

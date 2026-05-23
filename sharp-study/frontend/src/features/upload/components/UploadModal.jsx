@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, FileText, X, CheckSquare, Square, Loader } from 'lucide-react';
 import { useAuth } from '../../auth/context/AuthContext';
-import { apiRequest } from '../../../config/api';
 import { validators } from '../../../shared/utils/validators';
 import Modal from '../../../shared/components/Modal';
 import Button from '../../../shared/components/Button';
@@ -82,7 +81,7 @@ export default function UploadModal({ isOpen, onClose, onSuccess }) {
       setStage('generating');
       setProgress('AI is reading your document...');
 
-      const data = await res.json();
+      await res.json();
       setStage('done');
       toast.success(`Generated ${selected.length} material(s) successfully!`);
       setTimeout(() => {

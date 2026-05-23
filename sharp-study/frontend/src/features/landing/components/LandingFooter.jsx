@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import styles from './LandingFooter.module.css';
+import versoLogo from '../../../assets/logo/verso_logo.svg';
 
 const FOOTER_LINKS = [
   { label: 'Privacy Policy', href: '/privacy' },
@@ -17,7 +18,7 @@ export default function LandingFooter() {
           <div className={styles.logoCol}>
             <div className={styles.logoImg}>
               <img
-                src="/src/assets/logo/verso_logo.svg"
+                src={versoLogo}
                 alt="Verso logo"
                 className={styles.logoPlaceholder}
                 loading="lazy"
