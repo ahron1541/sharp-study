@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Award, CalendarDays, Crown, FileQuestion, Flame, Info, Layers3, Sparkles, Star, Trophy, Zap } from 'lucide-react';
 
 import { useDashboard } from '../hooks/useDashboard';
-import { useGamification } from '../hooks/useGamification';
 import { useStreak } from '../hooks/useStreak';
 import { useAuth as useAuthCore } from '../../auth/context/AuthContext';
 import MaterialTypeIcon from '../../library/components/MaterialTypeIcon';
@@ -19,7 +18,6 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { items = { study_guides: [], flashcards: [], quizzes: [] }, loading } = useDashboard({ limit: 3 });
   const { streak: streakStats, loading: streakLoading, error: streakError } = useStreak({ days: 35 });
-  const { gamification, loading: gamificationLoading, error: gamificationError } = useGamification({ days: 35 });
   const { profile } = useAuthCore();
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [streakNoticeOpen, setStreakNoticeOpen] = useState(false);
@@ -33,7 +31,6 @@ export default function DashboardPage() {
   const streakHistory = useMemo(() => resolveStreakHistory(streakStats), [streakStats]);
   const streakRecords = useMemo(() => resolveStreakRecords(streakStats), [streakStats]);
   const weeklyProgress = useMemo(() => buildWeeklyProgress(streakHistory, now), [streakHistory, now]);
-  const nextStreakMilestone = gamification.next_streak_milestone;
   const isFirstTime = items.study_guides.length === 0 && items.flashcards.length === 0 && items.quizzes.length === 0;
 
   const streakMeta = useMemo(() => getStreakMeta(streak), [streak]);
@@ -143,7 +140,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.85fr)_minmax(18rem,0.9fr)]">
+      <section className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(20rem,0.9fr)]">
         <div className="rounded-[2rem] border border-border bg-surface p-6 shadow-card">
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -177,12 +174,6 @@ export default function DashboardPage() {
             />
           </div>
         </div>
-
-        <GamificationCard
-          gamification={gamification}
-          loading={gamificationLoading}
-          error={gamificationError}
-        />
 
         <div className="rounded-[2rem] border border-border bg-surface p-6 shadow-card">
           <div className="flex items-start justify-between gap-3">
@@ -225,7 +216,7 @@ export default function DashboardPage() {
                 <span className="pb-2 text-sm font-bold text-text-muted">days</span>
               </div>
             </div>
-            <div className={`flex h-14 w-14 items-center justify-center rounded-3xl ${streakMeta.badge}`}>
+            <div className={`flex h-14 w-14 items-center justify-center rounded-3xl ${streakMeta.iconBg}`}>
               <streakMeta.icon className={streakMeta.accent} size={28} />
             </div>
           </div>
@@ -234,11 +225,6 @@ export default function DashboardPage() {
           {longestStreak > 0 ? (
             <p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-text-muted">
               Best streak: {longestStreak} days
-            </p>
-          ) : null}
-          {nextStreakMilestone ? (
-            <p className="mt-2 text-xs font-bold uppercase tracking-[0.14em] text-text-muted">
-              Next badge: {nextStreakMilestone.label} in {formatDayCount(nextStreakMilestone.remaining)}
             </p>
           ) : null}
           {streakError ? (
@@ -399,72 +385,12 @@ function QuickAccessCard({ icon, label, sub, onClick, tone = 'default' }) {
   );
 }
 
-function GamificationCard({ gamification, loading, error }) {
-  const recentBadges = (gamification?.recent_badges || gamification?.badges || []).slice(0, 3);
-  const badges = (gamification?.badges || []).slice(0, 5);
-  const badgeCount = Number(gamification?.badge_count ?? gamification?.badges?.length ?? 0);
-
-  return (
-    <div className="rounded-[2rem] border border-border bg-surface p-6 shadow-card">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">Achievements</p>
-          <div className="mt-2 flex items-end gap-2">
-            <span className="text-5xl font-display font-black text-text">{loading ? '...' : badgeCount}</span>
-            <span className="pb-2 text-sm font-bold text-text-muted">badges</span>
-          </div>
-        </div>
-        <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-accent/10 text-accent">
-          <Star size={28} aria-hidden="true" />
-        </div>
-      </div>
-
-      {error ? (
-        <p className="mt-4 text-xs font-semibold text-text-muted">Achievements sync is unavailable right now.</p>
-      ) : null}
-
-      <div className="mt-5 space-y-3">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-text-muted">Recent Badges</p>
-          <div className="mt-2 space-y-2">
-            {recentBadges.length ? recentBadges.map((badge) => (
-              <div key={`${badge.badge_key}-${badge.earned_at}`} className="flex items-center justify-between gap-3 text-sm">
-                <span className="truncate font-bold text-text">{badge.label}</span>
-                <span className="shrink-0 text-xs font-bold text-text-muted">
-                  {badge.earned_at ? new Date(badge.earned_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : 'Earned'}
-                </span>
-              </div>
-            )) : (
-              <p className="text-sm leading-6 text-text-muted">Study today to start earning badges.</p>
-            )}
-          </div>
-        </div>
-
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-text-muted">Badges</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {badges.length ? badges.map((badge) => (
-              <span key={badge.badge_key} className="rounded-full border border-border bg-surface-2 px-3 py-1 text-xs font-bold text-text">
-                {badge.label}
-              </span>
-            )) : (
-              <span className="rounded-full border border-border bg-surface-2 px-3 py-1 text-xs font-bold text-text-muted">
-                No badges yet
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function getStreakMeta(streak) {
   if (streak >= 100) {
     return {
       icon: Star,
       accent: 'text-yellow-300',
-      badge: 'bg-yellow-300/10',
+      iconBg: 'bg-yellow-300/10',
       message: 'Century Scholar energy. Keep the rhythm steady with one focused action today.',
     };
   }
@@ -472,7 +398,7 @@ function getStreakMeta(streak) {
     return {
       icon: Crown,
       accent: 'text-yellow-400',
-      badge: 'bg-yellow-400/10',
+      iconBg: 'bg-yellow-400/10',
       message: 'That is a serious study rhythm. Protect it with one small win today.',
     };
   }
@@ -480,7 +406,7 @@ function getStreakMeta(streak) {
     return {
       icon: Trophy,
       accent: 'text-amber-500',
-      badge: 'bg-amber-500/10',
+      iconBg: 'bg-amber-500/10',
       message: 'Momentum is doing its quiet work now. Keep showing up.',
     };
   }
@@ -488,15 +414,15 @@ function getStreakMeta(streak) {
     return {
       icon: Award,
       accent: 'text-orange-500',
-      badge: 'bg-orange-500/10',
-      message: 'Focus Flame unlocked. A short session today keeps it alive.',
+      iconBg: 'bg-orange-500/10',
+      message: 'Your 10-day rhythm is active. A short session today keeps it alive.',
     };
   }
   if (streak >= 7) {
     return {
       icon: Zap,
       accent: 'text-orange-500',
-      badge: 'bg-orange-500/10',
+      iconBg: 'bg-orange-500/10',
       message: 'A full week of real study activity is progress worth keeping warm.',
     };
   }
@@ -504,7 +430,7 @@ function getStreakMeta(streak) {
     return {
       icon: Sparkles,
       accent: 'text-streak',
-      badge: 'bg-streak/10',
+      iconBg: 'bg-streak/10',
       message: 'First Spark is building. Keep it going with one focused action today.',
     };
   }
@@ -512,21 +438,16 @@ function getStreakMeta(streak) {
     return {
       icon: Flame,
       accent: 'text-text-muted',
-      badge: 'bg-surface-2',
+      iconBg: 'bg-surface-2',
       message: 'Complete one flashcard review, quiz attempt, or study guide save today to start your streak.',
     };
   }
   return {
     icon: Flame,
     accent: 'text-streak',
-    badge: 'bg-streak/10',
+    iconBg: 'bg-streak/10',
     message: 'Every active study day counts. A short focused action today keeps the streak alive.',
   };
-}
-
-function formatDayCount(value) {
-  const days = Number(value || 0);
-  return `${days} ${days === 1 ? 'day' : 'days'}`;
 }
 
 function resolveStreakHistory(streakPrefs) {

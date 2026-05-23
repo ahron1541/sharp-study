@@ -8,7 +8,7 @@ import { API_URL, apiRequest } from '../../../config/api';
 import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { sanitizeHtml } from '../../../shared/utils/sanitize';
-import StudyNotice from '../../gamification/components/StudyNotice';
+import StudyNotice from '../../../shared/components/StudyNotice';
 import StudyGuideEditor from '../components/StudyGuideEditor';
 import StudyGuideSidebar from '../components/StudyGuideSidebar';
 import SelectionToolbar from '../components/SelectionToolbar';

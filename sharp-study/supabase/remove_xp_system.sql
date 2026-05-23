@@ -1,49 +1,18 @@
--- Removes the old XP/level system while keeping streaks, study activity, and badges.
+-- Removes the old XP/level and badge systems while keeping streaks, study activity, and difficulty modes.
 -- Run once in the Supabase SQL editor after deploying the matching backend/frontend code.
 --
 -- This intentionally drops:
 --   - gamification_events, which stored XP event history
 --   - user_gamification_summary, which stored xp_total and level
 --   - XP/level helper RPC functions
+--   - user_badges, which stored achievement badges
 --
 -- This intentionally keeps:
 --   - user_streaks
 --   - study_activity_days
---   - user_badges
+--   - difficulty columns on flashcards, flashcard_sets, flashcard_attempts, quizzes, and quiz_questions
 
 begin;
-
--- Preserve badge events that may not have been copied into user_badges yet.
-do $$
-begin
-  if to_regclass('public.gamification_events') is not null
-     and to_regclass('public.user_badges') is not null then
-    insert into public.user_badges (
-      user_id,
-      badge_key,
-      label,
-      description,
-      metadata,
-      earned_at
-    )
-    select distinct on (event.user_id, event.badge_key)
-      event.user_id,
-      event.badge_key,
-      coalesce(nullif(event.badge_label, ''), initcap(replace(event.badge_key, '_', ' '))),
-      nullif(event.metadata ->> 'badge_description', ''),
-      coalesce(event.metadata, '{}'::jsonb),
-      coalesce(event.created_at, now())
-    from public.gamification_events event
-    where nullif(event.badge_key, '') is not null
-      and not exists (
-        select 1
-        from public.user_badges badge
-        where badge.user_id = event.user_id
-          and badge.badge_key = event.badge_key
-      )
-    order by event.user_id, event.badge_key, event.created_at;
-  end if;
-end $$;
 
 do $$
 declare
@@ -218,6 +187,7 @@ end $$;
 
 drop table if exists public.user_gamification_summary;
 drop table if exists public.gamification_events;
+drop table if exists public.user_badges;
 
 update public.profiles
 set preferences = coalesce(preferences, '{}'::jsonb) - 'xp' - 'level'

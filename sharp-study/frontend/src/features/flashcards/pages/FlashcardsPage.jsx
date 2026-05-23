@@ -31,7 +31,7 @@ import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { apiRequest } from '../../../config/api';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
-import StudyNotice from '../../gamification/components/StudyNotice';
+import StudyNotice from '../../../shared/components/StudyNotice';
 
 const HINT_DELAY_MS = 45000;
 const SYNC_DELAY_MS = 20000;

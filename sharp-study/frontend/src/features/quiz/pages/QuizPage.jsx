@@ -31,7 +31,7 @@ import { apiRequest } from '../../../config/api';
 import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
-import StudyNotice from '../../gamification/components/StudyNotice';
+import StudyNotice from '../../../shared/components/StudyNotice';
 
 const SESSION_STORAGE_PREFIX = 'sharp-study-quiz-session';
 const CONTENT_STORAGE_PREFIX = 'sharp-study-quiz-content';

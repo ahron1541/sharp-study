@@ -8,7 +8,7 @@ import Modal from '../../../shared/components/Modal';
 import { apiRequest } from '../../../config/api';
 import { sanitizeHtml, sanitizePlainText } from '../../../shared/utils/sanitize';
 import { useAuth } from '../../auth/context/AuthContext';
-import StudyNotice from '../../gamification/components/StudyNotice';
+import StudyNotice from '../../../shared/components/StudyNotice';
 import StudyGuideEditor from '../components/StudyGuideEditor';
 import { createInstructionalStudyGuideTemplate } from '../utils/content';
 

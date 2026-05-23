@@ -1,5 +1,4 @@
 const { supabaseAdmin } = require('../../config/supabase');
-const { awardStudyActivityRewards } = require('../gamification/gamification.service');
 
 const DEFAULT_STREAK_TIMEZONE = process.env.STREAK_TIMEZONE || 'Asia/Manila';
 const ACTIVITY_TYPES = Object.freeze({
@@ -170,9 +169,6 @@ async function recordStudyActivity(userId, activityType, options = {}) {
 
     if (error) throw error;
     const streakResult = Array.isArray(data) ? data[0] || null : data || null;
-    if (streakResult) {
-      await awardStudyActivityRewards(userId, normalizedActivityType, streakResult, options);
-    }
     return streakResult;
   } catch (error) {
     console.warn('[STREAKS] RPC activity path failed; using direct table fallback:', error.message);
@@ -184,9 +180,6 @@ async function recordStudyActivity(userId, activityType, options = {}) {
       occurredAt,
       timezone,
     });
-    if (streakResult) {
-      await awardStudyActivityRewards(userId, normalizedActivityType, streakResult, options);
-    }
     return streakResult;
   } catch (error) {
     console.error('[STREAKS] Failed to record study activity:', error.message);

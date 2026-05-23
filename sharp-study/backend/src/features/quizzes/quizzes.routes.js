@@ -4,7 +4,6 @@ const { z } = require('zod');
 const { supabaseAdmin } = require('../../config/supabase');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { sanitizePlainText } = require('../../utils/studyGuideSanitize');
-const { awardPerfectQuizReward, normalizeDifficulty } = require('../gamification/gamification.service');
 const { ACTIVITY_TYPES, recordStudyActivity } = require('../streaks/streaks.service');
 
 const router = express.Router();
@@ -14,6 +13,7 @@ const ATTEMPT_EVENT = 'quiz_attempt_submitted';
 const QUIZ_CREATED_EVENT = 'quiz.created';
 const QUIZ_UPDATED_EVENT = 'quiz.updated';
 const difficultySchema = z.enum(['easy', 'normal', 'hard', 'expert']);
+const DIFFICULTIES = new Set(['easy', 'normal', 'hard', 'expert']);
 
 const questionPayloadSchema = z.object({
   id: z.string().uuid().optional(),
@@ -64,6 +64,11 @@ function httpError(status, message) {
 
 function cleanPlainText(value = '', maxLength = 600) {
   return sanitizePlainText(value).replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+function normalizeDifficulty(difficulty = 'normal') {
+  const key = String(difficulty || 'normal').trim().toLowerCase();
+  return DIFFICULTIES.has(key) ? key : 'normal';
 }
 
 function toStoredOptions(question, order) {
@@ -686,8 +691,6 @@ router.post('/:id/attempts', async (req, res) => {
         difficulty,
       },
     });
-    await awardPerfectQuizReward(req.user.id, quiz.id, log.id, percent);
-
     return res.status(201).json({
       success: true,
       attempt: {

@@ -14,7 +14,7 @@ export default function StudyNotice({
   panelPlacement = 'below',
   eyebrow = 'Study notice',
   ariaLabel = 'Show study notice',
-  buttonTitle = 'Show study notice',
+  buttonTitle = 'Open study notice',
 }) {
   const [open, setOpen] = useState(false);
   const [panelStyle, setPanelStyle] = useState(null);
