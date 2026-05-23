@@ -51,16 +51,119 @@ function toInteger(value) {
   return Number.isFinite(next) && next > 0 ? Math.floor(next) : 0;
 }
 
+function normalizeCounts(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
+}
+
+async function getActivityDay(userId, activityDate) {
+  const { data, error } = await supabaseAdmin
+    .from('study_activity_days')
+    .select('id, activity_count, activity_counts, first_activity_at')
+    .eq('user_id', userId)
+    .eq('activity_date', activityDate)
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  if (error) throw error;
+  return data?.[0] || null;
+}
+
+async function recordStudyActivityDirect(userId, activityType, options = {}) {
+  const timezone = options.timezone || DEFAULT_STREAK_TIMEZONE;
+  const occurredAt = options.occurredAt || new Date().toISOString();
+  const occurredDate = new Date(occurredAt);
+  const activityDate = Number.isNaN(occurredDate.getTime())
+    ? formatDateKey(new Date(), timezone)
+    : formatDateKey(occurredDate, timezone);
+  const normalizedActivityType = normalizeActivityType(activityType);
+  const now = new Date().toISOString();
+
+  const existingDay = await getActivityDay(userId, activityDate);
+  const counts = normalizeCounts(existingDay?.activity_counts);
+  counts[normalizedActivityType] = toInteger(counts[normalizedActivityType]) + 1;
+
+  const todayActivityCount = toInteger(existingDay?.activity_count) + 1;
+  if (existingDay?.id) {
+    const { error } = await supabaseAdmin
+      .from('study_activity_days')
+      .update({
+        activity_count: todayActivityCount,
+        activity_counts: counts,
+        last_activity_at: occurredAt,
+        updated_at: now,
+      })
+      .eq('id', existingDay.id)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+  } else {
+    const { error } = await supabaseAdmin
+      .from('study_activity_days')
+      .insert({
+        user_id: userId,
+        activity_date: activityDate,
+        timezone,
+        activity_count: todayActivityCount,
+        activity_counts: counts,
+        first_activity_at: occurredAt,
+        last_activity_at: occurredAt,
+      });
+
+    if (error) throw error;
+  }
+
+  const { data: currentStreak, error: streakError } = await supabaseAdmin
+    .from('user_streaks')
+    .select('current_count, longest_count, last_activity_date, timezone')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (streakError) throw streakError;
+
+  const previousDate = currentStreak?.last_activity_date || null;
+  const yesterday = addDays(activityDate, -1);
+  const nextCurrentCount = previousDate === activityDate
+    ? Math.max(1, toInteger(currentStreak?.current_count))
+    : previousDate === yesterday
+      ? toInteger(currentStreak?.current_count) + 1
+      : 1;
+  const nextLongestCount = Math.max(toInteger(currentStreak?.longest_count), nextCurrentCount);
+
+  const { data: savedStreak, error: upsertError } = await supabaseAdmin
+    .from('user_streaks')
+    .upsert({
+      user_id: userId,
+      current_count: nextCurrentCount,
+      longest_count: nextLongestCount,
+      last_activity_date: activityDate,
+      timezone,
+      updated_at: now,
+    }, { onConflict: 'user_id' })
+    .select('current_count, longest_count, last_activity_date, timezone')
+    .single();
+
+  if (upsertError) throw upsertError;
+
+  return {
+    current_count: toInteger(savedStreak.current_count),
+    longest_count: toInteger(savedStreak.longest_count),
+    last_activity_date: savedStreak.last_activity_date,
+    today_activity_count: todayActivityCount,
+    timezone: savedStreak.timezone || timezone,
+  };
+}
+
 async function recordStudyActivity(userId, activityType, options = {}) {
   if (!userId) return null;
 
   const timezone = options.timezone || DEFAULT_STREAK_TIMEZONE;
   const occurredAt = options.occurredAt || new Date().toISOString();
+  const normalizedActivityType = normalizeActivityType(activityType);
 
   try {
     const { data, error } = await supabaseAdmin.rpc('record_study_activity', {
       p_user_id: userId,
-      p_activity_type: normalizeActivityType(activityType),
+      p_activity_type: normalizedActivityType,
       p_occurred_at: occurredAt,
       p_timezone: timezone,
     });
@@ -68,7 +171,21 @@ async function recordStudyActivity(userId, activityType, options = {}) {
     if (error) throw error;
     const streakResult = Array.isArray(data) ? data[0] || null : data || null;
     if (streakResult) {
-      await awardStudyActivityRewards(userId, normalizeActivityType(activityType), streakResult, options);
+      await awardStudyActivityRewards(userId, normalizedActivityType, streakResult, options);
+    }
+    return streakResult;
+  } catch (error) {
+    console.warn('[STREAKS] RPC activity path failed; using direct table fallback:', error.message);
+  }
+
+  try {
+    const streakResult = await recordStudyActivityDirect(userId, normalizedActivityType, {
+      ...options,
+      occurredAt,
+      timezone,
+    });
+    if (streakResult) {
+      await awardStudyActivityRewards(userId, normalizedActivityType, streakResult, options);
     }
     return streakResult;
   } catch (error) {

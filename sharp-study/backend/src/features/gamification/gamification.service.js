@@ -134,6 +134,149 @@ function normalizeEventInput(event = {}) {
   };
 }
 
+function scopeIdempotencyKey(userId, idempotencyKey) {
+  const key = String(idempotencyKey || '').trim();
+  if (!userId || !key || key.startsWith(`${userId}:`)) return key;
+  return `${userId}:${key}`;
+}
+
+function getIdempotencyKeyCandidates(userId, idempotencyKey) {
+  const scopedKey = scopeIdempotencyKey(userId, idempotencyKey);
+  const legacyKey = String(idempotencyKey || '').trim();
+  return [...new Set([scopedKey, legacyKey].filter(Boolean))];
+}
+
+function normalizeEventRow(row, summary = null, duplicate = false) {
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    event_type: row.event_type,
+    label: row.label,
+    xp_delta: Number(row.xp_delta || 0),
+    badge_key: row.badge_key || null,
+    badge_label: row.badge_label || null,
+    source_type: row.source_type || null,
+    source_id: row.source_id || null,
+    metadata: row.metadata || {},
+    idempotency_key: row.idempotency_key || '',
+    created_at: row.created_at,
+    duplicate,
+    summary: summary ? normalizeSummaryRow(summary) : null,
+  };
+}
+
+async function findExistingGamificationEvent(userId, idempotencyKeys = []) {
+  const keys = [...new Set((idempotencyKeys || []).filter(Boolean))];
+  if (!userId || !keys.length) return null;
+
+  const { data, error } = await supabaseAdmin
+    .from('gamification_events')
+    .select('id, event_type, label, xp_delta, badge_key, badge_label, source_type, source_id, metadata, idempotency_key, created_at')
+    .eq('user_id', userId)
+    .in('idempotency_key', keys)
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  if (error) throw error;
+  return data?.[0] || null;
+}
+
+async function incrementGamificationSummary(userId, xpDelta = 0) {
+  const { data: current, error: currentError } = await supabaseAdmin
+    .from('user_gamification_summary')
+    .select('user_id, xp_total, level, streak_freezes_available')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (currentError) throw currentError;
+
+  const nextXpTotal = Math.max(0, Number(current?.xp_total || 0) + Math.max(0, Number(xpDelta || 0)));
+  const payload = {
+    user_id: userId,
+    xp_total: nextXpTotal,
+    level: calculateLevel(nextXpTotal),
+    streak_freezes_available: Math.max(0, Number(current?.streak_freezes_available || 0)),
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data: summary, error: upsertError } = await supabaseAdmin
+    .from('user_gamification_summary')
+    .upsert(payload, { onConflict: 'user_id' })
+    .select('xp_total, level, streak_freezes_available')
+    .single();
+
+  if (upsertError) throw upsertError;
+  return summary;
+}
+
+async function insertBadgeIfNeeded(userId, event = {}) {
+  if (!userId || !event.badgeKey) return null;
+
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from('user_badges')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('badge_key', event.badgeKey)
+    .limit(1);
+
+  if (existingError) throw existingError;
+  if (existing?.[0]) return existing[0];
+
+  const { data, error } = await supabaseAdmin
+    .from('user_badges')
+    .insert({
+      user_id: userId,
+      badge_key: event.badgeKey,
+      label: event.badgeLabel || event.label,
+      description: event.badgeDescription || null,
+      metadata: {
+        ...(event.metadata || {}),
+        badge_key: event.badgeKey,
+      },
+    })
+    .select('id')
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+async function awardGamificationEventDirect(userId, event, idempotencyKeys) {
+  const existing = await findExistingGamificationEvent(userId, idempotencyKeys);
+  if (existing) return normalizeEventRow(existing, null, true);
+
+  const idempotencyKey = idempotencyKeys[0] || event.idempotencyKey;
+  const { data: inserted, error: insertError } = await supabaseAdmin
+    .from('gamification_events')
+    .insert({
+      user_id: userId,
+      event_type: event.eventType,
+      label: event.label,
+      xp_delta: event.xpDelta,
+      badge_key: event.badgeKey,
+      badge_label: event.badgeLabel,
+      source_type: event.sourceType,
+      source_id: event.sourceId ? String(event.sourceId) : null,
+      metadata: event.metadata,
+      idempotency_key: idempotencyKey,
+    })
+    .select('id, event_type, label, xp_delta, badge_key, badge_label, source_type, source_id, metadata, idempotency_key, created_at')
+    .single();
+
+  if (insertError) {
+    if (insertError.code === '23505') {
+      const duplicate = await findExistingGamificationEvent(userId, idempotencyKeys);
+      if (duplicate) return normalizeEventRow(duplicate, null, true);
+    }
+    throw insertError;
+  }
+
+  const summary = await incrementGamificationSummary(userId, event.xpDelta);
+  await insertBadgeIfNeeded(userId, event);
+  return normalizeEventRow(inserted, summary);
+}
+
 async function awardGamificationEvent(userId, rawEvent = {}) {
   if (!userId) return null;
 
@@ -143,13 +286,19 @@ async function awardGamificationEvent(userId, rawEvent = {}) {
     return null;
   }
 
+  const idempotencyKeys = getIdempotencyKeyCandidates(userId, event.idempotencyKey);
+  const storageIdempotencyKey = idempotencyKeys[0];
+
   try {
+    const existing = await findExistingGamificationEvent(userId, idempotencyKeys);
+    if (existing) return normalizeEventRow(existing, null, true);
+
     const { data, error } = await supabaseAdmin.rpc('award_gamification_event', {
       p_user_id: userId,
       p_event_type: event.eventType,
       p_label: event.label,
       p_xp_delta: event.xpDelta,
-      p_idempotency_key: event.idempotencyKey,
+      p_idempotency_key: storageIdempotencyKey,
       p_badge_key: event.badgeKey,
       p_badge_label: event.badgeLabel,
       p_badge_description: event.badgeDescription,
@@ -160,6 +309,12 @@ async function awardGamificationEvent(userId, rawEvent = {}) {
 
     if (error) throw error;
     return Array.isArray(data) ? data[0] || null : data || null;
+  } catch (error) {
+    console.warn('[GAMIFICATION] RPC reward path failed; using direct table fallback:', error.message);
+  }
+
+  try {
+    return await awardGamificationEventDirect(userId, event, idempotencyKeys);
   } catch (error) {
     console.error('[GAMIFICATION] Failed to award reward:', error.message);
     return null;
@@ -357,6 +512,63 @@ function normalizeSummaryRow(row) {
   };
 }
 
+async function getDedupedEventXpTotal(userId) {
+  const pageSize = 1000;
+  let offset = 0;
+  let total = 0;
+  const seenKeys = new Set();
+
+  while (true) {
+    const { data, error } = await supabaseAdmin
+      .from('gamification_events')
+      .select('idempotency_key, xp_delta')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) throw error;
+
+    const rows = data || [];
+    for (const row of rows) {
+      const key = String(row.idempotency_key || '').trim();
+      if (key && seenKeys.has(key)) continue;
+      if (key) seenKeys.add(key);
+      total += Math.max(0, Number(row.xp_delta || 0));
+    }
+
+    if (rows.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  return total;
+}
+
+async function repairGamificationSummary(userId, summary = null) {
+  const eventXpTotal = await getDedupedEventXpTotal(userId);
+  const summaryXpTotal = Math.max(0, Number(summary?.xp_total || 0));
+  const xpTotal = Math.max(summaryXpTotal, eventXpTotal);
+  const level = calculateLevel(xpTotal);
+
+  if (summary && summaryXpTotal === xpTotal && Number(summary.level || 1) === level) {
+    return summary;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('user_gamification_summary')
+    .upsert({
+      user_id: userId,
+      xp_total: xpTotal,
+      level,
+      streak_freezes_available: Math.max(0, Number(summary?.streak_freezes_available || 0)),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' })
+    .select('xp_total, level, streak_freezes_available')
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
 async function getGamificationSummary(userId, streak = null) {
   const [{ data: summary, error: summaryError }, { data: badges, error: badgesError }, { data: events, error: eventsError }] = await Promise.all([
     supabaseAdmin
@@ -382,7 +594,8 @@ async function getGamificationSummary(userId, streak = null) {
   if (badgesError) throw badgesError;
   if (eventsError) throw eventsError;
 
-  const normalizedSummary = normalizeSummaryRow(summary);
+  const repairedSummary = await repairGamificationSummary(userId, summary);
+  const normalizedSummary = normalizeSummaryRow(repairedSummary);
   const currentStreak = Number(streak?.current || 0);
 
   return {
