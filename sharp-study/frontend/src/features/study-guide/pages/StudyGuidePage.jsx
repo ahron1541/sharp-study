@@ -8,7 +8,7 @@ import { API_URL, apiRequest } from '../../../config/api';
 import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { sanitizeHtml } from '../../../shared/utils/sanitize';
-import XpNotice from '../../gamification/components/XpNotice';
+import StudyNotice from '../../gamification/components/StudyNotice';
 import StudyGuideEditor from '../components/StudyGuideEditor';
 import StudyGuideSidebar from '../components/StudyGuideSidebar';
 import SelectionToolbar from '../components/SelectionToolbar';
@@ -980,9 +980,9 @@ export default function StudyGuidePage() {
                 </p>
               </div>
             </div>
-            <XpNotice className="shrink-0 self-end lg:self-start" panelPlacement="left" title="Saving this study guide can keep your streak active.">
-              Create or update a study guide to record a real study action. The first saved study action of the day gives daily XP once it reaches the server.
-            </XpNotice>
+            <StudyNotice className="shrink-0 self-end lg:self-start" panelPlacement="left" title="Saving this study guide can keep your streak active.">
+              Create or update a study guide to record a real study action once it reaches the server.
+            </StudyNotice>
           </div>
         </section>
 

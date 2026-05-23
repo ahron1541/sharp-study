@@ -238,7 +238,7 @@ export default function DashboardPage() {
           ) : null}
           {nextStreakMilestone ? (
             <p className="mt-2 text-xs font-bold uppercase tracking-[0.14em] text-text-muted">
-              Next: {nextStreakMilestone.label} in {formatDayCount(nextStreakMilestone.remaining)} (+{nextStreakMilestone.xp} XP)
+              Next badge: {nextStreakMilestone.label} in {formatDayCount(nextStreakMilestone.remaining)}
             </p>
           ) : null}
           {streakError ? (
@@ -400,107 +400,42 @@ function QuickAccessCard({ icon, label, sub, onClick, tone = 'default' }) {
 }
 
 function GamificationCard({ gamification, loading, error }) {
-  const progress = gamification?.level_progress || {};
-  const recentEvents = (gamification?.recent_events || []).filter((event) => Number(event.xp_delta || 0) > 0).slice(0, 3);
-  const badges = (gamification?.badges || []).slice(0, 3);
-  const percent = Math.max(0, Math.min(100, Number(progress.percent || 0)));
-  const [xpNoticeOpen, setXpNoticeOpen] = useState(false);
-  const xpNoticeRef = useRef(null);
-
-  useEffect(() => {
-    if (!xpNoticeOpen) return undefined;
-
-    const handlePointerDown = (event) => {
-      if (xpNoticeRef.current && !xpNoticeRef.current.contains(event.target)) {
-        setXpNoticeOpen(false);
-      }
-    };
-
-    const handleEscape = (event) => {
-      if (event.key === 'Escape') {
-        setXpNoticeOpen(false);
-      }
-    };
-
-    document.addEventListener('pointerdown', handlePointerDown);
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [xpNoticeOpen]);
+  const recentBadges = (gamification?.recent_badges || gamification?.badges || []).slice(0, 3);
+  const badges = (gamification?.badges || []).slice(0, 5);
+  const badgeCount = Number(gamification?.badge_count ?? gamification?.badges?.length ?? 0);
 
   return (
     <div className="rounded-[2rem] border border-border bg-surface p-6 shadow-card">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">Progress Level</p>
-            <div className="relative" ref={xpNoticeRef}>
-              <button
-                type="button"
-                onClick={() => setXpNoticeOpen((value) => !value)}
-                aria-label="How XP works"
-                aria-expanded={xpNoticeOpen}
-                aria-haspopup="dialog"
-                aria-controls="xp-notice-popover"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface-2 text-text-muted transition-colors hover:text-text"
-              >
-                <Info size={14} aria-hidden="true" />
-              </button>
-
-              {xpNoticeOpen ? (
-                <div
-                  id="xp-notice-popover"
-                  role="dialog"
-                  aria-label="XP reward notice"
-                  className="absolute left-0 top-[calc(100%+0.65rem)] z-30 w-[min(22rem,calc(100vw-3rem))] rounded-[1.25rem] border border-border bg-surface p-4 text-left shadow-[0_20px_60px_rgba(15,23,42,0.22)]"
-                >
-                  <p className="text-sm font-black text-text">How to earn XP</p>
-                  <div className="mt-2 space-y-2 text-sm leading-6 text-text-muted">
-                    <p>Earn XP by doing real study actions, not by logging in.</p>
-                    <p>First study action each day gives +10 XP. Your first flashcard review and first quiz attempt each give +15 XP.</p>
-                    <p>A perfect quiz gives +50 XP. Streak milestones also give bonus XP and badges.</p>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">Achievements</p>
           <div className="mt-2 flex items-end gap-2">
-            <span className="text-5xl font-display font-black text-text">{loading ? '...' : gamification.level}</span>
-            <span className="pb-2 text-sm font-bold text-text-muted">level</span>
+            <span className="text-5xl font-display font-black text-text">{loading ? '...' : badgeCount}</span>
+            <span className="pb-2 text-sm font-bold text-text-muted">badges</span>
           </div>
         </div>
-        <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-xp/10 text-xp">
+        <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-accent/10 text-accent">
           <Star size={28} aria-hidden="true" />
         </div>
       </div>
 
-      <div className="mt-5">
-        <div className="flex items-center justify-between text-xs font-bold uppercase tracking-[0.14em] text-text-muted">
-          <span>{gamification.xp_total} XP</span>
-          <span>{progress.xp_needed || 0} XP to level {progress.next_level || 2}</span>
-        </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
-          <div className="h-full rounded-full bg-xp transition-[width] duration-500" style={{ width: `${percent}%` }} />
-        </div>
-      </div>
-
       {error ? (
-        <p className="mt-4 text-xs font-semibold text-text-muted">Rewards sync is unavailable right now.</p>
+        <p className="mt-4 text-xs font-semibold text-text-muted">Achievements sync is unavailable right now.</p>
       ) : null}
 
       <div className="mt-5 space-y-3">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-text-muted">Recent Rewards</p>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-text-muted">Recent Badges</p>
           <div className="mt-2 space-y-2">
-            {recentEvents.length ? recentEvents.map((event) => (
-              <div key={event.id} className="flex items-center justify-between gap-3 text-sm">
-                <span className="truncate font-bold text-text">{event.label}</span>
-                <span className="shrink-0 font-black text-xp">+{event.xp_delta} XP</span>
+            {recentBadges.length ? recentBadges.map((badge) => (
+              <div key={`${badge.badge_key}-${badge.earned_at}`} className="flex items-center justify-between gap-3 text-sm">
+                <span className="truncate font-bold text-text">{badge.label}</span>
+                <span className="shrink-0 text-xs font-bold text-text-muted">
+                  {badge.earned_at ? new Date(badge.earned_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : 'Earned'}
+                </span>
               </div>
             )) : (
-              <p className="text-sm leading-6 text-text-muted">Study today to earn your first reward.</p>
+              <p className="text-sm leading-6 text-text-muted">Study today to start earning badges.</p>
             )}
           </div>
         </div>

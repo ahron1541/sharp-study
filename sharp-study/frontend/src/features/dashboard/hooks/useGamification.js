@@ -2,43 +2,24 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiRequest } from '../../../config/api';
 
 const EMPTY_GAMIFICATION = {
-  xp_total: 0,
-  level: 1,
-  streak_freezes_available: 0,
-  level_progress: {
-    current_level: 1,
-    next_level: 2,
-    current_level_xp: 0,
-    next_level_xp: 100,
-    xp_into_level: 0,
-    xp_needed: 100,
-    percent: 0,
-  },
   badges: [],
-  recent_events: [],
+  recent_badges: [],
+  badge_count: 0,
   streak: null,
   next_streak_milestone: null,
 };
 
 function normalizeGamification(payload) {
   const gamification = payload?.gamification || payload || {};
-  const levelProgress = gamification.level_progress || {};
+  const badges = Array.isArray(gamification.badges) ? gamification.badges : [];
+  const recentBadges = Array.isArray(gamification.recent_badges)
+    ? gamification.recent_badges
+    : badges.slice(0, 5);
 
   return {
-    xp_total: Number(gamification.xp_total || 0),
-    level: Number(gamification.level || 1),
-    streak_freezes_available: Number(gamification.streak_freezes_available || 0),
-    level_progress: {
-      current_level: Number(levelProgress.current_level || gamification.level || 1),
-      next_level: Number(levelProgress.next_level || (Number(gamification.level || 1) + 1)),
-      current_level_xp: Number(levelProgress.current_level_xp || 0),
-      next_level_xp: Number(levelProgress.next_level_xp || 100),
-      xp_into_level: Number(levelProgress.xp_into_level || 0),
-      xp_needed: Number(levelProgress.xp_needed || 100),
-      percent: Math.max(0, Math.min(100, Number(levelProgress.percent || 0))),
-    },
-    badges: Array.isArray(gamification.badges) ? gamification.badges : [],
-    recent_events: Array.isArray(gamification.recent_events) ? gamification.recent_events : [],
+    badges,
+    recent_badges: recentBadges,
+    badge_count: Number(gamification.badge_count ?? badges.length),
     streak: gamification.streak || null,
     next_streak_milestone: gamification.next_streak_milestone || null,
   };
@@ -58,7 +39,7 @@ export function useGamification(options = {}) {
       const response = await apiRequest(`/api/gamification/summary?days=${encodeURIComponent(days)}`);
       setGamification(normalizeGamification(response));
     } catch (err) {
-      setError(err.message || 'Failed to load rewards.');
+      setError(err.message || 'Failed to load achievements.');
       setGamification(EMPTY_GAMIFICATION);
     } finally {
       setLoading(false);

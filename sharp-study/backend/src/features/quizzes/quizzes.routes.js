@@ -4,7 +4,7 @@ const { z } = require('zod');
 const { supabaseAdmin } = require('../../config/supabase');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { sanitizePlainText } = require('../../utils/studyGuideSanitize');
-const { awardPerfectQuizReward, awardQuizAttemptXp, normalizeDifficulty } = require('../gamification/gamification.service');
+const { awardPerfectQuizReward, normalizeDifficulty } = require('../gamification/gamification.service');
 const { ACTIVITY_TYPES, recordStudyActivity } = require('../streaks/streaks.service');
 
 const router = express.Router();
@@ -687,15 +687,6 @@ router.post('/:id/attempts', async (req, res) => {
       },
     });
     await awardPerfectQuizReward(req.user.id, quiz.id, log.id, percent);
-    await awardQuizAttemptXp(req.user.id, {
-      id: log.id,
-      quiz_id: quiz.id,
-      difficulty,
-      percent,
-      score,
-      total,
-      session_type: parsed.data.session_type,
-    });
 
     return res.status(201).json({
       success: true,

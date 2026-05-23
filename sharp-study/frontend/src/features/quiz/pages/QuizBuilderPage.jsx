@@ -20,7 +20,7 @@ import toast from 'react-hot-toast';
 import { apiRequest } from '../../../config/api';
 import Modal from '../../../shared/components/Modal';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
-import XpNotice from '../../gamification/components/XpNotice';
+import StudyNotice from '../../gamification/components/StudyNotice';
 
 const DRAFT_PREFIX = 'sharp-study-quiz-builder-draft';
 const DEFAULT_CHOICES = ['Option A', 'Option B', 'Option C', 'Option D'];
@@ -504,9 +504,9 @@ export default function QuizBuilderPage() {
             </div>
 
             <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center lg:justify-end">
-              <XpNotice title={quizId ? 'Saving quiz changes can count as study activity.' : 'Creating a quiz can count as study activity.'}>
-                Rewards are recorded after the quiz saves. Taking the quiz afterward can unlock Quiz Starter, and a perfect attempt can earn Perfect Recall.
-              </XpNotice>
+              <StudyNotice title={quizId ? 'Saving quiz changes can count as study activity.' : 'Creating a quiz can count as study activity.'}>
+                Saved quizzes can keep your streak active. Taking the quiz afterward can unlock Quiz Starter, and a perfect attempt can earn Perfect Recall.
+              </StudyNotice>
               <button
                 type="button"
                 onClick={() => saveQuiz()}

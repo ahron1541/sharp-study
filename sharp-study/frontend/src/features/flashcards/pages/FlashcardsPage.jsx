@@ -31,7 +31,7 @@ import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { apiRequest } from '../../../config/api';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
-import XpNotice from '../../gamification/components/XpNotice';
+import StudyNotice from '../../gamification/components/StudyNotice';
 
 const HINT_DELAY_MS = 45000;
 const SYNC_DELAY_MS = 20000;
@@ -42,10 +42,10 @@ const difficultyKey = (setId) => `sharp-study-flashcards-difficulty:${setId}`;
 const tutorialKey = 'sharp-study-flashcards-tutorial-seen';
 const MotionDiv = motion.div;
 const FLASHCARD_DIFFICULTIES = [
-  { value: 'easy', label: 'Easy', helper: 'Hints stay open', description: 'Best for warming up or reading a new lesson for the first time.', knownXp: 1, learningXp: 1, color: '#22c55e', icon: Sparkles, hintsLocked: false },
-  { value: 'normal', label: 'Normal', helper: 'Balanced review', description: 'Good for regular practice with standard hint support.', knownXp: 2, learningXp: 1, color: '#8b3dff', icon: ShieldCheck, hintsLocked: false },
-  { value: 'hard', label: 'Hard', helper: 'Hints locked', description: 'Better XP with stricter recall. Hints are locked while you answer.', knownXp: 4, learningXp: 2, color: '#f97316', icon: Flame, hintsLocked: true },
-  { value: 'expert', label: 'Expert', helper: 'Strict recall', description: 'Highest flashcard XP. Use this when you are ready to test memory without help.', knownXp: 6, learningXp: 3, color: '#facc15', icon: Star, hintsLocked: true },
+  { value: 'easy', label: 'Easy', helper: 'Hints stay open', description: 'Best for warming up or reading a new lesson for the first time.', color: '#22c55e', icon: Sparkles, hintsLocked: false },
+  { value: 'normal', label: 'Normal', helper: 'Balanced review', description: 'Good for regular practice with standard hint support.', color: '#8b3dff', icon: ShieldCheck, hintsLocked: false },
+  { value: 'hard', label: 'Hard', helper: 'Hints locked', description: 'Stricter recall practice. Hints are locked while you answer.', color: '#f97316', icon: Flame, hintsLocked: true },
+  { value: 'expert', label: 'Expert', helper: 'Strict recall', description: 'Use this when you are ready to test memory without help.', color: '#facc15', icon: Star, hintsLocked: true },
 ];
 
 function getFlashcardDifficulty(value = 'normal') {
@@ -734,15 +734,15 @@ export default function FlashcardsPage() {
             </div>
 
             <div className="flex shrink-0 items-start justify-end gap-3">
-              <XpNotice
+              <StudyNotice
                 className="mt-1"
                 eyebrow="Difficulty notice"
                 ariaLabel="Show flashcard difficulty notice"
                 buttonTitle="Show flashcard difficulty notice"
                 title="Choose a challenge before reviewing."
               >
-                Easy keeps hints available. Normal is balanced. Hard and Expert lock hints and give higher XP when you mark cards after the review reaches the server.
-              </XpNotice>
+                Easy keeps hints available. Normal is balanced. Hard and Expert lock hints for stricter recall practice.
+              </StudyNotice>
               <div className="grid grid-cols-3 gap-2 rounded-[1.1rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-1.5 text-center sm:min-w-72">
                 <Stat label="Known" value={knownCount} tone="success" />
                 <Stat label="Learning" value={learningCount} tone="warning" />
@@ -842,7 +842,7 @@ export default function FlashcardsPage() {
                             if (!hintsLocked) setHintVisible(true);
                           }}
                           disabled={hintsLocked}
-                          title={hintsLocked ? `${difficultyMeta.label} mode locks hints for higher XP.` : 'Show hint'}
+                          title={hintsLocked ? `${difficultyMeta.label} mode locks hints for stricter recall.` : 'Show hint'}
                           className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm transition hover:bg-[color:var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <HelpCircle size={16} />
@@ -1097,8 +1097,8 @@ function FlashcardPreview({
               {selectedCount} {selected.label.toLowerCase()} card{selectedCount === 1 ? '' : 's'} ready.
             </p>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <StartStat label="Know" value={`+${selected.knownXp} XP`} />
-              <StartStat label="Learning" value={`+${selected.learningXp} XP`} />
+              <StartStat label="Hints" value={selected.hintsLocked ? 'Locked' : 'Available'} />
+              <StartStat label="Mode" value={selected.helper} />
             </div>
             <div className="mt-4 flex flex-col gap-2">
               <button
@@ -1222,7 +1222,7 @@ function FlashcardAttemptLog({ attempts, pagination, loading, onPageChange, comp
                   {difficulty.label}
                 </span>
                 <span className="rounded-full bg-[color:var(--color-surface)] px-2.5 py-1 text-xs font-black text-[color:var(--color-text-muted)]">
-                  {resultKnown ? `+${difficulty.knownXp} XP` : `+${difficulty.learningXp} XP`}
+                  Synced
                 </span>
               </div>
             </article>
@@ -1297,7 +1297,7 @@ function SelectedFlashcardDifficulty({ difficulty, total, reviewed }) {
           <p className="text-[0.68rem] font-black uppercase tracking-[0.16em] text-[color:var(--color-text-muted)]">Selected difficulty</p>
           <h2 className="mt-1 truncate text-xl font-black text-[color:var(--color-text)]">{selected.label}</h2>
           <p className="mt-1 text-xs font-bold text-[color:var(--color-text-muted)]">
-            Know +{selected.knownXp} XP · Learning +{selected.learningXp} XP
+            {selected.helper} · {selected.hintsLocked ? 'Hints locked' : 'Hints available'}
           </p>
         </div>
       </div>

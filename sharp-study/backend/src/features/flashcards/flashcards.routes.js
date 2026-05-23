@@ -2,7 +2,6 @@ const express = require('express');
 const { z } = require('zod');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { supabaseAdmin } = require('../../config/supabase');
-const { awardFlashcardReviewXp } = require('../gamification/gamification.service');
 const { ACTIVITY_TYPES, recordStudyActivity } = require('../streaks/streaks.service');
 
 const router = express.Router();
@@ -683,15 +682,6 @@ router.post('/:id/attempts', async (req, res) => {
         difficulty: parsed.data.difficulty,
       },
     });
-    await awardFlashcardReviewXp(req.user.id, {
-      id: attempt.id,
-      set_id: set.id,
-      card_id: card.id,
-      result: parsed.data.result,
-      response_ms: parsed.data.response_ms ?? null,
-      difficulty: parsed.data.difficulty,
-    });
-
     return res.status(201).json({
       success: true,
       attempt: {

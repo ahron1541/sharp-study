@@ -19,7 +19,6 @@
   --color-sidebar-active-text: var(--color-sidebar-active-text);
   
   --color-streak: var(--color-streak);
-  --color-xp: var(--color-xp);
   
   /* Fonts */
   --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
@@ -61,7 +60,6 @@
   --color-sidebar-active-text: #FFFFFF;
   
   --color-streak:        #F97316;
-  --color-xp:            #8B5CF6;
   --color-goal-done:     #22C55E;
 
   /* Aliases for original App.jsx Toast compatibility */
@@ -86,7 +84,6 @@
   --color-sidebar-active-text: #FFFFFF;
   
   --color-streak:        #FB923C;
-  --color-xp:            #A78BFA;
   --color-goal-done:     #4ADE80;
 
   /* Aliases for original App.jsx Toast compatibility */

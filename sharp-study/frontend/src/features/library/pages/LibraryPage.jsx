@@ -978,7 +978,7 @@ function CreateWizard({
                 <p className="text-xs font-black uppercase tracking-[0.18em] text-text-muted">Challenge levels included</p>
                 <h3 className="mt-1 text-lg font-black text-text">Easy, Normal, Hard, and Expert will be created together.</h3>
                 <p className="mt-2 text-sm font-semibold leading-7 text-text-muted">
-                  After generation, choose the difficulty when you start studying. Harder play modes give higher XP and stricter rules.
+                  After generation, choose the difficulty when you start studying. Harder play modes use stricter rules.
                 </p>
               </section>
             ) : null}

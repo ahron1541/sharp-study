@@ -22,7 +22,7 @@ const loginLimiter = rateLimit({
   message: { error: 'Too many login attempts. Please try again later.' },
 });
 
-const PROTECTED_PREFERENCE_KEYS = new Set(['xp', 'level', 'streak', 'daily_goals']);
+const PROTECTED_PREFERENCE_KEYS = new Set(['streak', 'daily_goals']);
 
 function sanitizePreferenceUpdate(preferences) {
   return Object.fromEntries(

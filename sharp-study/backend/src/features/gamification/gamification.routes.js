@@ -11,8 +11,8 @@ router.get('/summary', requireAuth, async (req, res) => {
     const gamification = await getGamificationSummary(req.user.id, streak);
     return res.json({ success: true, gamification });
   } catch (error) {
-    console.error('[GAMIFICATION] Failed to load summary:', error.message);
-    return res.status(500).json({ error: 'Failed to load gamification summary.' });
+    console.error('[ACHIEVEMENTS] Failed to load summary:', error.message);
+    return res.status(500).json({ error: 'Failed to load achievements.' });
   }
 });
 

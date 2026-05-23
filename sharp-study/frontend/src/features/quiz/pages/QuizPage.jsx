@@ -31,7 +31,7 @@ import { apiRequest } from '../../../config/api';
 import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
-import XpNotice from '../../gamification/components/XpNotice';
+import StudyNotice from '../../gamification/components/StudyNotice';
 
 const SESSION_STORAGE_PREFIX = 'sharp-study-quiz-session';
 const CONTENT_STORAGE_PREFIX = 'sharp-study-quiz-content';
@@ -47,10 +47,10 @@ const DEFAULT_SETTINGS = {
   difficulty: 'normal',
 };
 const QUIZ_DIFFICULTIES = [
-  { value: 'easy', label: 'Easy', quizXp: 5, timerMultiplier: 1.25, timerLabel: 'More time', description: 'More timer room for a calmer first pass.', color: '#22c55e', icon: Sparkles },
-  { value: 'normal', label: 'Normal', quizXp: 10, timerMultiplier: 1, timerLabel: 'Standard', description: 'Balanced timer pressure and steady XP.', color: '#8b3dff', icon: Target },
-  { value: 'hard', label: 'Hard', quizXp: 20, timerMultiplier: 0.8, timerLabel: 'Faster', description: 'Less time, higher base XP, better for confident review.', color: '#f97316', icon: Flame },
-  { value: 'expert', label: 'Expert', quizXp: 35, timerMultiplier: 0.6, timerLabel: 'Strict', description: 'Strict timer pressure with the highest base quiz XP.', color: '#facc15', icon: Trophy },
+  { value: 'easy', label: 'Easy', timerMultiplier: 1.25, timerLabel: 'More time', description: 'More timer room for a calmer first pass.', color: '#22c55e', icon: Sparkles },
+  { value: 'normal', label: 'Normal', timerMultiplier: 1, timerLabel: 'Standard', description: 'Balanced timer pressure for regular review.', color: '#8b3dff', icon: Target },
+  { value: 'hard', label: 'Hard', timerMultiplier: 0.8, timerLabel: 'Faster', description: 'Less time, better for confident review.', color: '#f97316', icon: Flame },
+  { value: 'expert', label: 'Expert', timerMultiplier: 0.6, timerLabel: 'Strict', description: 'Strict timer pressure for your strongest recall checks.', color: '#facc15', icon: Trophy },
 ];
 const WRONG_FEEDBACK_MESSAGES = [
   'No problem. You are still learning.',
@@ -1080,7 +1080,7 @@ function StartQuizModalContent({ countdown, settings, itemCount, availableCount,
           <div className="flex gap-3">
             <AlertTriangle className="mt-1 shrink-0 text-amber-500" size={20} aria-hidden="true" />
             <p className="text-sm font-semibold leading-7 text-[color:var(--color-text-muted)]">
-              Make sure you are ready before starting. Difficulty changes both XP and timer pressure, and the timer will not pause once the quiz begins.
+              Make sure you are ready before starting. Difficulty changes timer pressure, and the timer will not pause once the quiz begins.
             </p>
           </div>
         </div>
@@ -1147,7 +1147,7 @@ function QuizDifficultyChooser({ value, onChange, compact = false, counts = {} }
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-black">{option.label}</span>
-                  <span className="block text-xs font-bold">{count ? `${count} ready` : `+${option.quizXp} XP · ${option.timerLabel}`}</span>
+                  <span className="block text-xs font-bold">{count ? `${count} ready` : option.timerLabel}</span>
                 </span>
               </span>
             </button>
@@ -1207,15 +1207,15 @@ function PreviewScreen({
           </div>
 
           <div className="flex shrink-0 items-start justify-end gap-3">
-            <XpNotice
+            <StudyNotice
               className="mt-1"
               eyebrow="Difficulty notice"
               ariaLabel="Show quiz difficulty notice"
               buttonTitle="Show quiz difficulty notice"
-              title="Difficulty changes XP and timer pressure."
+              title="Difficulty changes timer pressure."
             >
-              Easy gives more time with lower XP. Normal is balanced. Hard and Expert shorten the timer, increase base XP, and can still earn accuracy bonuses after the attempt syncs.
-            </XpNotice>
+              Easy gives more time. Normal is balanced. Hard and Expert shorten the timer for stricter challenge runs.
+            </StudyNotice>
             <div className="grid min-w-[min(100%,22rem)] grid-cols-3 gap-2 rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
               <Stat label="Pool" value={questionCounts.all} tone="accent" />
               <Stat label="MCQ" value={questionCounts.multiple_choice} tone="success" />
@@ -1233,14 +1233,14 @@ function PreviewScreen({
                 <Target className="text-[color:var(--color-accent)]" size={20} />
                 <h2 className="text-2xl font-black text-[color:var(--color-text)]">Setup</h2>
               </div>
-              <XpNotice
+              <StudyNotice
                 eyebrow="Quiz rules"
                 ariaLabel="Show quiz rules"
                 buttonTitle="Show quiz rules"
                 title="Know the quiz flow before starting."
               >
                 Answer before the timer reaches zero. Practice mode checks answers immediately, test mode hides feedback until results, and your attempt syncs to score history after submission.
-              </XpNotice>
+              </StudyNotice>
             </div>
 
             <div className="mt-4 space-y-3">
@@ -1336,7 +1336,7 @@ function PreviewScreen({
               <h2 className="text-xl font-black text-[color:var(--color-text)]">Ready check</h2>
             </div>
             <p className="mt-3 text-sm leading-7 text-[color:var(--color-text-muted)]">
-              {difficulty.label} mode starts with +{difficulty.quizXp} XP and a {formatTimer(getQuizTimeLimitSeconds(settings))} timer. Take a breath, scan the rules, then go.
+              {difficulty.label} mode starts with a {formatTimer(getQuizTimeLimitSeconds(settings))} timer. Take a breath, scan the rules, then go.
             </p>
             <div className="mt-5 space-y-3">
               {savedSession ? (

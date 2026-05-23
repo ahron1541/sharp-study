@@ -7,14 +7,14 @@ const PANEL_MIN_WIDTH = 260;
 const VIEWPORT_MARGIN = 16;
 const PANEL_GAP = 12;
 
-export default function XpNotice({
+export default function StudyNotice({
   title,
   children,
   className = '',
   panelPlacement = 'below',
-  eyebrow = 'XP notice',
-  ariaLabel = 'Show XP notice',
-  buttonTitle = 'Show XP notice',
+  eyebrow = 'Study notice',
+  ariaLabel = 'Show study notice',
+  buttonTitle = 'Show study notice',
 }) {
   const [open, setOpen] = useState(false);
   const [panelStyle, setPanelStyle] = useState(null);
@@ -102,7 +102,6 @@ export default function XpNotice({
           ref={panelRef}
           id={panelId}
           role="dialog"
-          aria-label="XP notice"
           style={{
             left: panelStyle?.left ?? 0,
             top: panelStyle?.top ?? 0,
@@ -123,8 +122,8 @@ export default function XpNotice({
                   type="button"
                   onClick={() => setOpen(false)}
                   className="-mr-1 -mt-1 rounded-full p-1.5 text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface-2)] hover:text-[color:var(--color-text)]"
-                  aria-label="Close XP notice"
-                  title="Close XP notice"
+                  aria-label="Close study notice"
+                  title="Close study notice"
                 >
                   <X size={15} aria-hidden="true" />
                 </button>
