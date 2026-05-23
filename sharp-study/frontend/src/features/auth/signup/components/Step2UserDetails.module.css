@@ -61,3 +61,57 @@
   text-align: center;
   box-shadow: var(--shadow-card);
 }
+
+.busyCard strong {
+  display: block;
+  margin-top: var(--space-md);
+}
+
+.progressTrack {
+  height: 0.45rem;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--card-border);
+}
+
+.progressTrack > span {
+  display: block;
+  height: 100%;
+  width: 42%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: accountProgress 0.9s ease-in-out infinite alternate;
+}
+
+.busySkeleton {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: var(--space-md);
+}
+
+.busySkeleton span {
+  height: 0.65rem;
+  border-radius: var(--radius-pill);
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--card-border) 72%, transparent) 0%,
+      color-mix(in srgb, var(--accent) 24%, var(--card-border)) 45%,
+      color-mix(in srgb, var(--card-border) 72%, transparent) 80%
+    );
+  background-size: 220% 100%;
+  animation: accountSkeleton 1.25s ease-in-out infinite;
+}
+
+.busySkeleton span:nth-child(2) { width: 82%; }
+.busySkeleton span:nth-child(3) { width: 58%; }
+
+@keyframes accountProgress {
+  from { transform: translateX(-35%); }
+  to { transform: translateX(170%); }
+}
+
+@keyframes accountSkeleton {
+  from { background-position: 160% 0; }
+  to { background-position: -160% 0; }
+}

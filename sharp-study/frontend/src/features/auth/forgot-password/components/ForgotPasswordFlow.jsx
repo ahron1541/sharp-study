@@ -91,6 +91,7 @@ export default function ForgotPasswordFlow() {
                 >
                   <span className={styles.inlineSpinner} aria-hidden="true" />
                   {busyMessage}
+                  <span className={styles.inlineProgress} aria-hidden="true"><span /></span>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -161,6 +162,7 @@ export default function ForgotPasswordFlow() {
                 >
                   <span className={styles.inlineSpinner} aria-hidden="true" />
                   {busyMessage}
+                  <span className={styles.inlineProgress} aria-hidden="true"><span /></span>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -238,6 +240,7 @@ export default function ForgotPasswordFlow() {
                 >
                   <span className={styles.inlineSpinner} aria-hidden="true" />
                   {busyMessage}
+                  <span className={styles.inlineProgress} aria-hidden="true"><span /></span>
                 </motion.div>
               )}
             </AnimatePresence>

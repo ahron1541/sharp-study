@@ -2,6 +2,7 @@ require('dotenv').config(); // <-- THIS MUST BE LINE 1
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const { generalLimiter, speedLimiter } = require('./middleware/rateLimit.middleware');
 
 // Currently active features
 const authRoutes = require('./features/auth/auth.routes');
@@ -51,6 +52,7 @@ app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 app.use(express.json({ limit: '1mb' }));
 app.set('etag', 'strong');
+app.use('/api', speedLimiter, generalLimiter);
 
 // API Routes
 app.use('/api/auth', authRoutes);

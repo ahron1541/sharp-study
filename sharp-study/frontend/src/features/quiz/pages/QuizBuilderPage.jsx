@@ -21,6 +21,7 @@ import { apiRequest } from '../../../config/api';
 import Modal from '../../../shared/components/Modal';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
 import StudyNotice from '../../../shared/components/StudyNotice';
+import { QuizBuilderSkeleton } from '../../../shared/components/PageSkeletons';
 
 const DRAFT_PREFIX = 'sharp-study-quiz-builder-draft';
 const DEFAULT_CHOICES = ['Option A', 'Option B', 'Option C', 'Option D'];
@@ -461,19 +462,7 @@ export default function QuizBuilderPage() {
   }
 
   if (loading) {
-    return (
-      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="flex items-center gap-3">
-          <div className="quiz-donut" aria-hidden="true" />
-          <p className="text-sm font-black text-[color:var(--color-text-muted)]">Loading quiz builder...</p>
-        </div>
-        <div className="mt-6 grid gap-4">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className="h-36 animate-pulse rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]" />
-          ))}
-        </div>
-      </main>
-    );
+    return <QuizBuilderSkeleton />;
   }
 
   return (

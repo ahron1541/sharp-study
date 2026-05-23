@@ -4,6 +4,7 @@ import PillInput            from '../../shared/components/PillInput';
 import PasswordInput        from '../../shared/components/PasswordInput';
 import PasswordStrength     from '../../shared/components/PasswordStrength';
 import PillButton           from '../../shared/components/PillButton';
+import { USERNAME_RULES_TEXT } from '../../shared/utils/usernamePolicy';
 import { useSignupForm }    from '../hooks/useSignupForm';
 import styles               from './Step2UserDetails.module.css';
 
@@ -51,7 +52,17 @@ export default function Step2UserDetails({ email, signupToken, onSuccess }) {
     <div className={styles.wrapper}>
       {loading && (
         <div className={styles.busyOverlay} role="alert" aria-live="assertive" aria-busy="true">
-          <div className={styles.busyCard}>Creating your Verso account...</div>
+          <div className={styles.busyCard}>
+            <div className={styles.progressTrack}>
+              <span />
+            </div>
+            <strong>Creating your Verso account...</strong>
+            <div className={styles.busySkeleton} aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
         </div>
       )}
       <div className={styles.titleRow}>
@@ -136,8 +147,8 @@ export default function Step2UserDetails({ email, signupToken, onSuccess }) {
               {usernameStatus === 'available' && t('usernameAvailable')}
               {usernameStatus === 'taken'     && t('usernameTaken')}
               {usernameStatus === 'checking'  && t('usernameChecking')}
-              {usernameStatus === 'invalid'   && 'Only letters, numbers, _ . - are allowed.'}
-              {!usernameStatus && t('usernameHint')}
+              {usernameStatus === 'invalid'   && t('usernameInvalid', USERNAME_RULES_TEXT)}
+              {!usernameStatus && t('usernameHint', USERNAME_RULES_TEXT)}
             </p>
           </div>
 

@@ -32,6 +32,7 @@ import Modal from '../../../shared/components/Modal';
 import { apiRequest } from '../../../config/api';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
 import StudyNotice from '../../../shared/components/StudyNotice';
+import { FlashcardsPageSkeleton } from '../../../shared/components/PageSkeletons';
 
 const HINT_DELAY_MS = 45000;
 const SYNC_DELAY_MS = 20000;
@@ -692,7 +693,7 @@ export default function FlashcardsPage() {
     }
   };
 
-  if (loading) return <FlashcardsSkeleton />;
+  if (loading) return <FlashcardsPageSkeleton />;
 
   if (!set) {
     return (
@@ -1417,53 +1418,5 @@ function LoadingPanel({ title, detail }) {
         <div className="h-full w-2/3 animate-pulse rounded-full bg-[color:var(--color-accent)]" />
       </div>
     </div>
-  );
-}
-
-function FlashcardsLoadingDonut({ progress = 42 }) {
-  const safeProgress = Math.max(0, Math.min(100, Number(progress) || 0));
-  const degrees = Math.round((safeProgress / 100) * 360);
-
-  return (
-    <span
-      className="quiz-save-donut-active relative inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-full"
-      style={{
-        background: `conic-gradient(var(--color-accent) ${degrees}deg, rgba(148, 163, 184, 0.24) 0deg)`,
-      }}
-      role="img"
-      aria-label={`Flashcards loading ${safeProgress}%`}
-      title={`Flashcards loading ${safeProgress}%`}
-    >
-      <span className="absolute inset-[10px] rounded-full bg-[color:var(--color-surface)]" />
-      <span className="relative text-sm font-black text-[color:var(--color-text)]">{safeProgress}</span>
-    </span>
-  );
-}
-
-function FlashcardsSkeleton() {
-  return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <div className="h-4 w-52 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
-      <section className="mt-4 rounded-[2.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]">
-            <FlashcardsLoadingDonut progress={38} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xl font-black text-[color:var(--color-text)]">Loading flashcards</p>
-            <p className="mt-2 text-sm font-semibold text-[color:var(--color-text-muted)]">
-              Syncing cards, difficulty levels, and your saved review progress.
-            </p>
-          </div>
-        </div>
-        <div className="mt-4 h-10 w-3/4 animate-pulse rounded-2xl bg-[color:var(--color-surface-2)]" />
-        <div className="mt-5 h-3 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
-      </section>
-      <section className="mt-6 min-h-[34rem] rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-6">
-        <div className="h-5 w-32 animate-pulse rounded-full bg-[color:var(--color-surface)]" />
-        <div className="mx-auto mt-40 h-10 w-2/3 animate-pulse rounded-2xl bg-[color:var(--color-surface)]" />
-        <div className="mx-auto mt-6 h-4 w-1/3 animate-pulse rounded-full bg-[color:var(--color-surface)]" />
-      </section>
-    </main>
   );
 }

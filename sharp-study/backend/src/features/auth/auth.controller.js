@@ -6,6 +6,13 @@ const bcrypt = require('bcrypt');
 const dns = require('dns');
 const net = require('net');
 const { z } = require('zod');
+const { getCache, setCache } = require('../../utils/cache');
+const {
+  USERNAME_RULE_MESSAGE,
+  normalizeUsername,
+  getUsernameValidationError,
+  isValidUsername,
+} = require('../../utils/usernamePolicy');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const supabaseAuth = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
@@ -22,7 +29,6 @@ const otpExpiryMinutes = Number(process.env.OTP_EXPIRY_MINUTES || 10);
 const signupTokenTtlMinutes = Number(process.env.SIGNUP_TOKEN_TTL_MINUTES || 20);
 const resetTokenTtlMinutes = Number(process.env.RESET_TOKEN_TTL_MINUTES || 20);
 const signupTokenSecret = process.env.SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
-const usernamePattern = /^[a-z0-9_.-]{3,20}$/;
 const namePattern = /^[A-Za-z][A-Za-z' -]{0,48}$/;
 const minPasswordLength = 8;
 const minPasswordScore = 4;
@@ -69,7 +75,10 @@ const completeSignupSchema = z.object({
   first_name: z.string().trim().min(1).max(50).regex(namePattern, 'Invalid first name'),
   middle_name: z.string().trim().max(50).regex(/^[A-Za-z' -]*$/, 'Invalid middle name').optional().or(z.literal('')),
   last_name: z.string().trim().min(1).max(50).regex(namePattern, 'Invalid last name'),
-  username: z.string().trim().toLowerCase().regex(usernamePattern, 'Invalid username'),
+  username: z.string()
+    .trim()
+    .transform(normalizeUsername)
+    .refine(isValidUsername, USERNAME_RULE_MESSAGE),
   password: passwordSchema,
 });
 
@@ -158,10 +167,11 @@ async function getProfileByEmail(email, columns) {
 }
 
 async function getProfileByUsername(username, columns) {
+  const normalized = normalizeUsername(username);
   return supabase
     .from('profiles')
     .select(columns)
-    .eq('username', username)
+    .eq('username', normalized)
     .maybeSingle();
 }
 
@@ -170,6 +180,33 @@ async function getProfileByIdentifier(identifier, columns) {
   return normalized.includes('@')
     ? getProfileByEmail(normalized, columns)
     : getProfileByUsername(normalized, columns);
+}
+
+async function getPasswordReuseError(userId, newPassword, currentHash = null) {
+  if (currentHash) {
+    const isSameAsCurrent = await bcrypt.compare(newPassword, currentHash);
+    if (isSameAsCurrent) {
+      return 'Choose a new password that is different from your current password.';
+    }
+  }
+
+  const { data: passwordHistory, error: historyError } = await supabase
+    .from('password_history')
+    .select('password_hash')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(8);
+
+  if (historyError) throw historyError;
+
+  for (const entry of passwordHistory || []) {
+    const wasUsedBefore = await bcrypt.compare(newPassword, entry.password_hash);
+    if (wasUsedBefore) {
+      return 'Please choose a password you have not used before.';
+    }
+  }
+
+  return null;
 }
 
 async function replaceOtpCode({ email, code, purpose, expiresAt, ipAddress }) {
@@ -481,16 +518,27 @@ exports.verifySignupOtp = async (req, res) => {
 
 exports.checkUsername = async (req, res) => {
   try {
-    const username = String(req.query.username || '').trim().toLowerCase();
+    const username = normalizeUsername(req.query.username);
     if (!username) return res.status(400).json({ error: 'Username is required' });
-    if (!usernamePattern.test(username)) {
-      return res.status(400).json({ error: 'Username must be 3-20 characters and contain only letters, numbers, _ . -' });
+
+    const usernameError = getUsernameValidationError(username);
+    if (usernameError) {
+      return res.status(400).json({ error: usernameError });
+    }
+
+    const cacheKey = `auth:username:${username}`;
+    const cached = getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json({ available: cached.available });
     }
 
     const { data: existingUser, error } = await getProfileByUsername(username, 'id');
     if (error) throw error;
 
-    res.status(200).json({ available: !existingUser });
+    const available = !existingUser;
+    setCache(cacheKey, { available }, 30);
+
+    res.status(200).json({ available });
   } catch (error) {
     console.error('Username Check Error:', error);
     res.status(500).json({ error: 'Failed to check username' });
@@ -522,7 +570,10 @@ exports.completeSignup = async (req, res) => {
 
     const { data: existingUsername, error: usernameError } = await getProfileByUsername(username, 'id');
     if (usernameError) throw usernameError;
-    if (existingUsername) return res.status(409).json({ error: 'This username is already taken.' });
+    if (existingUsername) {
+      setCache(`auth:username:${username}`, { available: false }, 30);
+      return res.status(409).json({ error: 'This username is already taken.' });
+    }
 
     const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
       email,
@@ -532,7 +583,7 @@ exports.completeSignup = async (req, res) => {
 
     if (authError) {
       if (authError.message.toLowerCase().includes('already registered')) {
-        console.log(`Auth user already exists for ${email}. Proceeding to fix profile.`);
+        console.info('Auth user already exists during signup completion. Attempting profile recovery.');
       } else {
         throw authError;
       }
@@ -566,6 +617,7 @@ exports.completeSignup = async (req, res) => {
 
     if (profileError) throw profileError;
 
+    setCache(`auth:username:${username}`, { available: false }, 30);
     await supabase.from('otp_codes').delete().eq('email', email).eq('purpose', 'signup');
     res.status(201).json({ message: 'Account created successfully!' });
   } catch (error) {
@@ -726,12 +778,15 @@ exports.resetPassword = async (req, res) => {
     if (parsed.error) return res.status(400).json({ error: parsed.error });
 
     const { identifier, password: rawPassword, reset_token: resetToken } = parsed.data;
-    const { data: profile, error: userError } = await getProfileByIdentifier(identifier, 'id, email');
+    const { data: profile, error: userError } = await getProfileByIdentifier(identifier, 'id, email, password_hash');
     if (userError) throw userError;
     if (!profile) return res.status(404).json({ error: 'User not found' });
     if (!verifyProofToken(resetToken, profile.email, 'password-reset')) {
       return res.status(403).json({ error: 'Reset verification has expired. Please request a new code.' });
     }
+
+    const reuseError = await getPasswordReuseError(profile.id, rawPassword, profile.password_hash);
+    if (reuseError) return res.status(400).json({ error: reuseError });
 
     const hashedPassword = await bcrypt.hash(rawPassword, 12);
 
@@ -740,6 +795,12 @@ exports.resetPassword = async (req, res) => {
 
     const { error: profileError } = await supabase.from('profiles').update({ password_hash: hashedPassword }).eq('id', profile.id);
     if (profileError) throw profileError;
+
+    const { error: historyInsertError } = await supabase.from('password_history').insert({
+      user_id: profile.id,
+      password_hash: hashedPassword,
+    });
+    if (historyInsertError) throw historyInsertError;
 
     await supabase.from('otp_codes').delete().eq('email', profile.email).eq('purpose', 'password_reset');
     res.status(200).json({ message: 'Password reset successfully!' });
@@ -779,26 +840,8 @@ exports.changePassword = async (req, res) => {
       return res.status(400).json({ error: 'Your current password is incorrect.' });
     }
 
-    const isSameAsCurrent = await bcrypt.compare(newPassword, profile.password_hash);
-    if (isSameAsCurrent) {
-      return res.status(400).json({ error: 'Choose a new password that is different from your current password.' });
-    }
-
-    const { data: passwordHistory, error: historyError } = await supabase
-      .from('password_history')
-      .select('password_hash')
-      .eq('user_id', req.user.id)
-      .order('created_at', { ascending: false })
-      .limit(8);
-
-    if (historyError) throw historyError;
-
-    for (const entry of passwordHistory || []) {
-      const wasUsedBefore = await bcrypt.compare(newPassword, entry.password_hash);
-      if (wasUsedBefore) {
-        return res.status(400).json({ error: 'Please choose a password you have not used before.' });
-      }
-    }
+    const reuseError = await getPasswordReuseError(req.user.id, newPassword, profile.password_hash);
+    if (reuseError) return res.status(400).json({ error: reuseError });
 
     const nextHash = await bcrypt.hash(newPassword, 12);
 

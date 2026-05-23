@@ -1,18 +1,9 @@
 import { Link } from 'react-router-dom';
 import styles from './LandingFooter.module.css';
 
-const COL_A = [
-  { label: 'Study Guides', href: '/register' },
-  { label: 'Flashcards', href: '/register' },
-  { label: 'Quizzes', href: '/register' },
-  { label: 'Narrator Tools', href: '/register' },
-];
-
-const COL_B = [
+const FOOTER_LINKS = [
   { label: 'Privacy Policy', href: '/privacy' },
   { label: 'Terms of Service', href: '/terms' },
-  { label: 'Accessibility', href: '/register' },
-  { label: 'Admin Dashboard', href: '/login' },
 ];
 
 export default function LandingFooter() {
@@ -34,17 +25,8 @@ export default function LandingFooter() {
             </div>
           </div>
 
-          {/* Link columns */}
-          <nav aria-label="Footer navigation column 1" className={styles.linkCol}>
-            {COL_A.map((item, i) => (
-              <Link key={i} to={item.href} className={styles.link}>
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-
-          <nav aria-label="Footer navigation column 2" className={styles.linkCol}>
-            {COL_B.map((item, i) => (
+          <nav aria-label="Footer navigation" className={styles.linkCol}>
+            {FOOTER_LINKS.map((item, i) => (
               <Link key={i} to={item.href} className={styles.link}>
                 {item.label}
               </Link>

@@ -1,6 +1,25 @@
 .wrapper {
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+.stepProgress {
+  position: absolute;
+  inset: -0.9rem 0 auto;
+  height: 0.25rem;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--card-border);
+}
+
+.stepProgress span {
+  display: block;
+  height: 100%;
+  width: 38%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: stepProgress 0.9s ease-in-out infinite alternate;
 }
 
 /* Step indicator */
@@ -59,4 +78,9 @@
 /* Content slide area */
 .content {
   overflow: hidden;
+}
+
+@keyframes stepProgress {
+  from { transform: translateX(-35%); }
+  to { transform: translateX(175%); }
 }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X, LogOut, Settings, LayoutDashboard, Shield } from 'lucide-react';
 import { useAuth } from '../../features/auth/context/AuthContext';
-import { useAccessibility } from '../../features/accessibility/context/AccessibilityContext';
+import { useAccessibility } from '../../features/accessibility/context/useAccessibility';
 import AccessibilityPanel from '../../features/accessibility/components/AccessibilityPanel';
 
 export default function Navbar() {

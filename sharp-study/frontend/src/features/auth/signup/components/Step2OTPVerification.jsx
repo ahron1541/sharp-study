@@ -75,6 +75,7 @@ export default function Step2OTPVerification({ email, onBack, onVerified, onBoot
               >
                 <span className={styles.inlineSpinner} aria-hidden="true" />
                 {sending ? t('sendingHint') : 'Checking your verification code...'}
+                <span className={styles.inlineProgress} aria-hidden="true"><span /></span>
               </motion.div>
             )}
           </AnimatePresence>

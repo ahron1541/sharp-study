@@ -5,6 +5,8 @@ const { z } = require('zod');
 const { requireAdmin } = require('../../middleware/auth.middleware');
 const { supabaseAdmin } = require('../../config/supabase');
 const { sanitizePlainText, sanitizeStudyGuideContent } = require('../../utils/studyGuideSanitize');
+const { USERNAME_RULE_MESSAGE, normalizeUsername, isValidUsername } = require('../../utils/usernamePolicy');
+const { setCache } = require('../../utils/cache');
 
 const router = express.Router();
 
@@ -24,7 +26,7 @@ const ADMIN_PASSWORD_RULES = [
 
 const createUserSchema = z.object({
   email: z.string().trim().email().max(254).transform((value) => value.toLowerCase()),
-  username: z.string().trim().min(3).max(20).regex(/^[a-z0-9_.-]+$/, 'Username can only contain lowercase letters, numbers, periods, hyphens, and underscores.'),
+  username: z.string().trim().transform(normalizeUsername).refine(isValidUsername, USERNAME_RULE_MESSAGE),
   first_name: z.string().trim().min(1).max(50),
   middle_name: z.string().trim().max(50).optional().default(''),
   last_name: z.string().trim().min(1).max(50),
@@ -35,7 +37,7 @@ const createUserSchema = z.object({
 const updateUserSchema = z.object({
   role: z.enum(['student', 'admin']).optional(),
   is_blocked: z.boolean().optional(),
-  username: z.string().trim().min(3).max(20).regex(/^[a-z0-9_.-]+$/, 'Username can only contain lowercase letters, numbers, periods, hyphens, and underscores.').optional(),
+  username: z.string().trim().transform(normalizeUsername).refine(isValidUsername, USERNAME_RULE_MESSAGE).optional(),
   first_name: z.string().trim().min(1).max(50).optional(),
   middle_name: z.string().trim().max(50).optional(),
   last_name: z.string().trim().min(1).max(50).optional(),
@@ -437,6 +439,8 @@ router.post('/users', async (req, res) => {
       throw profileError;
     }
 
+    setCache(`auth:username:${payload.username}`, { available: false }, 30);
+
     await logAuditEvent(req.user.id, 'admin.user.created', {
       target_user_id: authUser.user.id,
       target_email: payload.email,
@@ -517,6 +521,8 @@ router.patch('/users/:id', async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    setCache(`auth:username:${data.username}`, { available: false }, 30);
 
     await logAuditEvent(req.user.id, 'admin.user.updated', {
       target_user_id: targetId,

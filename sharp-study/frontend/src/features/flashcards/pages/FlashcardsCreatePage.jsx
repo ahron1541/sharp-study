@@ -24,6 +24,7 @@ import Modal from '../../../shared/components/Modal';
 import { apiRequest } from '../../../config/api';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
 import StudyNotice from '../../../shared/components/StudyNotice';
+import { FlashcardsBuilderSkeleton } from '../../../shared/components/PageSkeletons';
 
 const CARD_PAGE_SIZE = 5;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -851,34 +852,5 @@ function SaveProgressDonut({ progress = 0, active = false, size = 'md' }) {
         <span className={`relative font-black text-[color:var(--color-text)] ${textSize}`}>{safeProgress}</span>
       )}
     </span>
-  );
-}
-
-function FlashcardsBuilderSkeleton() {
-  return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <div className="h-4 w-52 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
-      <section className="mt-4 rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]">
-            <SaveProgressDonut progress={42} active size="lg" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xl font-black text-[color:var(--color-text)]">Loading flashcard editor</p>
-            <p className="mt-2 text-sm font-semibold text-[color:var(--color-text-muted)]">
-              Preparing the set, card difficulties, and saved draft state.
-            </p>
-          </div>
-        </div>
-        <div className="mt-6 h-10 w-72 animate-pulse rounded-2xl bg-[color:var(--color-surface-2)]" />
-        <div className="mt-6 h-14 animate-pulse rounded-xl bg-[color:var(--color-surface-2)]" />
-        <div className="mt-3 h-14 animate-pulse rounded-xl bg-[color:var(--color-surface-2)]" />
-      </section>
-      <section className="mt-5 space-y-4">
-        {[0, 1, 2].map((item) => (
-          <div key={item} className="h-44 animate-pulse rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]" />
-        ))}
-      </section>
-    </main>
   );
 }

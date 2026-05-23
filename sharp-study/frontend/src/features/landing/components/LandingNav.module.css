@@ -5,21 +5,41 @@
    ───────────────────────────────────── */
 
 .nav {
+  --nav-bg: rgba(248, 250, 252, 0.96);
+  --nav-text: #071226;
+  --nav-muted-border: #dbe4ef;
+  --nav-hover: #eef4fb;
+  --nav-primary-bg: #071226;
+  --nav-primary-text: #ffffff;
+
   position: sticky;
   top: 0;
   z-index: 40;
-  background-color: var(--bg-color);
-  border-bottom: 1px solid var(--card-border);
+  background-color: var(--nav-bg);
+  border-bottom: 1px solid var(--nav-muted-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+[data-theme="dark"] .nav,
+[data-display="dark"] .nav {
+  --nav-bg: rgba(10, 15, 29, 0.96);
+  --nav-text: #f8fafc;
+  --nav-muted-border: #253149;
+  --nav-hover: #182236;
+  --nav-primary-bg: #d9f99d;
+  --nav-primary-text: #10210f;
 }
 
 .inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  max-width: 72rem;
+  gap: var(--space-md);
+  max-width: 78rem;
   margin: 0 auto;
-  padding: 0 var(--space-xl);
-  height: 3.5rem;
+  padding: 0 clamp(1rem, 4vw, 2.5rem);
+  min-height: 4.25rem;
 }
 
 /* Logo */
@@ -30,10 +50,11 @@
   text-decoration: none;
   font-size: var(--font-size-lg);
   font-weight: 800;
-  color: var(--text-color);
-  letter-spacing: -0.02em;
+  color: var(--nav-text);
+  letter-spacing: 0;
   border-radius: var(--radius-sm);
   outline: none;
+  min-width: 0;
 }
 
 .logo:focus-visible {
@@ -42,9 +63,14 @@
 }
 
 .logoImg { 
-  max-height: 2.5rem;
-  width: auto;
+  width: clamp(7rem, 13vw, 9.25rem);
+  max-height: 2.6rem;
   display: block;
+}
+
+[data-theme="dark"] .logoImg,
+[data-display="dark"] .logoImg {
+  filter: brightness(0) invert(1);
 }
 
 .logoIcon { color: var(--accent); display: flex; align-items: center; }
@@ -54,7 +80,8 @@
 .actions {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: clamp(0.35rem, 1.2vw, 0.75rem);
+  flex-shrink: 0;
 }
 
 /* Theme toggle button */
@@ -64,29 +91,29 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: none;
-  border: 1.5px solid var(--card-border);
+  background: transparent;
+  border: 1.5px solid var(--nav-muted-border);
   border-radius: 50%;
-  color: var(--text-color);
+  color: var(--nav-text);
   cursor: pointer;
   transition: background-color 0.15s, border-color 0.15s;
   outline: none;
 }
 
-.themeBtn:hover { background-color: var(--card-border); }
+.themeBtn:hover { background-color: var(--nav-hover); }
 
 .themeBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Nav buttons */
 .loginBtn {
   height: 2.25rem;
-  padding: 0 1.25rem;
+  padding: 0 clamp(0.85rem, 2vw, 1.35rem);
   border-radius: var(--radius-pill);
-  border: 1.5px solid var(--card-border);
-  background: none;
+  border: 1.5px solid var(--nav-muted-border);
+  background: transparent;
   font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: var(--text-color);
+  font-weight: 800;
+  color: var(--nav-text);
   cursor: pointer;
   text-decoration: none;
   display: inline-flex;
@@ -95,69 +122,70 @@
   outline: none;
 }
 
-.loginBtn:hover { background-color: var(--card-border); }
+.loginBtn:hover { background-color: var(--nav-hover); }
 
 .loginBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .signupBtn {
   height: 2.25rem;
-  padding: 0 1.25rem;
+  padding: 0 clamp(0.9rem, 2vw, 1.4rem);
   border-radius: var(--radius-pill);
-  border: 1.5px solid var(--text-color);
-  background: var(--text-color);
+  border: 1.5px solid var(--nav-primary-bg);
+  background: var(--nav-primary-bg);
   font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: var(--bg-color);
+  font-weight: 900;
+  color: var(--nav-primary-text);
   cursor: pointer;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
-  transition: opacity 0.15s;
+  box-shadow: 0 10px 24px rgba(7, 18, 38, 0.16);
+  transition: opacity 0.15s, transform 0.15s;
   outline: none;
 }
 
-.signupBtn:hover { opacity: 0.85; }
+.signupBtn:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
 
 .signupBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Mobile: hide text labels, show only icons on very small screens */
 @media (max-width: 640px) {
   .inner {
-    padding: 0 var(--space-lg);
+    min-height: 3.75rem;
   }
   
   .logoImg { 
-    max-height: 2rem;
+    max-height: 2.1rem;
   }
 }
 
 @media (max-width: 480px) {
   .inner {
-    height: 3rem;
-    padding: 0 var(--space-md);
+    gap: var(--space-sm);
+    padding: 0 0.75rem;
   }
   
   .logoImg { 
     max-height: 1.75rem;
-  }
-  
-  .loginBtnText, .signupBtnText {
-    display: none;
+    max-width: 5.6rem;
   }
   
   .themeBtn {
-    width: 2rem;
-    height: 2rem;
+    width: 2.05rem;
+    height: 2.05rem;
   }
   
   .loginBtn, .signupBtn {
-    height: 2rem;
-    padding: 0 0.75rem;
+    height: 2.05rem;
+    padding: 0 0.65rem;
+    font-size: 0.78rem;
   }
 }
 
-@media (min-width: 768px) {
-  .logoImg { 
-    max-height: 2.75rem;
+@media (max-width: 360px) {
+  .loginBtn {
+    display: none;
   }
 }

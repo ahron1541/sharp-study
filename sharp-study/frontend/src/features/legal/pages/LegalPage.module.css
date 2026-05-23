@@ -1,0 +1,136 @@
+.page {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-color) 88%, white) 0%, var(--bg-color) 100%);
+  color: var(--text-color);
+}
+
+.main {
+  width: min(100%, 64rem);
+  margin: 0 auto;
+  padding: clamp(2rem, 6vw, 4.5rem) clamp(1rem, 4vw, 2rem);
+}
+
+.hero {
+  display: grid;
+  gap: var(--space-md);
+  margin-bottom: clamp(2rem, 5vw, 3.5rem);
+}
+
+.eyebrow {
+  width: fit-content;
+  margin: 0;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--card-border));
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
+  color: var(--text-color);
+  font-size: var(--font-size-xs);
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  color: var(--text-color);
+  font-size: clamp(2.25rem, 6vw, 4rem);
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.05;
+}
+
+.intro {
+  max-width: 46rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: clamp(1rem, 1.5vw, 1.1rem);
+  line-height: 1.7;
+}
+
+.updated {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  font-weight: 800;
+}
+
+.content {
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.section {
+  padding: clamp(1.1rem, 3vw, 1.5rem);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-inner);
+  background: var(--card-bg);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+.section h2 {
+  margin: 0 0 var(--space-sm);
+  color: var(--text-color);
+  font-size: clamp(1.2rem, 2.5vw, 1.55rem);
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.section p,
+.section li {
+  color: var(--muted);
+  font-size: var(--font-size-base);
+  line-height: 1.75;
+}
+
+.section p {
+  margin: 0;
+}
+
+.section p + p {
+  margin-top: var(--space-sm);
+}
+
+.section ul {
+  display: grid;
+  gap: var(--space-sm);
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.linkRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-xl);
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--card-border);
+  color: var(--text-color);
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.linkPrimary {
+  border-color: var(--text-color);
+  background: var(--text-color);
+  color: var(--bg-color);
+}
+
+[data-theme="dark"] .section,
+[data-display="dark"] .section {
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.2);
+}
+
+@media (max-width: 560px) {
+  .linkRow,
+  .link {
+    width: 100%;
+  }
+}

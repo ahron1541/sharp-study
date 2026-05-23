@@ -5,12 +5,31 @@ const authController = require('./auth.controller');
 
 // 1. IMPORT THE MISSING MIDDLEWARE HERE
 const { requireAuth } = require('../../middleware/auth.middleware');
+const { ipKeyGenerator } = rateLimit;
+
+function normalizeLimiterIdentifier(req) {
+  return String(
+    req.user?.id ||
+    req.body?.identifier ||
+    req.body?.email ||
+    req.body?.username ||
+    req.query?.username ||
+    ''
+  ).trim().toLowerCase();
+}
+
+function authLimiterKey(req) {
+  const identifier = normalizeLimiterIdentifier(req);
+  const ipKey = ipKeyGenerator(req.ip);
+  return identifier ? `${ipKey}:${identifier}` : ipKey;
+}
 
 const otpRequestLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   limit: Number(process.env.OTP_MAX_REQUESTS_PER_WINDOW || 5),
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: authLimiterKey,
   message: { error: 'Too many verification requests. Please wait a bit before trying again.' },
 });
 
@@ -19,7 +38,26 @@ const loginLimiter = rateLimit({
   limit: Number(process.env.MAX_LOGIN_ATTEMPTS || 8),
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: authLimiterKey,
   message: { error: 'Too many login attempts. Please try again later.' },
+});
+
+const authActionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.AUTH_ACTION_MAX_REQUESTS_PER_WINDOW || 30),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: authLimiterKey,
+  message: { error: 'Too many account requests. Please wait a bit before trying again.' },
+});
+
+const usernameCheckLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: Number(process.env.USERNAME_CHECK_MAX_REQUESTS_PER_WINDOW || 120),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
+  message: { error: 'Too many username checks. Please slow down and try again.' },
 });
 
 const PROTECTED_PREFERENCE_KEYS = new Set(['streak', 'daily_goals']);
@@ -32,20 +70,26 @@ function sanitizePreferenceUpdate(preferences) {
 }
 
 // The 4-Step Signup Flow
+router.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  res.set('Pragma', 'no-cache');
+  next();
+});
+
 router.post('/signup/request-otp', otpRequestLimiter, authController.requestSignupOtp);
-router.post('/signup/verify-otp', authController.verifySignupOtp);
-router.get('/signup/check-username', authController.checkUsername);
-router.post('/signup/complete', authController.completeSignup);
+router.post('/signup/verify-otp', authActionLimiter, authController.verifySignupOtp);
+router.get('/signup/check-username', usernameCheckLimiter, authController.checkUsername);
+router.post('/signup/complete', authActionLimiter, authController.completeSignup);
 
 // Login
 router.post('/login', loginLimiter, authController.login);
 
 // --- FORGOT PASSWORD FLOW (NEW) ---
 router.post('/forgot-password/request-otp', otpRequestLimiter, authController.requestPasswordReset);
-router.post('/forgot-password/verify-otp', authController.verifyResetOtp);
-router.post('/forgot-password/reset', authController.resetPassword);
-router.post('/change-password', requireAuth, authController.changePassword);
-router.post('/email-verification/resend', requireAuth, authController.resendEmailVerification);
+router.post('/forgot-password/verify-otp', authActionLimiter, authController.verifyResetOtp);
+router.post('/forgot-password/reset', authActionLimiter, authController.resetPassword);
+router.post('/change-password', requireAuth, authActionLimiter, authController.changePassword);
+router.post('/email-verification/resend', requireAuth, authActionLimiter, authController.resendEmailVerification);
 
 // GET  /api/auth/preferences  — fetch current user's preferences
 router.get('/preferences', requireAuth, async (req, res) => {

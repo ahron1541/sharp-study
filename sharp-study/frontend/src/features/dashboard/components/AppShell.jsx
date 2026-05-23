@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import TopBar  from './TopBar';
-import Spinner from '../../../shared/components/Spinner';
+import { RouteTransitionSkeleton } from '../../../shared/components/PageSkeletons';
 
 const COLLAPSED_KEY = 'sharp-study-sidebar-collapsed';
 const ROUTE_LOADING_MIN_MS = 260;
@@ -102,31 +102,7 @@ export default function AppShell() {
           aria-busy={routeLoading}
         >
           {routeLoading ? (
-            <div className="pointer-events-none absolute inset-0 z-20">
-              <div className="absolute inset-x-0 top-0 h-1 overflow-hidden bg-surface-2">
-                <div className="h-full w-2/5 animate-pulse rounded-full bg-accent" />
-              </div>
-              <div className="absolute inset-0 bg-bg/72 backdrop-blur-[1px]">
-                <div className="mx-auto flex h-full max-w-7xl items-start px-4 py-6 sm:px-6 lg:px-8">
-                  <div className="w-full rounded-[2rem] border border-border bg-surface/90 p-6 shadow-card">
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-2">
-                        <Spinner size="sm" label={routeLabel} />
-                      </div>
-                      <div>
-                        <p className="text-base font-black text-text">{routeLabel}</p>
-                        <p className="text-sm text-text-muted">Preparing the next page for you.</p>
-                      </div>
-                    </div>
-                    <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      {Array.from({ length: 6 }).map((_, index) => (
-                        <div key={index} className="h-32 animate-pulse rounded-[1.5rem] bg-surface-2" />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <RouteTransitionSkeleton pathname={location.pathname} label={routeLabel} />
           ) : null}
           <Outlet />
         </main>

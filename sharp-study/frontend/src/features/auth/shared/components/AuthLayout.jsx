@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { useAccessibility } from '../../../accessibility/context/AccessibilityContext';
+import { useAccessibility } from '../../../accessibility/context/useAccessibility';
 import styles from './AuthLayout.module.css';
 import backButtonDark from '../../../../assets/icons/buttons/back_button_dark_mode.svg';
 import backButtonLight from '../../../../assets/icons/buttons/back_button_light_mode.svg';
@@ -85,6 +85,11 @@ export default function AuthLayout({ children, busy = false, busyLabel = 'Prepar
             </div>
             <p className={styles.busyTitle}>{busyLabel}</p>
             <p className={styles.busyText}>Please wait a moment. Actions are locked to keep your account safe.</p>
+            <div className={styles.busySkeleton} aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
           </div>
         </div>
       )}

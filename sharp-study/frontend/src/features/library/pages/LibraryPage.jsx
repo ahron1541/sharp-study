@@ -14,6 +14,7 @@ import {
 import toast from 'react-hot-toast';
 
 import Modal from '../../../shared/components/Modal';
+import { MaterialCollectionSkeleton } from '../../../shared/components/PageSkeletons';
 import { API_URL } from '../../../config/api';
 import { useAuth } from '../../auth/context/AuthContext';
 import MaterialTypeIcon from '../components/MaterialTypeIcon';
@@ -578,6 +579,10 @@ export default function LibraryPage() {
 
   const totalVisible = counts[activeType] || 0;
 
+  if (loading && !showCreateModal && !saving && !actionIntent) {
+    return <MaterialCollectionSkeleton />;
+  }
+
   return (
     <>
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 lg:px-8">
@@ -661,7 +666,7 @@ export default function LibraryPage() {
           {loading ? (
             <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {Array.from({ length: PAGE_SIZE }).map((_, index) => (
-                <div key={index} className="h-44 rounded-[1.8rem] bg-surface-2 animate-pulse" />
+                <div key={index} className="sharp-skeleton-shimmer h-44 rounded-[1.8rem]" />
               ))}
             </div>
           ) : items.length === 0 ? (

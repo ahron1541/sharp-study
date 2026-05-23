@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import Spinner from '../../../shared/components/Spinner';
+import { FullPageShellSkeleton } from '../../../shared/components/PageSkeletons';
 import { applyPreferences } from '../../theme/hooks/useTheme';
 import { DEFAULT_PREFERENCES } from '../../theme/constants/themes';
 
@@ -122,11 +122,8 @@ export function AuthProvider({ children }) {
 
   // 1. Initial Load State (Handles F5 hard refreshes)
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-bg, #ffffff)' }}>
-        <Spinner size="lg" label={loadingLabel} />
-      </div>
-    );
+    const pathname = typeof window !== 'undefined' ? window.location.pathname : '/dashboard';
+    return <FullPageShellSkeleton pathname={pathname} label={loadingLabel} />;
   }
 
   // 2. We completely removed the `isTransitioning` overlay here!

@@ -32,6 +32,7 @@ import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
 import StudyNotice from '../../../shared/components/StudyNotice';
+import { QuizPageSkeleton } from '../../../shared/components/PageSkeletons';
 
 const SESSION_STORAGE_PREFIX = 'sharp-study-quiz-session';
 const CONTENT_STORAGE_PREFIX = 'sharp-study-quiz-content';
@@ -822,7 +823,7 @@ export default function QuizPage() {
   };
 
   if (loading) {
-    return <QuizSkeleton />;
+    return <QuizPageSkeleton />;
   }
 
   if (error && !quiz) {
@@ -1700,20 +1701,32 @@ function AttemptLog({ attempts }) {
       <div className="mt-4 space-y-3">
         {visibleAttempts.length ? visibleAttempts.map((attempt) => {
           const difficulty = getQuizDifficulty(attempt.difficulty);
+          const percent = Number(attempt.percent || 0);
+          const scoreTone = percent >= 75
+            ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-400'
+            : percent >= 50
+              ? 'border-amber-400/30 bg-amber-500/10 text-amber-400'
+              : 'border-rose-400/30 bg-rose-500/10 text-rose-400';
+
           return (
-            <div key={attempt.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3">
+            <div key={attempt.id} className="grid grid-cols-1 gap-3 rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
               <div className="min-w-0">
-                <p className="truncate text-sm font-black text-[color:var(--color-text)]">
+                <p className="break-words text-sm font-black leading-5 text-[color:var(--color-text)]">
                   {new Date(attempt.created_at).toLocaleDateString()} · {attempt.session_type === 'practice' ? 'Practice' : 'Test'}
                 </p>
-                <p className="mt-1 text-xs font-semibold text-[color:var(--color-text-muted)]">
+                <p className="mt-1 break-words text-xs font-semibold leading-5 text-[color:var(--color-text-muted)]">
                   {attempt.score}/{attempt.total} · {formatDuration(attempt.duration_seconds)}{attempt.pending ? ' · pending sync' : ''}
                 </p>
                 <span className="mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-black" style={{ background: `${difficulty.color}20`, color: difficulty.color }}>
                   {difficulty.label}
                 </span>
               </div>
-              <span className="rounded-full bg-[color:var(--color-surface)] px-3 py-2 text-sm font-black text-[color:var(--color-text)]">{attempt.percent}%</span>
+              <span
+                className={`inline-flex h-11 min-w-16 shrink-0 items-center justify-center justify-self-start rounded-2xl border px-3 text-sm font-black leading-none sm:h-14 sm:min-w-[4.5rem] sm:justify-self-end sm:text-base ${scoreTone}`}
+                aria-label={`${percent}% score`}
+              >
+                {percent}%
+              </span>
             </div>
           );
         }) : (
@@ -1815,26 +1828,5 @@ function AnswerPill({ label, value, tone }) {
       <p className="text-xs font-black uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">{label}</p>
       <p className={`mt-1 text-sm font-black leading-6 ${color}`}>{value}</p>
     </div>
-  );
-}
-
-function QuizSkeleton() {
-  return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <div className="flex items-center gap-3">
-        <div className="quiz-donut" aria-hidden="true" />
-        <p className="text-sm font-black text-[color:var(--color-text-muted)]">Loading quiz and restoring saved progress...</p>
-      </div>
-      <section className="mt-4 rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6">
-        <div className="h-5 w-32 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
-        <div className="mt-4 h-10 w-3/4 animate-pulse rounded-2xl bg-[color:var(--color-surface-2)]" />
-        <div className="mt-4 h-4 w-1/2 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
-      </section>
-      <div className="mt-6 grid gap-5 lg:grid-cols-2">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="h-40 animate-pulse rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]" />
-        ))}
-      </div>
-    </main>
   );
 }

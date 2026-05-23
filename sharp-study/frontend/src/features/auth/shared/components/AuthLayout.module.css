@@ -210,7 +210,35 @@
   line-height: 1.5;
 }
 
+.busySkeleton {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: var(--space-md);
+}
+
+.busySkeleton span {
+  height: 0.65rem;
+  border-radius: var(--radius-pill);
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--card-border) 72%, transparent) 0%,
+      color-mix(in srgb, var(--accent) 24%, var(--card-border)) 45%,
+      color-mix(in srgb, var(--card-border) 72%, transparent) 80%
+    );
+  background-size: 220% 100%;
+  animation: authSkeleton 1.25s ease-in-out infinite;
+}
+
+.busySkeleton span:nth-child(2) { width: 82%; }
+.busySkeleton span:nth-child(3) { width: 58%; }
+
 @keyframes authProgress {
   from { transform: translateX(-30%); }
   to { transform: translateX(155%); }
+}
+
+@keyframes authSkeleton {
+  from { background-position: 160% 0; }
+  to { background-position: -160% 0; }
 }

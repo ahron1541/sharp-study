@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { MdLightMode, MdDarkMode } from 'react-icons/md';
-import { useAccessibility } from '../../../features/accessibility/context/AccessibilityContext';
+import { useAccessibility } from '../../../features/accessibility/context/useAccessibility';
 import styles from './LandingNav.module.css';
 
 export default function LandingNav() {

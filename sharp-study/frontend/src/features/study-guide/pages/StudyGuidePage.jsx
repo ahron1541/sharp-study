@@ -9,6 +9,7 @@ import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { sanitizeHtml } from '../../../shared/utils/sanitize';
 import StudyNotice from '../../../shared/components/StudyNotice';
+import { StudyGuidePageSkeleton } from '../../../shared/components/PageSkeletons';
 import StudyGuideEditor from '../components/StudyGuideEditor';
 import StudyGuideSidebar from '../components/StudyGuideSidebar';
 import SelectionToolbar from '../components/SelectionToolbar';
@@ -100,7 +101,6 @@ export default function StudyGuidePage() {
   const [savedContent, setSavedContent] = useState(() => cachedContent?.savedContent || '');
   const [content, setContent] = useState(() => cachedContent?.content || '');
   const [activeTab, setActiveTab] = useState('guide');
-  const [showLoadingSkeleton, setShowLoadingSkeleton] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeSectionId, setActiveSectionId] = useState('');
@@ -131,9 +131,6 @@ export default function StudyGuidePage() {
 
   useEffect(() => {
     let isMounted = true;
-    const skeletonTimer = window.setTimeout(() => {
-      if (isMounted) setShowLoadingSkeleton(true);
-    }, 250);
 
     const loadGuide = async () => {
       const cached = readStudyGuideContentCache(id);
@@ -146,8 +143,6 @@ export default function StudyGuidePage() {
         setQuizId(cached.quizId || '');
         lastSavedContentRef.current = cached.savedContent;
         setLoading(false);
-        window.clearTimeout(skeletonTimer);
-        setShowLoadingSkeleton(false);
       } else {
         setLoading(true);
       }
@@ -159,8 +154,6 @@ export default function StudyGuidePage() {
         .single();
 
       if (!isMounted) return;
-      window.clearTimeout(skeletonTimer);
-      setShowLoadingSkeleton(false);
 
       if (error || !data) {
         setGuide(null);
@@ -252,7 +245,6 @@ export default function StudyGuidePage() {
 
     return () => {
       isMounted = false;
-      window.clearTimeout(skeletonTimer);
     };
   }, [id, supabase]);
 
@@ -931,19 +923,7 @@ export default function StudyGuidePage() {
   };
 
   if (loading) {
-    return showLoadingSkeleton ? (
-      <StudyGuideSkeleton />
-    ) : (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="flex flex-col items-center gap-4 rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-8 py-10 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
-          <div className="relative flex h-14 w-14 items-center justify-center">
-            <div className="absolute inset-0 animate-ping rounded-full bg-[color:var(--color-accent)]/20" />
-            <Loader2 className="relative animate-spin text-[color:var(--color-accent)]" size={28} />
-          </div>
-          <p className="text-sm font-bold text-[color:var(--color-text)]">Loading study guide...</p>
-        </div>
-      </div>
-    );
+    return <StudyGuidePageSkeleton />;
   }
 
   if (!guide) {
@@ -1331,44 +1311,5 @@ export default function StudyGuidePage() {
         </div>
       </Modal>
     </>
-  );
-}
-
-function StudyGuideSkeleton() {
-  const card = 'study-guide-skeleton-shimmer animate-pulse rounded-[1.5rem] bg-[color:var(--color-surface)]/80';
-
-  return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <div className="study-guide-skeleton-shimmer mb-4 h-4 w-48 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
-      <section className="rounded-[2.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)] sm:p-6">
-        <div className="space-y-4">
-          <div className="study-guide-skeleton-shimmer h-4 w-24 animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
-          <div className="study-guide-skeleton-shimmer h-10 w-[min(42rem,80vw)] animate-pulse rounded-2xl bg-[color:var(--color-surface-2)]" />
-          <div className="study-guide-skeleton-shimmer h-4 w-[min(36rem,70vw)] animate-pulse rounded-full bg-[color:var(--color-surface-2)]" />
-        </div>
-      </section>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
-          <div className="study-guide-skeleton-shimmer h-4 w-24 rounded-full bg-[color:var(--color-surface-2)] animate-pulse" />
-          <div className="mt-4 space-y-3">
-            {[1, 2, 3, 4].map((item) => (
-              <div key={item} className="study-guide-skeleton-shimmer h-14 rounded-2xl bg-[color:var(--color-surface-2)] animate-pulse" />
-            ))}
-          </div>
-        </aside>
-
-        <div className="space-y-6">
-          <section className={`${card} p-5 sm:p-6`}>
-            <div className="study-guide-skeleton-shimmer h-10 w-44 rounded-full bg-[color:var(--color-surface-2)] animate-pulse" />
-            <div className="mt-5 space-y-4">
-              {[1, 2, 3].map((item) => (
-                <div key={item} className="study-guide-skeleton-shimmer h-36 rounded-[1.5rem] bg-[color:var(--color-surface-2)] animate-pulse" />
-              ))}
-            </div>
-          </section>
-        </div>
-      </div>
-    </main>
   );
 }

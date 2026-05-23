@@ -5,6 +5,7 @@ import { ArrowRight, Award, CalendarDays, Crown, FileQuestion, Flame, Info, Laye
 import { useDashboard } from '../hooks/useDashboard';
 import { useStreak } from '../hooks/useStreak';
 import { useAuth as useAuthCore } from '../../auth/context/AuthContext';
+import { DashboardSkeleton } from '../../../shared/components/PageSkeletons';
 import MaterialTypeIcon from '../../library/components/MaterialTypeIcon';
 import { getMaterialRoute } from '../../library/utils/materials';
 
@@ -90,19 +91,7 @@ export default function DashboardPage() {
   }, [streakNoticeOpen]);
 
   if (loading) {
-    return (
-      <div className="mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 lg:px-8">
-        <div className="h-56 rounded-[2rem] bg-surface animate-pulse" />
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.8fr)_minmax(18rem,0.9fr)]">
-          <div className="h-44 rounded-[2rem] bg-surface animate-pulse" />
-          <div className="h-44 rounded-[2rem] bg-surface animate-pulse" />
-        </div>
-        <div className="grid gap-6 md:grid-cols-2">
-          <div className="h-36 rounded-[2rem] bg-surface animate-pulse" />
-          <div className="h-36 rounded-[2rem] bg-surface animate-pulse" />
-        </div>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   return (

@@ -1,4 +1,4 @@
-import { useAccessibility } from '../context/AccessibilityContext';
+import { useAccessibility } from '../context/useAccessibility';
 import Modal from '../../../shared/components/Modal';
 import Button from '../../../shared/components/Button';
 

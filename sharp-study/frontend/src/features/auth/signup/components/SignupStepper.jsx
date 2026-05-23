@@ -79,6 +79,20 @@ export default function SignupStepper() {
 
   return (
     <div className={styles.wrapper}>
+      <AnimatePresence>
+        {bootingStep2 && (
+          <motion.div
+            className={styles.stepProgress}
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            aria-hidden="true"
+          >
+            <span />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Auth Tabs */}
       <AuthTabs activeTab="signup" disabled={bootingStep2} />
 

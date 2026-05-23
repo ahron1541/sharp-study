@@ -55,10 +55,7 @@ export default function HeroSection() {
           </p>
           <div className={styles.ctaRow}>
             <Link to="/register" className={styles.ctaBtn}>
-              Start studying
-            </Link>
-            <Link to="/login" className={styles.secondaryBtn}>
-              I already have an account
+              Get started
             </Link>
           </div>
           <div className={styles.statRow} aria-label="Verso highlights">

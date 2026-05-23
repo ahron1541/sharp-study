@@ -1,8 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Suspense, lazy } from 'react';
 import ProtectedRoute from '../shared/components/ProtectedRoute';
-import Spinner from '../shared/components/Spinner';
 import SessionTimeout from '../shared/components/SessionTimeout';
+import { FullPageShellSkeleton } from '../shared/components/PageSkeletons';
 import AppShell from '../features/dashboard/components/AppShell';
 import AdminShell from '../features/admin/components/AdminShell';
 import { useAuth } from '../features/auth/context/AuthContext';
@@ -12,6 +12,8 @@ const LandingPage = lazy(() => import('../features/landing/pages/LandingPage'));
 const LoginPage = lazy(() => import('../features/auth/pages/LoginPage'));
 const RegisterPage = lazy(() => import('../features/auth/pages/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('../features/auth/pages/ForgotPasswordPage'));
+const PrivacyPolicyPage = lazy(() => import('../features/legal/pages/PrivacyPolicyPage'));
+const TermsOfServicePage = lazy(() => import('../features/legal/pages/TermsOfServicePage'));
 const DashboardPage = lazy(() => import('../features/dashboard/pages/DashboardPage'));
 const LibraryPage = lazy(() => import('../features/library/pages/LibraryPage'));
 const ArchivePage = lazy(() => import('../features/archive/pages/ArchivePage'));
@@ -25,17 +27,18 @@ const AdminPage = lazy(() => import('../features/admin/pages/AdminPage'));
 const NotFoundPage = lazy(() => import('../features/errors/pages/NotFoundPage'));
 const SettingsPage = lazy(() => import('../features/settings/pages/SettingsPage'));
 
-const FullPageSpinner = () => (
-  <div className="min-h-screen flex items-center justify-center bg-[var(--bg-color)]">
-    <Spinner size="lg" label="Loading page..." />
-  </div>
-);
+const FullPageFallback = ({ pathname = '/dashboard' }) => <FullPageShellSkeleton pathname={pathname} />;
+
+function SuspenseFallback() {
+  const location = useLocation();
+  return <FullPageFallback pathname={location.pathname} />;
+}
 
 function RoleLandingRedirect() {
   const { profile } = useAuth();
 
   if (!profile) {
-    return <FullPageSpinner />;
+    return <FullPageFallback />;
   }
 
   return <Navigate to={profile.role === 'admin' ? '/admin' : '/dashboard'} replace />;
@@ -45,13 +48,15 @@ export default function AppRouter() {
   return (
     <BrowserRouter>
       <SessionTimeout />
-      <Suspense fallback={<FullPageSpinner />}>
+      <Suspense fallback={<SuspenseFallback />}>
         <Routes>
           {/* Public routes */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          <Route path="/terms" element={<TermsOfServicePage />} />
 
           <Route
             path="/home"

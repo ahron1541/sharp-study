@@ -343,3 +343,31 @@ body {
   box-shadow: 0 0 0 1000px color-mix(in srgb, var(--color-surface-2) 82%, var(--color-bg)) inset;
 }
 
+@keyframes sharp-skeleton-shimmer {
+  0% { background-position: 180% 0; }
+  100% { background-position: -180% 0; }
+}
+
+@keyframes sharp-route-progress {
+  0% { transform: translateX(-120%); width: 28%; }
+  45% { width: 48%; }
+  100% { transform: translateX(360%); width: 28%; }
+}
+
+.sharp-skeleton-shimmer {
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--color-surface-2) 86%, var(--color-bg)) 0%,
+      color-mix(in srgb, var(--color-surface-2) 58%, var(--color-text) 8%) 42%,
+      color-mix(in srgb, var(--color-surface-2) 86%, var(--color-bg)) 78%
+    );
+  background-size: 220% 100%;
+  animation: sharp-skeleton-shimmer 1.8s ease-in-out infinite;
+}
+
+.sharp-route-progress {
+  animation: sharp-route-progress 1.15s ease-in-out infinite;
+  transform-origin: left center;
+}
+
