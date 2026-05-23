@@ -9,7 +9,7 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/src/assets/logo/verso_logo.svg",
+      "src": "/logo/verso_logo.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

@@ -20,17 +20,25 @@ const streakRoutes = require('./features/streaks/streaks.routes');
 const app = express();
 app.set('trust proxy', 1);
 
+const parseOrigins = (value) => String(value || '')
+  .split(',')
+  .map((origin) => origin.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
 const allowedOrigins = new Set([
   'http://localhost:5173',
   'http://localhost:5174',
   'https://sharp-study.vercel.app',
-  process.env.FRONTEND_URL,
-  process.env.APP_URL,
-].filter(Boolean));
+  'https://verso-study.vercel.app',
+  ...parseOrigins(process.env.FRONTEND_URL),
+  ...parseOrigins(process.env.APP_URL),
+  ...parseOrigins(process.env.FRONTEND_URLS),
+]);
 
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin || allowedOrigins.has(origin)) {
+    const normalizedOrigin = origin ? origin.replace(/\/$/, '') : origin;
+    if (!normalizedOrigin || allowedOrigins.has(normalizedOrigin)) {
       callback(null, true);
       return;
     }
