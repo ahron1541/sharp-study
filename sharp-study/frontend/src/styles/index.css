@@ -358,12 +358,12 @@ body {
   background:
     linear-gradient(
       90deg,
-      color-mix(in srgb, var(--color-surface-2) 86%, var(--color-bg)) 0%,
-      color-mix(in srgb, var(--color-surface-2) 58%, var(--color-text) 8%) 42%,
-      color-mix(in srgb, var(--color-surface-2) 86%, var(--color-bg)) 78%
+      color-mix(in srgb, var(--color-surface-2) 90%, var(--color-bg)) 0%,
+      color-mix(in srgb, var(--color-surface-2) 70%, var(--color-text) 6%) 44%,
+      color-mix(in srgb, var(--color-surface-2) 90%, var(--color-bg)) 82%
     );
   background-size: 220% 100%;
-  animation: sharp-skeleton-shimmer 1.8s ease-in-out infinite;
+  animation: sharp-skeleton-shimmer 2.4s ease-in-out infinite;
 }
 
 .sharp-route-progress {
