@@ -10,7 +10,7 @@ export default function StudyGuideSidebar({
   return (
     <aside
       className={`study-guide-sidebar h-full min-h-0 ${
-        collapsed ? 'lg:w-[5.75rem]' : 'lg:w-[clamp(18rem,22vw,22rem)]'
+        collapsed ? 'lg:w-[5.75rem]' : 'lg:w-[clamp(20rem,24vw,24rem)]'
       }`}
     >
       <nav className="flex h-full min-h-0 flex-col rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/96 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.1)] transition-[width,transform,box-shadow] duration-300">
@@ -27,7 +27,7 @@ export default function StudyGuideSidebar({
 
           {!collapsed && (
             <div className="min-w-0 pr-1">
-              <h2 className="max-w-full break-words text-sm font-black uppercase leading-tight tracking-[0.16em] text-[color:var(--color-text)] [overflow-wrap:anywhere]">
+              <h2 className="max-w-full whitespace-nowrap text-sm font-black uppercase leading-tight tracking-[0.08em] text-[color:var(--color-text)]">
                 Contents
               </h2>
               <p className="mt-1 max-w-full break-words text-xs leading-snug text-[color:var(--color-text-muted)] [overflow-wrap:anywhere]">

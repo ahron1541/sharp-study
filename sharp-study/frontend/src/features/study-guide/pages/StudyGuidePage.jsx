@@ -997,7 +997,7 @@ export default function StudyGuidePage() {
         {!editing && (
           <div
             className="mt-6 grid items-start gap-6 transition-[grid-template-columns] duration-300 lg:grid-cols-[var(--study-guide-sidebar-width)_minmax(0,1fr)]"
-            style={{ '--study-guide-sidebar-width': sidebarCollapsed ? '5.75rem' : 'clamp(18rem,22vw,22rem)' }}
+            style={{ '--study-guide-sidebar-width': sidebarCollapsed ? '5.75rem' : 'clamp(20rem,24vw,24rem)' }}
           >
             <div className="space-y-4 lg:sticky lg:top-5 lg:h-[calc(100dvh-9.5rem)] lg:min-h-[24rem] lg:self-start">
               <button
