@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Edit2, FileQuestion, Layers3, Loader2, PanelLeftClose, PanelLeftOpen, Sparkles, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, Edit2, FileQuestion, Layers3, Loader2, PanelLeftClose, PanelLeftOpen, Pause, Play, Sparkles, Square, Volume2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useAuth } from '../../auth/context/AuthContext';
@@ -105,6 +105,7 @@ export default function StudyGuidePage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeSectionId, setActiveSectionId] = useState('');
   const [speaking, setSpeaking] = useState(false);
+  const [speechPaused, setSpeechPaused] = useState(false);
   const [flashcardSetId, setFlashcardSetId] = useState(() => cachedContent?.flashcardSetId || '');
   const [flashcardGeneration, setFlashcardGeneration] = useState(null);
   const [flashcardProgress, setFlashcardProgress] = useState({ value: 0, title: '', detail: '' });
@@ -328,6 +329,7 @@ export default function StudyGuidePage() {
     window.speechSynthesis.cancel();
     utteranceRef.current = null;
     setSpeaking(false);
+    setSpeechPaused(false);
   }, []);
 
   const writeDraftToLocalCache = useCallback((nextContent) => {
@@ -364,7 +366,19 @@ export default function StudyGuidePage() {
     }
 
     if (speaking) {
-      stopReading();
+      if (speechPaused) {
+        window.speechSynthesis.resume();
+        setSpeechPaused(false);
+        return;
+      }
+
+      window.speechSynthesis.pause();
+      setSpeechPaused(true);
+      return;
+    }
+
+    if (!plainTextContent.trim()) {
+      toast.error('There is no study guide text to read yet.');
       return;
     }
 
@@ -372,12 +386,21 @@ export default function StudyGuidePage() {
     utterance.lang = 'en-US';
     utterance.rate = 0.9;
     utterance.pitch = 1;
-    utterance.onstart = () => setSpeaking(true);
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
+    utterance.onstart = () => {
+      setSpeaking(true);
+      setSpeechPaused(false);
+    };
+    utterance.onend = () => {
+      setSpeaking(false);
+      setSpeechPaused(false);
+    };
+    utterance.onerror = () => {
+      setSpeaking(false);
+      setSpeechPaused(false);
+    };
     utteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
-  }, [plainTextContent, speaking, stopReading]);
+  }, [plainTextContent, speaking, speechPaused]);
 
   const handleCreateFlashcards = useCallback(async () => {
     if (flashcardSetId) {
@@ -637,12 +660,16 @@ export default function StudyGuidePage() {
   }, [clearDraftFromLocalCache, content, guide, id, savedContent]);
 
   const switchToReadMode = useCallback(async () => {
+    const hadPendingChanges = content !== savedContent || saveState === 'cached' || saveState === 'error';
     const saved = await save({ exitEditing: true, showToast: false });
     if (saved) {
       setActiveTab('guide');
       clearSelectionToolbar();
+      if (hadPendingChanges) {
+        toast.success('Changes saved. Read mode is ready.');
+      }
     }
-  }, [clearSelectionToolbar, save]);
+  }, [clearSelectionToolbar, content, save, saveState, savedContent]);
 
   useEffect(() => {
     if (!editing) return undefined;
@@ -896,6 +923,7 @@ export default function StudyGuidePage() {
 
     stopReading();
     setPendingNavigation(null);
+    toast.success(returningToReadMode ? 'Changes saved. Returning to read mode.' : 'Changes saved.');
 
     if (returningToReadMode) {
       setActiveTab('guide');
@@ -1134,6 +1162,7 @@ export default function StudyGuidePage() {
                 lastSyncLabel={lastSyncLabel}
                 onSave={() => save({ showToast: true, reason: 'toolbar-save' })}
                 onRead={handleReadAloud}
+                readActionLabel={speaking ? (speechPaused ? 'Resume reading' : 'Pause reading') : 'Read aloud'}
                 onPreview={switchToReadMode}
                 saving={saving}
               />
@@ -1145,18 +1174,32 @@ export default function StudyGuidePage() {
           <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
             <div className="pointer-events-auto w-full max-w-4xl rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/94 p-3 shadow-[0_24px_64px_rgba(15,23,42,0.18)] backdrop-blur-xl">
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                <button
-                  type="button"
-                  onClick={handleReadAloud}
-                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-2xl border px-4 text-sm font-bold transition-all duration-200 ${
-                    speaking
-                      ? 'border-rose-500/40 bg-rose-500/10 text-rose-500'
-                      : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text)] hover:bg-[color:var(--color-surface-2)]'
-                  }`}
-                >
-                  {speaking ? <VolumeX size={18} /> : <Volume2 size={18} />}
-                  <span>{speaking ? 'Stop reading' : 'Read aloud'}</span>
-                </button>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                  <button
+                    type="button"
+                    onClick={handleReadAloud}
+                    className={`inline-flex h-11 items-center justify-center gap-2 rounded-2xl border px-4 text-sm font-bold transition-all duration-200 ${
+                      speaking
+                        ? 'border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/10 text-[color:var(--color-text)]'
+                        : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text)] hover:bg-[color:var(--color-surface-2)]'
+                    }`}
+                    aria-label={speaking ? (speechPaused ? 'Resume reading aloud' : 'Pause reading aloud') : 'Read study guide aloud'}
+                  >
+                    {speaking ? (speechPaused ? <Play size={18} /> : <Pause size={18} />) : <Volume2 size={18} />}
+                    <span>{speaking ? (speechPaused ? 'Resume' : 'Pause') : 'Read aloud'}</span>
+                  </button>
+                  {speaking ? (
+                    <button
+                      type="button"
+                      onClick={stopReading}
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-rose-500/40 bg-rose-500/10 text-rose-500 transition hover:bg-rose-500/15"
+                      aria-label="Stop reading aloud"
+                      title="Stop reading"
+                    >
+                      <Square size={17} />
+                    </button>
+                  ) : null}
+                </div>
                 <button
                   type="button"
                   onClick={requestCreateFlashcards}

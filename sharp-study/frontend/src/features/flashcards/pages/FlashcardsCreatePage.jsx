@@ -5,6 +5,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Filter,
   Flame,
   GripVertical,
   Keyboard,
@@ -35,6 +36,10 @@ const FLASHCARD_DIFFICULTIES = [
   { value: 'normal', label: 'Normal', helper: 'Balanced review', description: 'A steady default for most lessons.', color: '#8b3dff', icon: ShieldCheck },
   { value: 'hard', label: 'Hard', helper: 'Applied recall', description: 'Better for cards that need deeper thinking.', color: '#f97316', icon: Flame },
   { value: 'expert', label: 'Expert', helper: 'Strict recall', description: 'Use for your toughest memory checks.', color: '#facc15', icon: Star },
+];
+const CARD_FILTERS = [
+  { value: 'all', label: 'All' },
+  ...FLASHCARD_DIFFICULTIES.map((item) => ({ value: item.value, label: item.label })),
 ];
 
 function getFlashcardDifficulty(value = 'normal') {
@@ -158,16 +163,31 @@ export default function FlashcardsCreatePage() {
   const [draftReady, setDraftReady] = useState(false);
   const [rawCurrentPage, setCurrentPage] = useState(0);
   const [initialSnapshot, setInitialSnapshot] = useState('');
+  const [cardFilter, setCardFilter] = useState('all');
+  const [leaveModal, setLeaveModal] = useState(null);
 
   const draftKey = useMemo(
     () => draftStorageKey(user?.id, isEdit ? routeSetId : 'new'),
     [isEdit, routeSetId, user?.id]
   );
   const validCards = useMemo(() => normalizeCards(cards), [cards]);
-  const totalPages = Math.max(1, Math.ceil(cards.length / CARD_PAGE_SIZE));
+  const cardFilterCounts = useMemo(() => (
+    cards.reduce((acc, card) => {
+      const difficulty = getFlashcardDifficulty(card.difficulty).value;
+      acc.all += 1;
+      acc[difficulty] = (acc[difficulty] || 0) + 1;
+      return acc;
+    }, { all: 0, easy: 0, normal: 0, hard: 0, expert: 0 })
+  ), [cards]);
+  const filteredCardEntries = useMemo(() => (
+    cards
+      .map((card, index) => ({ card, index }))
+      .filter(({ card }) => cardFilter === 'all' || getFlashcardDifficulty(card.difficulty).value === cardFilter)
+  ), [cardFilter, cards]);
+  const totalPages = Math.max(1, Math.ceil(filteredCardEntries.length / CARD_PAGE_SIZE));
   const currentPage = Math.min(rawCurrentPage, totalPages - 1);
   const pageStart = currentPage * CARD_PAGE_SIZE;
-  const visibleCards = cards.slice(pageStart, pageStart + CARD_PAGE_SIZE);
+  const visibleCards = filteredCardEntries.slice(pageStart, pageStart + CARD_PAGE_SIZE);
   const currentSnapshot = useMemo(() => createSnapshot(title, description, cards), [cards, description, title]);
   const hasChanges = isEdit ? draftReady && currentSnapshot !== initialSnapshot : hasDraftContent({ title, description, cards });
   const blocked = saving || loadingSet || Boolean(restoredDraft) || Boolean(draftAction);
@@ -260,6 +280,10 @@ export default function FlashcardsCreatePage() {
   }, [cards, currentSnapshot, description, draftAction, draftKey, draftReady, initialSnapshot, isEdit, loadingSet, restoredDraft, saving, title]);
 
   useEffect(() => {
+    setCurrentPage(0);
+  }, [cardFilter]);
+
+  useEffect(() => {
     const handleBeforeUnload = (event) => {
       if (!hasChanges || saving) return undefined;
       event.preventDefault();
@@ -278,6 +302,7 @@ export default function FlashcardsCreatePage() {
   const addCard = () => {
     setCards((current) => {
       const next = [...current, createEmptyCard()];
+      setCardFilter('all');
       setCurrentPage(Math.floor((next.length - 1) / CARD_PAGE_SIZE));
       return next;
     });
@@ -288,15 +313,20 @@ export default function FlashcardsCreatePage() {
   };
 
   const goBack = () => {
-    navigate(isEdit ? `/flashcards/${setId || routeSetId}` : '/library?tab=flashcards');
+    const target = isEdit ? `/flashcards/${setId || routeSetId}` : '/library?tab=flashcards';
+    if (hasChanges && !blocked) {
+      setLeaveModal({ target });
+      return;
+    }
+    navigate(target);
   };
 
-  const saveSet = async (nextIntent = 'save') => {
-    if (saveLockRef.current || saving) return;
+  const saveSet = async (nextIntent = 'save', afterSaveTarget = '') => {
+    if (saveLockRef.current || saving) return false;
 
     if (!user?.id) {
       toast.error('Please sign in before saving flashcards.');
-      return;
+      return false;
     }
 
     const cleanTitle = sanitizePlainText(title).slice(0, 180);
@@ -304,11 +334,11 @@ export default function FlashcardsCreatePage() {
 
     if (!cleanTitle) {
       toast.error('Add a title before saving the set.');
-      return;
+      return false;
     }
     if (!cleanCards.length) {
       toast.error('Add at least one complete question and answer.');
-      return;
+      return false;
     }
 
     saveLockRef.current = true;
@@ -376,11 +406,14 @@ export default function FlashcardsCreatePage() {
       });
       toast.success(isEdit ? 'Flashcard set saved.' : 'Flashcard set created.');
 
-      if (nextIntent === 'practice' && savedId) {
+      if (afterSaveTarget) {
+        navigate(afterSaveTarget);
+      } else if (nextIntent === 'practice' && savedId) {
         navigate(`/flashcards/${savedId}`);
       } else if (!isEdit) {
         navigate('/library?tab=flashcards');
       }
+      return true;
     } catch (error) {
       toast.error(error.message || (isEdit ? 'Failed to save flashcard set.' : 'Failed to create flashcard set.'));
       setSaveStatus({
@@ -389,6 +422,7 @@ export default function FlashcardsCreatePage() {
         title: 'Saving did not finish',
         detail: 'Please review your connection and try again.',
       });
+      return false;
     } finally {
       setSaving(false);
       saveLockRef.current = false;
@@ -396,6 +430,21 @@ export default function FlashcardsCreatePage() {
         setSaveStatus((current) => ({ ...current, active: false }));
       }, 300);
     }
+  };
+
+  const saveAndLeave = async () => {
+    if (!leaveModal?.target) return;
+    const saved = await saveSet('save', leaveModal.target);
+    if (saved) {
+      setLeaveModal(null);
+    }
+  };
+
+  const discardAndLeave = () => {
+    if (!leaveModal?.target) return;
+    localStorage.removeItem(draftKey);
+    setLeaveModal(null);
+    navigate(leaveModal.target);
   };
 
   const continueDraft = () => {
@@ -538,12 +587,37 @@ export default function FlashcardsCreatePage() {
             <Check size={16} className={validCards.length ? 'text-emerald-500' : ''} aria-hidden="true" />
             {validCards.length} complete card{validCards.length === 1 ? '' : 's'}
           </div>
+          <div className="flex w-full flex-wrap items-center gap-2 rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-2">
+            <span className="inline-flex items-center gap-2 px-2 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">
+              <Filter size={14} aria-hidden="true" />
+              Filter
+            </span>
+            {CARD_FILTERS.map((option) => {
+              const active = cardFilter === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setCardFilter(option.value)}
+                  disabled={blocked}
+                  aria-pressed={active}
+                  className={`rounded-2xl px-3 py-1.5 text-xs font-black transition ${
+                    active
+                      ? 'bg-[color:var(--color-accent)] text-[color:var(--color-accent-text)]'
+                      : 'border border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text)]'
+                  } disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  {option.label} ({cardFilterCounts[option.value] || 0})
+                </button>
+              );
+            })}
+          </div>
         </section>
 
         <FlashcardsPagination
           currentPage={currentPage}
           totalPages={totalPages}
-          totalCards={cards.length}
+          totalCards={filteredCardEntries.length}
           pageStart={pageStart}
           pageCount={visibleCards.length}
           disabled={blocked}
@@ -552,8 +626,7 @@ export default function FlashcardsCreatePage() {
         />
 
         <section className="mt-4 space-y-4">
-          {visibleCards.map((card, offset) => {
-            const index = pageStart + offset;
+          {visibleCards.map(({ card, index }) => {
             return (
               <article key={card.key} className="rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4 shadow-[0_14px_42px_rgba(15,23,42,0.08)]">
                 <div className="mb-4 flex items-center justify-between gap-3">
@@ -588,35 +661,40 @@ export default function FlashcardsCreatePage() {
                       disabled={blocked}
                       maxLength={500}
                       rows={2}
-                      placeholder="Enter term"
+                      placeholder="Front of card"
                       className="min-h-24 w-full resize-y rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-3 font-bold text-[color:var(--color-text)] outline-none transition focus:border-[color:var(--color-accent)] disabled:opacity-60"
                     />
-                    <span className="mt-2 block text-xs font-black uppercase tracking-[0.12em] text-[color:var(--color-text-muted)]">Term</span>
+                    <span className="mt-2 block text-xs font-black uppercase tracking-[0.12em] text-[color:var(--color-text-muted)]">Front</span>
                   </label>
 
                   <label className="block">
-                    <span className="sr-only">Flashcard {index + 1} answer</span>
+                    <span className="sr-only">Flashcard {index + 1} back side</span>
                     <textarea
                       value={card.back}
                       onChange={(event) => updateCard(card.key, { back: event.target.value })}
                       disabled={blocked}
                       maxLength={1000}
                       rows={2}
-                      placeholder="Enter definition"
+                      placeholder="Back of card"
                       className="min-h-24 w-full resize-y rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-3 font-bold text-[color:var(--color-text)] outline-none transition focus:border-[color:var(--color-accent)] disabled:opacity-60"
                     />
-                    <span className="mt-2 block text-xs font-black uppercase tracking-[0.12em] text-[color:var(--color-text-muted)]">Definition</span>
+                    <span className="mt-2 block text-xs font-black uppercase tracking-[0.12em] text-[color:var(--color-text-muted)]">Back</span>
                   </label>
                 </div>
               </article>
             );
           })}
+          {!visibleCards.length ? (
+            <div className="rounded-[1.5rem] border border-dashed border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6 text-center text-sm font-bold text-[color:var(--color-text-muted)]">
+              No cards match this filter yet.
+            </div>
+          ) : null}
         </section>
 
         <FlashcardsPagination
           currentPage={currentPage}
           totalPages={totalPages}
-          totalCards={cards.length}
+          totalCards={filteredCardEntries.length}
           pageStart={pageStart}
           pageCount={visibleCards.length}
           disabled={blocked}
@@ -689,6 +767,42 @@ export default function FlashcardsCreatePage() {
           <p className="text-xs font-black uppercase tracking-[0.16em] text-[color:var(--color-text-muted)]">
             Please keep this page open
           </p>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(leaveModal)}
+        onClose={() => setLeaveModal(null)}
+        title="Save flashcard changes?"
+        size="md"
+      >
+        <div className="space-y-4 text-sm leading-7 text-[color:var(--color-text-muted)]">
+          <p>You have unsaved flashcard edits. Save them before leaving, discard them, or stay on this page.</p>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={discardAndLeave}
+              className="rounded-2xl border border-rose-500/40 px-5 py-3 font-bold text-rose-500 transition hover:bg-rose-500/10"
+            >
+              Discard changes
+            </button>
+            <button
+              type="button"
+              onClick={() => setLeaveModal(null)}
+              className="rounded-2xl border border-[color:var(--color-border)] px-5 py-3 font-bold text-[color:var(--color-text-muted)] transition hover:bg-[color:var(--color-surface-2)]"
+            >
+              Stay editing
+            </button>
+            <button
+              type="button"
+              onClick={saveAndLeave}
+              disabled={!canSave}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-black text-[color:var(--color-accent-text)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+              Save changes
+            </button>
+          </div>
         </div>
       </Modal>
 

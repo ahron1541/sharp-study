@@ -81,7 +81,7 @@ async function recordStudyActivityDirect(userId, activityType, options = {}) {
   const counts = normalizeCounts(existingDay?.activity_counts);
   counts[normalizedActivityType] = toInteger(counts[normalizedActivityType]) + 1;
 
-  const todayActivityCount = toInteger(existingDay?.activity_count) + 1;
+  let todayActivityCount = toInteger(existingDay?.activity_count) + 1;
   if (existingDay?.id) {
     const { error } = await supabaseAdmin
       .from('study_activity_days')
@@ -108,7 +108,29 @@ async function recordStudyActivityDirect(userId, activityType, options = {}) {
         last_activity_at: occurredAt,
       });
 
-    if (error) throw error;
+    if (error?.code === '23505') {
+      const conflictedDay = await getActivityDay(userId, activityDate);
+      if (!conflictedDay?.id) throw error;
+
+      const retryCounts = normalizeCounts(conflictedDay.activity_counts);
+      retryCounts[normalizedActivityType] = toInteger(retryCounts[normalizedActivityType]) + 1;
+      todayActivityCount = toInteger(conflictedDay.activity_count) + 1;
+
+      const { error: retryError } = await supabaseAdmin
+        .from('study_activity_days')
+        .update({
+          activity_count: todayActivityCount,
+          activity_counts: retryCounts,
+          last_activity_at: occurredAt,
+          updated_at: now,
+        })
+        .eq('id', conflictedDay.id)
+        .eq('user_id', userId);
+
+      if (retryError) throw retryError;
+    } else if (error) {
+      throw error;
+    }
   }
 
   const { data: currentStreak, error: streakError } = await supabaseAdmin

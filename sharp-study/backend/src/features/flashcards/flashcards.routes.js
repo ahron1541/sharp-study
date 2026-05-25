@@ -517,6 +517,25 @@ router.put('/:id/progress', async (req, res) => {
 
     const cards = await getSetCards(set.id);
     const progressPayload = normalizeProgressPayload(parsed.data, cards);
+    const progressRow = {
+      user_id: req.user.id,
+      set_id: set.id,
+      ...progressPayload,
+    };
+
+    const { data: upserted, error: upsertError } = await supabaseAdmin
+      .from('flashcard_progress')
+      .upsert(progressRow, { onConflict: 'user_id,set_id' })
+      .select('id, current_index, order_json, statuses_json, known_count, learning_count, updated_at')
+      .single();
+
+    if (!upsertError) {
+      return res.json({ success: true, progress: normalizeProgressRow(upserted) });
+    }
+
+    if (upsertError.code !== '42P10') {
+      throw upsertError;
+    }
 
     const { data: existing, error: existingError } = await supabaseAdmin
       .from('flashcard_progress')
@@ -544,11 +563,7 @@ router.put('/:id/progress', async (req, res) => {
 
     const { data: inserted, error: insertError } = await supabaseAdmin
       .from('flashcard_progress')
-      .insert({
-        user_id: req.user.id,
-        set_id: set.id,
-        ...progressPayload,
-      })
+      .insert(progressRow)
       .select('id, current_index, order_json, statuses_json, known_count, learning_count, updated_at')
       .single();
 

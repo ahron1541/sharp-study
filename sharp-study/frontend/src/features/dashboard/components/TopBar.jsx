@@ -2,7 +2,7 @@ import { Menu, User } from 'lucide-react';
 import { useAuth } from '../../auth/context/AuthContext';
 import { useRef, useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import versoLogo from '../../../assets/logo/verso_logo.svg';
+import VersoLogo from '../../../shared/components/VersoLogo';
 
 export default function TopBar({ onMenuToggle }) {
   const { profile, signOut } = useAuth();
@@ -63,12 +63,7 @@ export default function TopBar({ onMenuToggle }) {
         {isTransitioning ? (
           <div className="h-4 w-20 ml-2 rounded animate-pulse" style={{ background: 'var(--color-surface-2, #e2e8f0)' }} />
         ) : (
-          <img 
-            src={versoLogo}
-            alt="Verso"
-            className="h-3 sm:h-4 w-auto max-w-none flex-shrink-0"
-            style={{ maxHeight: '1rem' }}
-          />
+          <VersoLogo size="compact" />
         )}
       </div>
 

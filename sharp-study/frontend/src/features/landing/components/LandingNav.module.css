@@ -62,15 +62,8 @@
   outline-offset: 3px;
 }
 
-.logoImg { 
-  width: clamp(7rem, 13vw, 9.25rem);
-  max-height: 2.6rem;
-  display: block;
-}
-
-[data-theme="dark"] .logoImg,
-[data-display="dark"] .logoImg {
-  filter: brightness(0) invert(1);
+.logoLockup {
+  max-width: clamp(7rem, 13vw, 9.25rem);
 }
 
 .logoIcon { color: var(--accent); display: flex; align-items: center; }
@@ -156,8 +149,9 @@
     min-height: 3.75rem;
   }
   
-  .logoImg { 
-    max-height: 2.1rem;
+  .logoLockup { 
+    transform: scale(0.94);
+    transform-origin: left center;
   }
 }
 
@@ -167,9 +161,9 @@
     padding: 0 0.75rem;
   }
   
-  .logoImg { 
-    max-height: 1.75rem;
-    max-width: 5.6rem;
+  .logoLockup { 
+    max-width: 5.8rem;
+    transform: scale(0.84);
   }
   
   .themeBtn {

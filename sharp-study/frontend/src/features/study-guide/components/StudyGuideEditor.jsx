@@ -138,6 +138,7 @@ export default function StudyGuideEditor({
   saving = false,
   showReadActions = true,
   saveActionLabel,
+  readActionLabel = 'Read aloud',
 }) {
   const initialContent = starterContent || content || createInstructionalStudyGuideTemplate();
   const [highlightOpen, setHighlightOpen] = useState(false);
@@ -319,7 +320,7 @@ export default function StudyGuideEditor({
                   <Italic size={16} />
                 </ToolButton>
                 <ToolButton
-                  label="Heading 2"
+                  label="Heading 2 - applies to current paragraph"
                   onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
                   active={editor.isActive('heading', { level: 2 })}
                   disabled={saving}
@@ -327,7 +328,7 @@ export default function StudyGuideEditor({
                   <Heading2 size={16} />
                 </ToolButton>
                 <ToolButton
-                  label="Heading 3"
+                  label="Heading 3 - applies to current paragraph"
                   onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
                   active={editor.isActive('heading', { level: 3 })}
                   disabled={saving}
@@ -474,21 +475,27 @@ export default function StudyGuideEditor({
                         style={{ backgroundColor: color.swatch }}
                       />
                     ))}
-                    <ToolButton
-                      label="Remove highlight"
-                      onClick={() => editor.chain().focus().unsetMark('highlight').run()}
-                      active={editor.isActive('highlight')}
+                    <button
+                      type="button"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        editor.chain().focus().unsetMark('highlight').run();
+                      }}
                       disabled={saving}
+                      className="inline-flex h-9 items-center gap-2 rounded-2xl border border-rose-500/35 bg-rose-500/10 px-3 text-xs font-black text-rose-500 transition hover:bg-rose-500/15 focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label="Remove highlight from selected text"
+                      title="Remove highlight from selected text"
                     >
                       <Eraser size={16} />
-                    </ToolButton>
+                      <span>Clear</span>
+                    </button>
                   </div>
                 ) : null}
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-              {showReadActions ? <ToolbarAction label="Read aloud" icon={<Volume2 size={16} />} onClick={onRead} disabled={saving} /> : null}
+              {showReadActions ? <ToolbarAction label={readActionLabel} icon={<Volume2 size={16} />} onClick={onRead} disabled={saving} /> : null}
               {showReadActions ? <ToolbarAction label="Read mode" icon={<Eye size={16} />} onClick={onPreview} disabled={saving} /> : null}
               <ToolbarAction
                 label={saving ? 'Saving to cloud...' : saveActionLabel || (saveState === 'cached' ? 'Sync now' : 'Save')}

@@ -32,7 +32,7 @@ export default function Step2UserDetails({ email, signupToken, onSuccess }) {
             border: '2px solid var(--accent)',
             borderTopColor: 'transparent',
             borderRadius: '50%',
-            animation: 'spin 0.6s linear infinite',
+            animation: 'spin 1s linear infinite',
             display: 'inline-block',
           }}
           aria-label="Checking username availability"

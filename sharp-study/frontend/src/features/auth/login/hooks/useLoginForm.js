@@ -33,7 +33,7 @@ export function useLoginForm() {
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
     setLoading(true);
-    setTransitionLabel('Checking your account...');
+    setTransitionLabel('Opening account...');
     setErrors({});
     setLockInfo(null);
 
@@ -52,7 +52,7 @@ export function useLoginForm() {
       localStorage.setItem('sharp-study-token', accessToken);
       if (rememberMe && refreshToken) localStorage.setItem('sharp-study-refresh', refreshToken);
 
-      setTransitionLabel('Preparing your dashboard...');
+      setTransitionLabel('Checking your session...');
       const sessionResponse = await supabase.auth.setSession({
         access_token:  accessToken,
         refresh_token: refreshToken || '',

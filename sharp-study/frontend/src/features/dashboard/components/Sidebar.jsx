@@ -7,7 +7,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { useAuth } from '../../auth/context/AuthContext';
-import versoLogo from '../../../assets/logo/verso_w_name.svg';
+import VersoLogo from '../../../shared/components/VersoLogo';
 
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Home',         icon: Home },
@@ -51,11 +51,7 @@ export default function Sidebar({
             style={{ background: 'var(--color-surface-2, #e2e8f0)' }} 
           />
         ) : (
-          <img 
-            src={versoLogo}
-            alt="Verso"
-            className={`${collapsed ? 'h-8' : 'h-10'} w-auto transition-all duration-200`}
-          />
+          <VersoLogo size={collapsed ? 'compact' : 'lg'} showText={!collapsed} />
         )}
       </div>
 

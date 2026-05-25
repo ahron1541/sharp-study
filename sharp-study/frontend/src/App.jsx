@@ -1,4 +1,5 @@
 import { Toaster } from 'react-hot-toast';
+import { useEffect } from 'react';
 import { AccessibilityProvider } from './features/accessibility/context/AccessibilityContext';
 import { AuthProvider } from './features/auth/context/AuthContext';
 import AppRouter from './router/AppRouter';
@@ -6,10 +7,17 @@ import CookieConsent from './shared/components/CookieConsent';
 import OfflineScreen from './shared/components/OfflineScreen';
 import SkeletonLoader from './shared/components/SkeletonLoader';
 import { useTheme } from './features/theme/hooks/useTheme';
+import { warmBackend } from './config/api';
 
 export default function App() {
   // Theme is applied before first render via localStorage
   const { loadingPreferences } = useTheme();
+
+  useEffect(() => {
+    const controller = new AbortController();
+    warmBackend(controller.signal);
+    return () => controller.abort();
+  }, []);
 
   return (
     <AccessibilityProvider>

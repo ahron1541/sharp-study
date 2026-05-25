@@ -1,0 +1,25 @@
+.lightAsset {
+  display: block;
+}
+
+.darkAsset {
+  display: none;
+}
+
+:global([data-theme="dark"]) .lightAsset,
+:global([data-display="dark"]) .lightAsset {
+  display: none;
+}
+
+:global([data-theme="dark"]) .darkAsset,
+:global([data-display="dark"]) .darkAsset {
+  display: block;
+}
+
+.forceVisible {
+  display: block;
+}
+
+.forceHidden {
+  display: none;
+}

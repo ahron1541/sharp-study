@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Dumbbell,
   Edit3,
   FileQuestion,
   Flame,
@@ -330,6 +331,10 @@ export default function QuizPage() {
   const [loading, setLoading] = useState(() => !cached);
   const [error, setError] = useState('');
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [settingDrafts, setSettingDrafts] = useState({
+    itemCount: String(DEFAULT_SETTINGS.itemCount),
+    timeMinutes: String(DEFAULT_SETTINGS.timeMinutes),
+  });
   const [phase, setPhase] = useState('preview');
   const [activeQuestions, setActiveQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
@@ -374,6 +379,14 @@ export default function QuizPage() {
   }, [questionsForDifficulty, settings.questionType]);
 
   const maxItemCount = Math.max(1, availableQuestions.length || questions.length || 1);
+  const clampItemCount = useCallback((value, limit = maxItemCount) => {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    return Math.max(1, Math.min(Number.isFinite(parsed) ? parsed : 1, Math.max(1, limit || 1)));
+  }, [maxItemCount]);
+  const clampTimeMinutes = useCallback((value) => {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    return Math.max(1, Math.min(Number.isFinite(parsed) ? parsed : 1, 240));
+  }, []);
   const answeredCount = useMemo(
     () => activeQuestions.filter((question) => {
       const answer = answers[question.id];
@@ -390,6 +403,13 @@ export default function QuizPage() {
   const progressPercent = activeQuestions.length ? Math.round((answeredCount / activeQuestions.length) * 100) : 0;
   const sessionLimitSeconds = useMemo(() => getQuizTimeLimitSeconds(settings), [settings]);
   const urgentTime = timeLeft <= Math.max(60, Math.round(sessionLimitSeconds * 0.1));
+
+  useEffect(() => {
+    setSettingDrafts({
+      itemCount: String(settings.itemCount),
+      timeMinutes: String(settings.timeMinutes),
+    });
+  }, [settings.itemCount, settings.timeMinutes]);
 
   const loadQuiz = useCallback(async () => {
     setError('');
@@ -517,7 +537,7 @@ export default function QuizPage() {
   }, [phase]);
 
   const submitAttempt = useCallback(async (timedOut = false) => {
-    if (!quiz || !activeQuestions.length || submitLockRef.current) return;
+    if (!quiz || !activeQuestions.length || submitLockRef.current) return false;
     submitLockRef.current = true;
     setSubmitting(true);
 
@@ -557,6 +577,7 @@ export default function QuizPage() {
       setSavedSession(null);
       setPhase('results');
       if (timedOut) toast('Time is up. Your quiz was submitted.');
+      return true;
     } catch (submitError) {
       const localAttempt = buildLocalAttempt({
         quiz,
@@ -578,6 +599,7 @@ export default function QuizPage() {
       setSavedSession(null);
       setPhase('results');
       toast.error(submitError.message || 'Your attempt is saved locally and will sync later.');
+      return false;
     } finally {
       setSubmitting(false);
       submitLockRef.current = false;
@@ -607,13 +629,20 @@ export default function QuizPage() {
   }, [phase, submitting, submitAttempt, timeLeft, urgentTime]);
 
   const updateSetting = (key, value) => {
+    if (key === 'itemCount') {
+      const nextValue = clampItemCount(value);
+      setSettingDrafts((drafts) => ({ ...drafts, itemCount: String(nextValue) }));
+      setSettings((current) => ({ ...current, itemCount: nextValue }));
+      return;
+    }
+    if (key === 'timeMinutes') {
+      const nextValue = clampTimeMinutes(value);
+      setSettingDrafts((drafts) => ({ ...drafts, timeMinutes: String(nextValue) }));
+      setSettings((current) => ({ ...current, timeMinutes: nextValue }));
+      return;
+    }
+
     setSettings((current) => {
-      if (key === 'itemCount') {
-        return { ...current, itemCount: Math.max(1, Math.min(Number(value) || 1, maxItemCount)) };
-      }
-      if (key === 'timeMinutes') {
-        return { ...current, timeMinutes: Math.max(1, Math.min(Number(value) || 1, 240)) };
-      }
       if (key === 'questionType') {
         const currentDifficulty = getQuizDifficulty(current.difficulty).value;
         const difficultyPool = questions.filter((question) => getQuizDifficulty(question.difficulty).value === currentDifficulty);
@@ -642,8 +671,26 @@ export default function QuizPage() {
     });
   };
 
+  const updateNumericDraft = (key, value) => {
+    const digitsOnly = String(value || '').replace(/[^\d]/g, '');
+    setSettingDrafts((current) => ({ ...current, [key]: digitsOnly }));
+  };
+
+  const commitNumericSetting = (key) => {
+    if (key === 'itemCount') {
+      const nextValue = clampItemCount(settingDrafts.itemCount);
+      setSettings((current) => ({ ...current, itemCount: nextValue }));
+      setSettingDrafts((current) => ({ ...current, itemCount: String(nextValue) }));
+      return;
+    }
+
+    const nextValue = clampTimeMinutes(settingDrafts.timeMinutes);
+    setSettings((current) => ({ ...current, timeMinutes: nextValue }));
+    setSettingDrafts((current) => ({ ...current, timeMinutes: String(nextValue) }));
+  };
+
   const startSession = useCallback((questionIds = null, overrideSettings = null) => {
-    const effectiveSettings = overrideSettings || settings;
+    const baseSettings = overrideSettings || settings;
     const pool = questionIds
       ? questionIds.map((questionId) => questions.find((question) => question.id === questionId)).filter(Boolean)
       : availableQuestions;
@@ -653,12 +700,19 @@ export default function QuizPage() {
       return;
     }
 
+    const effectiveSettings = {
+      ...baseSettings,
+      itemCount: clampItemCount(baseSettings.itemCount, pool.length),
+      timeMinutes: clampTimeMinutes(baseSettings.timeMinutes),
+    };
     const selected = shuffleQuestions(pool).slice(0, Math.min(effectiveSettings.itemCount, pool.length));
     const startTime = Date.now();
 
-    if (overrideSettings) {
-      setSettings(overrideSettings);
-    }
+    setSettings(effectiveSettings);
+    setSettingDrafts({
+      itemCount: String(effectiveSettings.itemCount),
+      timeMinutes: String(effectiveSettings.timeMinutes),
+    });
     setActiveQuestions(selected);
     setAnswers({});
     setFeedback({});
@@ -673,7 +727,7 @@ export default function QuizPage() {
     setPhase('taking');
     clearSavedSession(id);
     setSavedSession(null);
-  }, [availableQuestions, id, questions, settings]);
+  }, [availableQuestions, clampItemCount, clampTimeMinutes, id, questions, settings]);
 
   useEffect(() => {
     if (startCountdown === null) return undefined;
@@ -695,6 +749,17 @@ export default function QuizPage() {
   }, [startCountdown, startSession]);
 
   const requestStartSession = () => {
+    const nextItemCount = clampItemCount(settingDrafts.itemCount);
+    const nextTimeMinutes = clampTimeMinutes(settingDrafts.timeMinutes);
+    setSettings((current) => ({
+      ...current,
+      itemCount: nextItemCount,
+      timeMinutes: nextTimeMinutes,
+    }));
+    setSettingDrafts({
+      itemCount: String(nextItemCount),
+      timeMinutes: String(nextTimeMinutes),
+    });
     setShowTutorial(false);
     setStartCountdown(null);
     setStartPromptOpen(true);
@@ -788,12 +853,19 @@ export default function QuizPage() {
     }
   };
 
-  const discardAndExit = () => {
-    clearSavedSession(id);
-    setSavedSession(null);
+  const confirmExit = async () => {
+    const target = exitConfirm.target;
     setExitConfirm({ open: false, target: 'preview' });
+
+    if (settings.sessionType === 'test') {
+      const submitted = await submitAttempt(false);
+      if (submitted) toast.success('Test submitted with your current answers.');
+      return;
+    }
+
+    toast.success('Progress saved. You can resume this practice later.');
     setPhase('preview');
-    if (exitConfirm.target === 'library') {
+    if (target === 'library') {
       navigate('/library?tab=quiz');
     }
   };
@@ -852,6 +924,7 @@ export default function QuizPage() {
             questions={questionsForDifficulty}
             attempts={attempts}
             settings={settings}
+            settingDrafts={settingDrafts}
             questionCounts={questionCounts}
             difficultyCounts={difficultyCounts}
             availableCount={availableQuestions.length}
@@ -860,6 +933,8 @@ export default function QuizPage() {
             onBack={() => navigate('/library?tab=quiz')}
             onEdit={() => navigate(`/quiz/${quiz.id}/edit`)}
             onUpdateSetting={updateSetting}
+            onUpdateNumericDraft={updateNumericDraft}
+            onCommitNumericSetting={commitNumericSetting}
             onStart={requestStartSession}
             onResume={resumeSession}
           />
@@ -951,7 +1026,7 @@ export default function QuizPage() {
         <StartQuizModalContent
           countdown={startCountdown}
           settings={settings}
-          itemCount={Math.min(settings.itemCount, availableQuestions.length)}
+          itemCount={Math.min(clampItemCount(settings.itemCount), availableQuestions.length)}
           availableCount={availableQuestions.length}
           onCancel={closeStartPrompt}
           onBegin={beginStartCountdown}
@@ -999,18 +1074,23 @@ export default function QuizPage() {
       <Modal
         isOpen={exitConfirm.open}
         onClose={() => setExitConfirm({ open: false, target: 'preview' })}
-        title="Leave this quiz?"
+        title={settings.sessionType === 'test' ? 'Submit this test?' : 'Leave practice?'}
         size="md"
       >
         <div className="space-y-4 text-sm leading-7 text-[color:var(--color-text-muted)]">
-          <p>Your progress is saved in this browser, but discarding will clear the current attempt and return you to the quiz preview.</p>
+          <p>
+            {settings.sessionType === 'test'
+              ? 'Leaving test mode will submit your current answers now. Any unanswered items will be counted wrong.'
+              : 'Your practice progress is saved in this browser. You can leave now and resume it later.'}
+          </p>
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <button
               type="button"
-              onClick={discardAndExit}
-              className="rounded-2xl border border-rose-500/40 px-5 py-3 font-bold text-rose-500"
+              onClick={confirmExit}
+              disabled={submitting}
+              className="rounded-2xl border border-[color:var(--color-border)] px-5 py-3 font-bold text-[color:var(--color-text)] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Discard progress
+              {settings.sessionType === 'test' ? 'Submit and exit' : 'Save and leave'}
             </button>
             <button
               type="button"
@@ -1164,6 +1244,7 @@ function PreviewScreen({
   questions,
   attempts,
   settings,
+  settingDrafts,
   questionCounts,
   difficultyCounts,
   availableCount,
@@ -1172,6 +1253,8 @@ function PreviewScreen({
   onBack,
   onEdit,
   onUpdateSetting,
+  onUpdateNumericDraft,
+  onCommitNumericSetting,
   onStart,
   onResume,
 }) {
@@ -1256,7 +1339,7 @@ function PreviewScreen({
                   label="Quiz mode"
                   value={settings.sessionType}
                   options={[
-                    { value: 'practice', label: 'Practice', icon: <Sparkles size={16} /> },
+                    { value: 'practice', label: 'Practice', icon: <Dumbbell size={16} /> },
                     { value: 'test', label: 'Test', icon: <ShieldCheck size={16} /> },
                   ]}
                   onChange={(value) => onUpdateSetting('sessionType', value)}
@@ -1286,11 +1369,16 @@ function PreviewScreen({
                   <label className="block rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3 sm:p-4">
                     <span className="text-sm font-black text-[color:var(--color-text)]">Items</span>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
                       min="1"
                       max={maxItemCount}
-                      value={settings.itemCount}
-                      onChange={(event) => onUpdateSetting('itemCount', event.target.value)}
+                      value={settingDrafts.itemCount}
+                      onChange={(event) => onUpdateNumericDraft('itemCount', event.target.value)}
+                      onBlur={() => onCommitNumericSetting('itemCount')}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') event.currentTarget.blur();
+                      }}
                       className="mt-3 h-11 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-sm font-bold text-[color:var(--color-text)] outline-none focus:border-[color:var(--color-accent)]"
                     />
                     <span className="mt-2 block text-xs font-semibold text-[color:var(--color-text-muted)]">{availableCount} available</span>
@@ -1298,11 +1386,16 @@ function PreviewScreen({
                   <label className="block rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3 sm:p-4">
                     <span className="text-sm font-black text-[color:var(--color-text)]">Minutes</span>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
                       min="1"
                       max="240"
-                      value={settings.timeMinutes}
-                      onChange={(event) => onUpdateSetting('timeMinutes', event.target.value)}
+                      value={settingDrafts.timeMinutes}
+                      onChange={(event) => onUpdateNumericDraft('timeMinutes', event.target.value)}
+                      onBlur={() => onCommitNumericSetting('timeMinutes')}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') event.currentTarget.blur();
+                      }}
                       className="mt-3 h-11 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-sm font-bold text-[color:var(--color-text)] outline-none focus:border-[color:var(--color-accent)]"
                     />
                     <span className="mt-2 block text-xs font-semibold text-[color:var(--color-text-muted)]">Auto-submit at 0:00</span>

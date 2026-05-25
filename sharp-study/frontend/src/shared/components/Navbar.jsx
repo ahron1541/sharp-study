@@ -4,7 +4,7 @@ import { Menu, X, LogOut, Settings, LayoutDashboard, Shield } from 'lucide-react
 import { useAuth } from '../../features/auth/context/AuthContext';
 import { useAccessibility } from '../../features/accessibility/context/useAccessibility';
 import AccessibilityPanel from '../../features/accessibility/components/AccessibilityPanel';
-import versoLogo from '../../assets/logo/verso_logo.svg';
+import VersoLogo from './VersoLogo';
 
 export default function Navbar() {
   const { user, profile, signOut } = useAuth();
@@ -41,10 +41,9 @@ export default function Navbar() {
           to="/dashboard"
           className="flex items-center gap-2 font-bold text-xl text-[var(--text-color)]
                      focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] rounded"
-          aria-label="Verso — Go to dashboard"
+          aria-label="Verso Go to dashboard"
         >
-          <img src={versoLogo} alt="Verso" className="h-6 w-6" aria-hidden="true" />
-          <span>Verso</span>
+          <VersoLogo size="sm" />
         </Link>
 
         {/* Desktop Nav */}

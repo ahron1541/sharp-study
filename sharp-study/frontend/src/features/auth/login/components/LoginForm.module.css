@@ -100,7 +100,7 @@
   width: 38%;
   border-radius: inherit;
   background: var(--accent);
-  animation: loginProgress 0.85s ease-in-out infinite alternate;
+  animation: loginProgress 1.45s ease-in-out infinite alternate;
 }
 
 @keyframes loginProgress {

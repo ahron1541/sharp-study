@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom';
 import { MdLightMode, MdDarkMode } from 'react-icons/md';
 import { useAccessibility } from '../../../features/accessibility/context/useAccessibility';
+import VersoLogo from '../../../shared/components/VersoLogo';
 import styles from './LandingNav.module.css';
-import versoLogo from '../../../assets/logo/verso_w_name.svg';
 
 export default function LandingNav() {
   const { theme, toggleTheme } = useAccessibility();
@@ -12,12 +12,8 @@ export default function LandingNav() {
       <nav className={styles.nav} aria-label="Main navigation">
         <div className={styles.inner}>
           {/* Logo */}
-          <Link to="/" className={styles.logo} aria-label="Verso — Home">
-            <img 
-              src={versoLogo}
-              alt="Verso" 
-              className={styles.logoImg}
-            />
+          <Link to="/" className={styles.logo} aria-label="Verso Home">
+            <VersoLogo size="lg" className={styles.logoLockup} />
           </Link>
 
           {/* Right actions */}

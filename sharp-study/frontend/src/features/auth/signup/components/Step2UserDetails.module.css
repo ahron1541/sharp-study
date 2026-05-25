@@ -80,7 +80,7 @@
   width: 42%;
   border-radius: inherit;
   background: var(--accent);
-  animation: accountProgress 0.9s ease-in-out infinite alternate;
+  animation: accountProgress 1.45s ease-in-out infinite alternate;
 }
 
 .busySkeleton {
@@ -100,7 +100,7 @@
       color-mix(in srgb, var(--card-border) 72%, transparent) 80%
     );
   background-size: 220% 100%;
-  animation: accountSkeleton 1.25s ease-in-out infinite;
+  animation: accountSkeleton 1.8s ease-in-out infinite;
 }
 
 .busySkeleton span:nth-child(2) { width: 82%; }

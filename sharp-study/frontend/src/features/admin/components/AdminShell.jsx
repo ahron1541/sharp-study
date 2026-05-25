@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 
 import { useAuth } from '../../auth/context/AuthContext';
 import Button from '../../../shared/components/Button';
-import versoLogo from '../../../assets/logo/verso_w_name.svg';
+import VersoLogo from '../../../shared/components/VersoLogo';
 
 const NAV_ITEMS = [
   { id: 'overview', label: 'Overview', icon: Shield },
@@ -88,7 +88,7 @@ export default function AdminShell() {
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-3 overflow-hidden">
             <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface text-accent shadow-card">
-              <img src={versoLogo} alt="Verso" className="h-7 w-auto" />
+              <VersoLogo size="compact" showText={false} />
             </span>
             {!collapsed ? (
               <div className="min-w-0">

@@ -19,7 +19,7 @@
   width: 38%;
   border-radius: inherit;
   background: var(--accent);
-  animation: stepProgress 0.9s ease-in-out infinite alternate;
+  animation: stepProgress 1.45s ease-in-out infinite alternate;
 }
 
 /* Step indicator */

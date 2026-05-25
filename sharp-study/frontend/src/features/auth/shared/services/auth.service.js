@@ -1,7 +1,7 @@
 // All auth API calls in one place.
 // Components import functions from here, never call fetch() directly.
 
-const BASE = import.meta.env.VITE_API_URL;
+const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 async function request(endpoint, options = {}) {
   const token = localStorage.getItem('sharp-study-token');

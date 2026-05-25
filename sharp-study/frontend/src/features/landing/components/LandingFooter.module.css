@@ -34,22 +34,14 @@
 .logoCol { display: flex; flex-direction: column; gap: var(--space-md); }
 
 .logoImg {
-  width: 5rem;
-  height: 5rem;
+  width: max-content;
+  max-width: 12rem;
+  min-height: 3rem;
   background-color: transparent;
   border-radius: var(--radius-sm);
-  overflow: hidden;
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.logoPlaceholder {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
 }
 
 /* Link columns */
@@ -89,8 +81,7 @@
   }
   
   .logoImg {
-    width: 4rem;
-    height: 4rem;
+    min-height: 2.75rem;
   }
   
   .inner {
@@ -104,8 +95,7 @@
 
 @media (max-width: 480px) {
   .logoImg {
-    width: 3.5rem;
-    height: 3.5rem;
+    min-height: 2.5rem;
   }
   
   .footerLabel {
@@ -119,7 +109,6 @@
 
 @media (min-width: 768px) {
   .logoImg {
-    width: 5.5rem;
-    height: 5.5rem;
+    min-height: 3.25rem;
   }
 }

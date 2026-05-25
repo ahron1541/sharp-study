@@ -1,5 +1,18 @@
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+export const warmBackend = async (signal) => {
+  try {
+    const response = await fetch(`${API_URL}/health`, {
+      method: 'GET',
+      cache: 'no-store',
+      signal,
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+
 export const apiRequest = async (endpoint, options = {}) => {
   const token = localStorage.getItem('sharp-study-token');
 

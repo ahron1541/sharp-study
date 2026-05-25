@@ -12,7 +12,7 @@ import { DEFAULT_PREFERENCES } from '../../theme/constants/themes';
 import { applyPreferences } from '../../theme/hooks/useTheme';
 import { savePreferences } from '../../theme/services/preferences.service';
 import { useAuth } from '../../auth/context/AuthContext';
-import versoLogo from '../../../assets/logo/verso_w_name.svg';
+import VersoLogo from '../../../shared/components/VersoLogo';
 import {
   createAdminUser,
   deleteAdminContent,
@@ -731,7 +731,7 @@ function AdminSettingsSection({ draft, saving, hasChanges, onThemeChange, onDisc
           <div className="mt-6 overflow-hidden rounded-[1.5rem] border border-border bg-surface-2 sm:rounded-[1.8rem]">
             <div className={`p-5 transition-colors sm:p-6 ${draft.display_mode === 'dark' ? 'bg-slate-950 text-white' : 'bg-white text-slate-900'}`}>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                <img src={versoLogo} alt="Verso" className="h-12 w-auto" />
+                <VersoLogo size="lg" mode={draft.display_mode === 'dark' ? 'dark' : 'light'} />
                 <div>
                   <p className="text-lg font-black">Admin Control</p>
                   <p className={`text-sm ${draft.display_mode === 'dark' ? 'text-white/70' : 'text-slate-600'}`}>Responsive oversight for users and learning content.</p>

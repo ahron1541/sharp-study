@@ -40,6 +40,7 @@ const ATTEMPT_PAGE_SIZE = 5;
 const progressKey = (setId) => `sharp-study-flashcards-progress:${setId}`;
 const contentCacheKey = (setId) => `sharp-study-flashcards-content:${setId}`;
 const difficultyKey = (setId) => `sharp-study-flashcards-difficulty:${setId}`;
+const reviewSessionKey = (setId) => `sharp-study-flashcards-review-active:${setId}`;
 const tutorialKey = 'sharp-study-flashcards-tutorial-seen';
 const MotionDiv = motion.div;
 const FLASHCARD_DIFFICULTIES = [
@@ -77,10 +78,28 @@ function clampIndex(index, length) {
   return Math.max(0, Math.min(index, length - 1));
 }
 
-function summarizeForHint(text = '') {
-  const words = sanitizePlainText(text).split(/\s+/).filter(Boolean);
-  if (words.length <= 3) return 'Think about the key term or person connected to this question.';
-  return `It starts with: ${words.slice(0, Math.min(4, words.length)).join(' ')}...`;
+function readReviewSession(setId) {
+  try {
+    return sessionStorage.getItem(reviewSessionKey(setId)) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeReviewSession(setId, active) {
+  try {
+    if (active) {
+      sessionStorage.setItem(reviewSessionKey(setId), 'true');
+    } else {
+      sessionStorage.removeItem(reviewSessionKey(setId));
+    }
+  } catch {
+    // Session persistence is a convenience only.
+  }
+}
+
+function summarizeForHint() {
+  return 'Think about the main idea, category, or example connected to this card before flipping it.';
 }
 
 function normalizeStoredProgress(rawProgress, cards = []) {
@@ -202,7 +221,7 @@ export default function FlashcardsPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [speaking, setSpeaking] = useState(false);
   const [difficulty, setDifficulty] = useState(() => readFlashcardDifficulty(id));
-  const [reviewStarted, setReviewStarted] = useState(false);
+  const [reviewStarted, setReviewStarted] = useState(() => readReviewSession(id));
   const [previewExitConfirm, setPreviewExitConfirm] = useState(false);
   const [attemptLog, setAttemptLog] = useState([]);
   const [attemptPage, setAttemptPage] = useState(1);
@@ -254,6 +273,10 @@ export default function FlashcardsPage() {
   const completed = orderedCards.length > 0 && reviewedCount >= orderedCards.length;
   const percent = orderedCards.length ? Math.round((knownCount / orderedCards.length) * 100) : 0;
   const hintsLocked = difficultyMeta.hintsLocked;
+
+  useEffect(() => {
+    writeReviewSession(id, reviewStarted);
+  }, [id, reviewStarted]);
 
   useEffect(() => {
     try {
@@ -385,7 +408,7 @@ export default function FlashcardsPage() {
         setRelatedStudyGuideId(cached.relatedStudyGuideId || '');
         setRelatedQuizId(cached.relatedQuizId || '');
         setDifficulty(cachedDifficulty);
-        setReviewStarted(false);
+        setReviewStarted(readReviewSession(id));
         if (getFlashcardDifficulty(cachedDifficulty).hintsLocked) {
           setHintVisible(false);
         }
@@ -443,7 +466,7 @@ export default function FlashcardsPage() {
       setCards(nextCards);
       setProgress(nextProgress);
       setShowTutorial(!localStorage.getItem(tutorialKey));
-      setReviewStarted(false);
+      setReviewStarted(readReviewSession(id));
       setLoading(false);
 
       const nextRelatedStudyGuideId = sanitizePlainText(response.relatedStudyGuideId || '');
@@ -877,7 +900,7 @@ export default function FlashcardsPage() {
                           exit={{ opacity: 0, y: 12 }}
                           className="mx-auto mb-3 max-w-lg rounded-[1rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3 text-sm leading-6 text-[color:var(--color-text-muted)]"
                         >
-                          {currentCard.hint || summarizeForHint(currentCard.back)}
+                          {currentCard.hint || summarizeForHint()}
                         </MotionDiv>
                       ) : null}
                     </AnimatePresence>
