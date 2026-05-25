@@ -6,20 +6,20 @@ import styles from './VersoLogo.module.css';
 
 const sizeClasses = {
   sm: {
-    mark: 'h-6 w-6',
-    wordmark: 'h-7 max-w-[6.8rem]',
+    mark: styles.markSm,
+    wordmark: styles.wordmarkSm,
   },
   md: {
-    mark: 'h-8 w-8',
-    wordmark: 'h-9 max-w-[8.5rem]',
+    mark: styles.markMd,
+    wordmark: styles.wordmarkMd,
   },
   lg: {
-    mark: 'h-10 w-10',
-    wordmark: 'h-11 max-w-[10.5rem]',
+    mark: styles.markLg,
+    wordmark: styles.wordmarkLg,
   },
   compact: {
-    mark: 'h-7 w-7',
-    wordmark: 'h-8 max-w-[7.5rem]',
+    mark: styles.markCompact,
+    wordmark: styles.wordmarkCompact,
   },
 };
 
@@ -44,18 +44,18 @@ export default function VersoLogo({
   const assetSizeClass = showText ? classes.wordmark : classes.mark;
 
   return (
-    <span className={`inline-flex min-w-0 items-center ${className}`} aria-label={label} role="img">
+    <span className={`${styles.root} ${className}`} aria-label={label} role="img">
       <img
         src={showText ? lightWordmark : lightMark}
         alt=""
         aria-hidden="true"
-        className={`${lightVisibility} ${assetSizeClass} w-auto shrink-0 object-contain ${markClassName} ${textClassName}`}
+        className={`${styles.asset} ${lightVisibility} ${assetSizeClass} ${markClassName} ${textClassName}`}
       />
       <img
         src={showText ? darkWordmark : darkMark}
         alt=""
         aria-hidden="true"
-        className={`${darkVisibility} ${assetSizeClass} w-auto shrink-0 object-contain ${markClassName} ${textClassName}`}
+        className={`${styles.asset} ${darkVisibility} ${assetSizeClass} ${markClassName} ${textClassName}`}
       />
     </span>
   );
