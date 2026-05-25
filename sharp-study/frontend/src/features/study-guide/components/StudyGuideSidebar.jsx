@@ -10,26 +10,31 @@ export default function StudyGuideSidebar({
   return (
     <aside
       className={`study-guide-sidebar h-full min-h-0 ${
-        collapsed ? 'lg:w-[92px]' : 'lg:w-[clamp(17rem,20vw,20rem)]'
+        collapsed ? 'lg:w-[5.75rem]' : 'lg:w-[clamp(18rem,22vw,22rem)]'
       }`}
     >
       <nav className="flex h-full min-h-0 flex-col rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/96 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.1)] transition-[width,transform,box-shadow] duration-300">
-        <div className="flex items-center justify-between gap-3 border-b border-[color:var(--color-border)] pb-3">
-          <div className={`flex min-w-0 items-center gap-2 ${collapsed ? 'justify-center' : ''}`}>
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-surface-2)] text-[color:var(--color-accent)]">
-              <BookOpen size={18} />
-            </span>
-            {!collapsed && (
-              <div className="min-w-0">
-                <h2 className="text-sm font-black uppercase tracking-[0.22em] text-[color:var(--color-text)]">
-                  Contents
-                </h2>
-                <p className="mt-1 text-xs text-[color:var(--color-text-muted)]">
-                  Follow the lesson headings
-                </p>
-              </div>
-            )}
-          </div>
+        <div
+          className={`border-b border-[color:var(--color-border)] pb-3 ${
+            collapsed
+              ? 'flex flex-col items-center gap-3'
+              : 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3'
+          }`}
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-surface-2)] text-[color:var(--color-accent)]">
+            <BookOpen size={18} />
+          </span>
+
+          {!collapsed && (
+            <div className="min-w-0 pr-1">
+              <h2 className="max-w-full break-words text-sm font-black uppercase leading-tight tracking-[0.16em] text-[color:var(--color-text)] [overflow-wrap:anywhere]">
+                Contents
+              </h2>
+              <p className="mt-1 max-w-full break-words text-xs leading-snug text-[color:var(--color-text-muted)] [overflow-wrap:anywhere]">
+                Follow the lesson headings
+              </p>
+            </div>
+          )}
 
           <button
             type="button"
