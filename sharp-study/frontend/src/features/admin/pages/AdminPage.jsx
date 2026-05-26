@@ -1254,9 +1254,9 @@ function DocumentReadinessCard({ metrics }) {
 
 function MiniCount({ label, value }) {
   return (
-    <div className="rounded-xl bg-surface px-2 py-2">
-      <p className="text-sm font-black text-text">{value}</p>
-      <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-text-muted">{label}</p>
+    <div className="min-w-0 rounded-xl bg-surface px-2 py-2">
+      <p className="text-sm font-black leading-5 text-text">{value}</p>
+      <p className="truncate text-[0.72rem] font-bold leading-4 text-text-muted">{label}</p>
     </div>
   );
 }
