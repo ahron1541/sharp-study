@@ -107,6 +107,78 @@ const PROMPT_LABELS = {
   quiz: 'Quiz',
 };
 
+const PROMPT_STARTERS = {
+  study_guide: `Create a clear, student-friendly study guide from the lesson text below.
+
+Requirements:
+- Use only facts from the lesson text.
+- Organize the output with headings, concise explanations, and important terms.
+- Do not invent details.
+
+Lesson text:
+{{source_text}}`,
+  key_references: `Return valid JSON only. Extract the most important references from the lesson text.
+
+Use this shape:
+[
+  { "label": "Important term or reference", "detail": "Short explanation supported by the lesson" }
+]
+
+Lesson text:
+{{source_text}}`,
+  discussion_questions: `Return valid JSON only. Create discussion questions that can be answered from the lesson text.
+
+Use this shape:
+[
+  { "question": "Question text", "support_snippet": "Short phrase from the lesson" }
+]
+
+Lesson text:
+{{source_text}}`,
+  flashcards: `Return valid JSON only. Create {{target_count}} {{difficulty}} flashcards from the lesson text.
+
+Difficulty rules:
+{{difficulty_rules}}
+
+Use this shape:
+[
+  { "front": "Question or term", "back": "Answer", "hint": "Short clue" }
+]
+
+Lesson text:
+{{source_text}}`,
+  quiz: `Return valid JSON only. Create {{target_count}} {{difficulty}} quiz questions from the lesson text.
+
+Difficulty rules:
+{{difficulty_rules}}
+
+Use this shape:
+[
+  {
+    "type": "multiple_choice",
+    "question": "Question text",
+    "options": ["A", "B", "C", "D"],
+    "correct_index": 0,
+    "support_snippet": "Short phrase from the lesson"
+  }
+]
+
+Lesson text:
+{{source_text}}`,
+};
+
+const OVERVIEW_PAGING_DEFAULTS = {
+  aiPage: 1,
+  aiPageSize: 5,
+  activityPage: 1,
+  activityPageSize: 6,
+};
+
+const HEALTH_PAGING_DEFAULTS = {
+  logPage: 1,
+  logPageSize: 8,
+};
+
 const REPORT_REASONS = {
   incorrect: 'Incorrect content',
   confusing: 'Confusing wording',
@@ -133,6 +205,8 @@ export default function AdminPage() {
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState({ active: false, label: '' });
+  const [overviewPaging, setOverviewPaging] = useState(OVERVIEW_PAGING_DEFAULTS);
+  const [healthPaging, setHealthPaging] = useState(HEALTH_PAGING_DEFAULTS);
   const [userFilters, setUserFilters] = useState({ search: '', role: 'all', status: 'all', page: 1 });
   const [feedbackFilters, setFeedbackFilters] = useState({ search: '', status: 'all', type: 'all', page: 1 });
   const [announcementFilter, setAnnouncementFilter] = useState('all');
@@ -151,9 +225,9 @@ export default function AdminPage() {
   const subtitle = SECTION_COPY[section][1];
 
   const loadOverview = useCallback(async () => {
-    const data = await fetchAdminOverview();
+    const data = await fetchAdminOverview(overviewPaging);
     setOverview(data);
-  }, []);
+  }, [overviewPaging]);
 
   const loadUsers = useCallback(async () => {
     const data = await fetchAdminUsers(userFilters);
@@ -181,9 +255,9 @@ export default function AdminPage() {
   }, []);
 
   const loadHealth = useCallback(async () => {
-    const data = await fetchAdminHealth();
+    const data = await fetchAdminHealth(healthPaging);
     setHealth(data);
-  }, []);
+  }, [healthPaging]);
 
   const reloadCurrentSection = useCallback(async () => {
     if (section === 'overview') await loadOverview();
@@ -305,9 +379,23 @@ export default function AdminPage() {
     });
   }
 
-  async function updateReport(report, payload) {
-    await runAction('Report updated', () => updateAdminFeedbackReport(report.id, payload), async () => {
-      await Promise.all([loadFeedback(), loadOverview()]);
+  function requestUpdateReport(report, payload) {
+    const nextStatus = payload.status || report.status;
+    if (nextStatus === report.status) {
+      toast.success('Report already has that status.');
+      return;
+    }
+
+    setConfirm({
+      open: true,
+      title: 'Update report status?',
+      body: `Move "${report.content_title || 'this report'}" from ${report.status} to ${nextStatus}.`,
+      danger: nextStatus === 'dismissed',
+      action: async () => {
+        await runAction('Report updated', () => updateAdminFeedbackReport(report.id, payload), async () => {
+          await Promise.all([loadFeedback(), loadOverview()]);
+        });
+      },
     });
   }
 
@@ -414,12 +502,31 @@ export default function AdminPage() {
     });
   }
 
-  async function saveRateLimit(event) {
+  function saveRateLimit(event) {
     event.preventDefault();
-    await runAction('AI rate limit saved', () => updateAdminAiRateLimit({
+    const nextLimit = {
       daily_limit: Number(rateDraft.daily_limit),
       window_hours: Number(rateDraft.window_hours),
-    }), loadAiControls);
+    };
+    const currentLimit = {
+      daily_limit: Number(aiControls?.rate_limit?.daily_limit || 10),
+      window_hours: Number(aiControls?.rate_limit?.window_hours || 24),
+    };
+
+    if (nextLimit.daily_limit === currentLimit.daily_limit && nextLimit.window_hours === currentLimit.window_hours) {
+      toast.success('AI request limit is already up to date.');
+      return;
+    }
+
+    setConfirm({
+      open: true,
+      title: 'Save AI request limit?',
+      body: `Users will be limited to ${nextLimit.daily_limit} AI request${nextLimit.daily_limit === 1 ? '' : 's'} every ${nextLimit.window_hours} hour${nextLimit.window_hours === 1 ? '' : 's'}.`,
+      danger: false,
+      action: async () => {
+        await runAction('AI rate limit saved', () => updateAdminAiRateLimit(nextLimit), loadAiControls);
+      },
+    });
   }
 
   async function saveOverride(event) {
@@ -431,6 +538,42 @@ export default function AdminPage() {
     }), async () => {
       setOverrideDraft({ user_id: '', daily_limit: 10, is_enabled: true });
       await loadAiControls();
+    });
+  }
+
+  function requestDeleteOverride(override) {
+    setConfirm({
+      open: true,
+      title: 'Remove user AI limit?',
+      body: `${override.user_name || override.user_id} will use the global AI request limit again.`,
+      danger: true,
+      action: async () => {
+        await runAction('User AI limit removed', () => deleteAdminAiRateLimitOverride(override.user_id), loadAiControls);
+      },
+    });
+  }
+
+  function requestDeleteLog(log) {
+    setConfirm({
+      open: true,
+      title: 'Delete system log?',
+      body: `This removes the "${log.message || log.source || 'selected'}" log entry from the admin view.`,
+      danger: true,
+      action: async () => {
+        await runAction('Log deleted', () => deleteAdminSystemLog(log.id), loadHealth);
+      },
+    });
+  }
+
+  function requestClearOldLogs() {
+    setConfirm({
+      open: true,
+      title: 'Clear old system logs?',
+      body: 'This permanently deletes system logs older than 30 days.',
+      danger: true,
+      action: async () => {
+        await runAction('Old logs cleared', () => clearAdminOldSystemLogs(30), loadHealth);
+      },
     });
   }
 
@@ -472,7 +615,14 @@ export default function AdminPage() {
         </section>
 
         {loading ? <SectionSkeleton /> : null}
-        {!loading && section === 'overview' ? <OverviewSection overview={overview} /> : null}
+        {!loading && section === 'overview' ? (
+          <OverviewSection
+            overview={overview}
+            onAiPage={(aiPage) => setOverviewPaging((current) => ({ ...current, aiPage }))}
+            onActivityPage={(activityPage) => setOverviewPaging((current) => ({ ...current, activityPage }))}
+            busy={action.active}
+          />
+        ) : null}
         {!loading && section === 'users' ? (
           <UsersSection
             users={users}
@@ -483,6 +633,7 @@ export default function AdminPage() {
             onEdit={openEditUser}
             onDelete={requestDeleteUser}
             onToggleBlock={requestToggleBlock}
+            busy={action.active}
           />
         ) : null}
         {!loading && section === 'feedback' ? (
@@ -490,8 +641,9 @@ export default function AdminPage() {
             feedback={feedback}
             filters={feedbackFilters}
             onFilters={setFeedbackFilters}
-            onUpdate={updateReport}
+            onUpdate={requestUpdateReport}
             onDelete={requestDeleteReport}
+            busy={action.active}
           />
         ) : null}
         {!loading && section === 'announcements' ? (
@@ -502,6 +654,7 @@ export default function AdminPage() {
             onCreate={() => openAnnouncement()}
             onEdit={openAnnouncement}
             onDelete={requestDeleteAnnouncement}
+            busy={action.active}
           />
         ) : null}
         {!loading && section === 'ai' ? (
@@ -513,21 +666,24 @@ export default function AdminPage() {
             onOverrideDraft={setOverrideDraft}
             onSaveRate={saveRateLimit}
             onSaveOverride={saveOverride}
-            onDeleteOverride={(userId) => runAction('User AI limit removed', () => deleteAdminAiRateLimitOverride(userId), loadAiControls)}
+            onDeleteOverride={requestDeleteOverride}
             onCreatePrompt={() => openPrompt()}
             onEditPrompt={openPrompt}
             onDeletePrompt={requestDeletePrompt}
+            busy={action.active}
           />
         ) : null}
         {!loading && section === 'health' ? (
           <HealthSection
             data={health}
-            onDeleteLog={(id) => runAction('Log deleted', () => deleteAdminSystemLog(id), loadHealth)}
-            onClearOldLogs={() => runAction('Old logs cleared', () => clearAdminOldSystemLogs(30), loadHealth)}
+            onDeleteLog={requestDeleteLog}
+            onClearOldLogs={requestClearOldLogs}
+            onLogPage={(logPage) => setHealthPaging((current) => ({ ...current, logPage }))}
+            busy={action.active}
           />
         ) : null}
         {!loading && section === 'settings' ? (
-          <SettingsSection draft={settingsDraft} onDraft={setSettingsDraft} onSave={saveSettings} />
+          <SettingsSection draft={settingsDraft} onDraft={setSettingsDraft} onSave={saveSettings} busy={action.active} />
         ) : null}
       </main>
 
@@ -541,7 +697,7 @@ export default function AdminPage() {
           <button type="button" onClick={() => setConfirm({ open: false, title: '', body: '', action: null, danger: true })} className="rounded-2xl border border-border px-4 py-2.5 font-bold text-text">
             Cancel
           </button>
-          <button type="button" onClick={confirmAction} className={`rounded-2xl px-4 py-2.5 font-bold text-white ${confirm.danger ? 'bg-red-600' : 'bg-accent'}`}>
+          <button type="button" onClick={confirmAction} disabled={action.active} className={`rounded-2xl px-4 py-2.5 font-bold text-white disabled:cursor-not-allowed disabled:opacity-60 ${confirm.danger ? 'bg-red-600' : 'bg-accent'}`}>
             Confirm
           </button>
         </div>
@@ -561,11 +717,12 @@ function SectionSkeleton() {
   );
 }
 
-function OverviewSection({ overview }) {
+function OverviewSection({ overview, onAiPage, onActivityPage, busy }) {
   const metrics = overview?.metrics || {};
   const totalMaterials = Number(metrics.documents || 0) + Number(metrics.study_guides || 0) + Number(metrics.flashcard_sets || 0) + Number(metrics.quizzes || 0);
   const activeMaterials = Number(metrics.documents_active || 0) + Number(metrics.study_guides_active || 0) + Number(metrics.flashcard_sets_active || 0) + Number(metrics.quizzes_active || 0);
-  const readiness = percent(Number(metrics.documents_done || 0), Math.max(1, Number(metrics.documents || 0)));
+  const topAiUsers = normalizePagedList(overview?.top_ai_users, OVERVIEW_PAGING_DEFAULTS.aiPage, OVERVIEW_PAGING_DEFAULTS.aiPageSize);
+  const recentActivity = normalizePagedList(overview?.recent_activity, OVERVIEW_PAGING_DEFAULTS.activityPage, OVERVIEW_PAGING_DEFAULTS.activityPageSize);
 
   return (
     <div className="space-y-5">
@@ -578,8 +735,8 @@ function OverviewSection({ overview }) {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
         <Panel title="Platform Overview" eyebrow="Dashboard" icon={Shield}>
-          <div className="grid gap-4 md:grid-cols-3">
-            <DonutStat label="Document readiness" value={readiness} />
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.85fr)_minmax(0,0.85fr)]">
+            <DocumentReadinessCard metrics={metrics} />
             <MetricCard icon={Database} label="Total materials" value={totalMaterials} detail={`${activeMaterials} active items`} />
             <MetricCard icon={FileWarning} label="Open reports" value={metrics.open_reports || 0} detail="Needs admin review" />
           </div>
@@ -592,8 +749,9 @@ function OverviewSection({ overview }) {
         </Panel>
 
         <Panel title="Top AI Users" eyebrow="Usage" icon={Gauge}>
+          <p className="mb-3 text-sm leading-6 text-text-muted">AI request counts from the last 24 hours.</p>
           <div className="space-y-3">
-            {(overview?.top_ai_users || []).length ? overview.top_ai_users.map((user) => (
+            {topAiUsers.items.length ? topAiUsers.items.map((user) => (
               <article key={user.user_id} className="rounded-[1.25rem] border border-border bg-surface-2 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -606,12 +764,21 @@ function OverviewSection({ overview }) {
               </article>
             )) : <EmptyState icon={Users} title="No AI usage yet" body="AI request counts appear after students generate materials." />}
           </div>
+          <Pagination
+            page={topAiUsers.pagination.page}
+            totalPages={topAiUsers.pagination.totalPages}
+            totalCount={topAiUsers.pagination.totalCount}
+            onPrev={() => onAiPage(Math.max(1, topAiUsers.pagination.page - 1))}
+            onNext={() => onAiPage(Math.min(topAiUsers.pagination.totalPages, topAiUsers.pagination.page + 1))}
+            disabled={busy}
+          />
         </Panel>
       </div>
 
       <Panel title="Recent Admin Activity" eyebrow="Audit" icon={Activity}>
+        <p className="mb-3 text-sm leading-6 text-text-muted">Audit trail for admin actions like account changes, announcements, feedback moderation, prompt edits, rate limits, and log cleanup.</p>
         <div className="grid gap-3 lg:grid-cols-2">
-          {(overview?.recent_activity || []).length ? overview.recent_activity.map((item) => (
+          {recentActivity.items.length ? recentActivity.items.map((item) => (
             <article key={item.id} className="rounded-[1.25rem] border border-border bg-surface-2 p-4">
               <p className="text-sm font-black text-text">{formatEvent(item.event)}</p>
               <p className="mt-1 text-sm leading-6 text-text-muted">{summarizeMetadata(item.metadata)}</p>
@@ -619,14 +786,22 @@ function OverviewSection({ overview }) {
             </article>
           )) : <EmptyState icon={Activity} title="No admin actions yet" body="Moderation and management actions will show up here." />}
         </div>
+        <Pagination
+          page={recentActivity.pagination.page}
+          totalPages={recentActivity.pagination.totalPages}
+          totalCount={recentActivity.pagination.totalCount}
+          onPrev={() => onActivityPage(Math.max(1, recentActivity.pagination.page - 1))}
+          onNext={() => onActivityPage(Math.min(recentActivity.pagination.totalPages, recentActivity.pagination.page + 1))}
+          disabled={busy}
+        />
       </Panel>
     </div>
   );
 }
 
-function UsersSection({ users, filters, pagination, onFilters, onCreate, onEdit, onDelete, onToggleBlock }) {
+function UsersSection({ users, filters, pagination, onFilters, onCreate, onEdit, onDelete, onToggleBlock, busy }) {
   return (
-    <Panel title="Accounts, Roles, And Access" eyebrow="User management" icon={Users} action={<PrimaryButton onClick={onCreate} icon={Plus}>Create account</PrimaryButton>}>
+    <Panel title="Accounts, Roles, And Access" eyebrow="User management" icon={Users} action={<PrimaryButton onClick={onCreate} icon={Plus} disabled={busy}>Create account</PrimaryButton>}>
       <div className="grid gap-3 lg:grid-cols-[minmax(16rem,1fr)_12rem_12rem]">
         <SearchInput value={filters.search} onChange={(search) => onFilters({ ...filters, search, page: 1 })} placeholder="Search users" />
         <Select value={filters.role} onChange={(role) => onFilters({ ...filters, role, page: 1 })} options={[['all', 'All roles'], ['student', 'Students'], ['admin', 'Admins']]} label="Role filter" />
@@ -647,21 +822,21 @@ function UsersSection({ users, filters, pagination, onFilters, onCreate, onEdit,
                 <p className="mt-1 text-xs font-bold uppercase tracking-[0.14em] text-text-muted">Joined {formatDate(user.created_at)}</p>
               </div>
               <div className="grid gap-2 sm:grid-cols-3">
-                <SecondaryButton onClick={() => onEdit(user)} icon={UserCog}>Edit</SecondaryButton>
-                <SecondaryButton onClick={() => onToggleBlock(user)} icon={AlertTriangle}>{user.is_blocked ? 'Unblock' : 'Block'}</SecondaryButton>
-                <DangerButton onClick={() => onDelete(user)} icon={Trash2}>Delete</DangerButton>
+                <SecondaryButton onClick={() => onEdit(user)} icon={UserCog} disabled={busy}>Edit</SecondaryButton>
+                <SecondaryButton onClick={() => onToggleBlock(user)} icon={AlertTriangle} disabled={busy}>{user.is_blocked ? 'Unblock' : 'Block'}</SecondaryButton>
+                <DangerButton onClick={() => onDelete(user)} icon={Trash2} disabled={busy}>Delete</DangerButton>
               </div>
             </div>
           </MotionDiv>
         )) : <EmptyState icon={Users} title="No users found" body="Try a different filter or create a managed account." />}
       </div>
 
-      <Pagination page={pagination.page} totalPages={pagination.totalPages} totalCount={pagination.totalCount} onPrev={() => onFilters({ ...filters, page: Math.max(1, pagination.page - 1) })} onNext={() => onFilters({ ...filters, page: Math.min(pagination.totalPages, pagination.page + 1) })} />
+      <Pagination page={pagination.page} totalPages={pagination.totalPages} totalCount={pagination.totalCount} onPrev={() => onFilters({ ...filters, page: Math.max(1, pagination.page - 1) })} onNext={() => onFilters({ ...filters, page: Math.min(pagination.totalPages, pagination.page + 1) })} disabled={busy} />
     </Panel>
   );
 }
 
-function FeedbackSection({ feedback, filters, onFilters, onUpdate, onDelete }) {
+function FeedbackSection({ feedback, filters, onFilters, onUpdate, onDelete, busy }) {
   const reports = feedback?.reports || [];
   const pagination = feedback?.pagination || { page: 1, totalPages: 1, totalCount: 0 };
 
@@ -692,24 +867,24 @@ function FeedbackSection({ feedback, filters, onFilters, onUpdate, onDelete }) {
                 <p className="mt-3 text-xs text-text-muted">Reporter: {report.reporter?.name} · Owner: {report.owner?.name} · {formatDateTime(report.created_at)}</p>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 xl:w-52 xl:grid-cols-1">
-                <SecondaryButton onClick={() => onUpdate(report, { status: 'reviewing' })} icon={Search}>Reviewing</SecondaryButton>
-                <SecondaryButton onClick={() => onUpdate(report, { status: 'resolved' })} icon={CheckCircle2}>Resolve</SecondaryButton>
-                <SecondaryButton onClick={() => onUpdate(report, { status: 'dismissed' })} icon={XCircle}>Dismiss</SecondaryButton>
-                <DangerButton onClick={() => onDelete(report)} icon={Trash2}>Delete</DangerButton>
+                <SecondaryButton onClick={() => onUpdate(report, { status: 'reviewing' })} icon={Search} disabled={busy}>Reviewing</SecondaryButton>
+                <SecondaryButton onClick={() => onUpdate(report, { status: 'resolved' })} icon={CheckCircle2} disabled={busy}>Resolve</SecondaryButton>
+                <SecondaryButton onClick={() => onUpdate(report, { status: 'dismissed' })} icon={XCircle} disabled={busy}>Dismiss</SecondaryButton>
+                <DangerButton onClick={() => onDelete(report)} icon={Trash2} disabled={busy}>Delete</DangerButton>
               </div>
             </div>
           </article>
         )) : <EmptyState icon={FileWarning} title="No reports matched" body="AI reports from study guides, flashcards, and quizzes will appear here." />}
       </div>
 
-      <Pagination page={pagination.page} totalPages={pagination.totalPages} totalCount={pagination.totalCount} onPrev={() => onFilters({ ...filters, page: Math.max(1, pagination.page - 1) })} onNext={() => onFilters({ ...filters, page: Math.min(pagination.totalPages, pagination.page + 1) })} />
+      <Pagination page={pagination.page} totalPages={pagination.totalPages} totalCount={pagination.totalCount} onPrev={() => onFilters({ ...filters, page: Math.max(1, pagination.page - 1) })} onNext={() => onFilters({ ...filters, page: Math.min(pagination.totalPages, pagination.page + 1) })} disabled={busy} />
     </Panel>
   );
 }
 
-function AnnouncementsSection({ announcements, filter, onFilter, onCreate, onEdit, onDelete }) {
+function AnnouncementsSection({ announcements, filter, onFilter, onCreate, onEdit, onDelete, busy }) {
   return (
-    <Panel title="Announcements & Updates" eyebrow="Notifications" icon={Bell} action={<PrimaryButton onClick={onCreate} icon={Plus}>New announcement</PrimaryButton>}>
+    <Panel title="Announcements & Updates" eyebrow="Notifications" icon={Bell} action={<PrimaryButton onClick={onCreate} icon={Plus} disabled={busy}>New announcement</PrimaryButton>}>
       <div className="max-w-xs">
         <Select value={filter} onChange={onFilter} options={[['all', 'All statuses'], ['draft', 'Draft'], ['published', 'Published'], ['archived', 'Archived']]} label="Announcement status" />
       </div>
@@ -725,8 +900,8 @@ function AnnouncementsSection({ announcements, filter, onFilter, onCreate, onEdi
             <p className="mt-2 line-clamp-3 text-sm leading-7 text-text-muted">{announcement.body}</p>
             <p className="mt-3 text-xs font-semibold text-text-muted">Updated {formatDateTime(announcement.updated_at)}</p>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <SecondaryButton onClick={() => onEdit(announcement)} icon={Edit3}>Edit</SecondaryButton>
-              <DangerButton onClick={() => onDelete(announcement)} icon={Trash2}>Delete</DangerButton>
+              <SecondaryButton onClick={() => onEdit(announcement)} icon={Edit3} disabled={busy}>Edit</SecondaryButton>
+              <DangerButton onClick={() => onDelete(announcement)} icon={Trash2} disabled={busy}>Delete</DangerButton>
             </div>
           </article>
         )) : <EmptyState icon={Megaphone} title="No announcements yet" body="Create one to publish it to the user Notifications page." />}
@@ -735,7 +910,7 @@ function AnnouncementsSection({ announcements, filter, onFilter, onCreate, onEdi
   );
 }
 
-function AiControlsSection({ data, rateDraft, overrideDraft, onRateDraft, onOverrideDraft, onSaveRate, onSaveOverride, onDeleteOverride, onCreatePrompt, onEditPrompt, onDeletePrompt }) {
+function AiControlsSection({ data, rateDraft, overrideDraft, onRateDraft, onOverrideDraft, onSaveRate, onSaveOverride, onDeleteOverride, onCreatePrompt, onEditPrompt, onDeletePrompt, busy }) {
   const providers = data?.provider_health || [];
   const templates = data?.prompt_templates || [];
   const overrides = data?.overrides || [];
@@ -753,14 +928,16 @@ function AiControlsSection({ data, rateDraft, overrideDraft, onRateDraft, onOver
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
         <Panel title="AI Request Limits" eyebrow="Rate limits" icon={Gauge}>
-          <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSaveRate}>
-            <Field label="Requests per window">
+          <form className="space-y-3" onSubmit={onSaveRate}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Requests per window">
               <NumberInput value={rateDraft.daily_limit} min={1} max={500} onChange={(daily_limit) => onRateDraft({ ...rateDraft, daily_limit })} />
-            </Field>
-            <Field label="Window hours">
+              </Field>
+              <Field label="Window hours">
               <NumberInput value={rateDraft.window_hours} min={1} max={168} onChange={(window_hours) => onRateDraft({ ...rateDraft, window_hours })} />
-            </Field>
-            <PrimaryButton type="submit" icon={CheckCircle2}>Save limit</PrimaryButton>
+              </Field>
+            </div>
+            <PrimaryButton type="submit" icon={CheckCircle2} disabled={busy}>Save limit</PrimaryButton>
           </form>
 
           <form className="mt-5 space-y-3 rounded-[1.3rem] border border-border bg-surface-2 p-4" onSubmit={onSaveOverride}>
@@ -768,11 +945,13 @@ function AiControlsSection({ data, rateDraft, overrideDraft, onRateDraft, onOver
             <Field label="User ID">
               <input required value={overrideDraft.user_id} onChange={(event) => onOverrideDraft({ ...overrideDraft, user_id: event.target.value })} className="admin-form-control" placeholder="Paste user UUID" />
             </Field>
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Daily limit">
                 <NumberInput value={overrideDraft.daily_limit} min={1} max={500} onChange={(daily_limit) => onOverrideDraft({ ...overrideDraft, daily_limit })} />
               </Field>
-              <PrimaryButton type="submit" icon={Plus}>Save override</PrimaryButton>
+              <div className="flex items-end">
+                <PrimaryButton type="submit" icon={Plus} disabled={busy}>Save override</PrimaryButton>
+              </div>
             </div>
           </form>
 
@@ -785,14 +964,14 @@ function AiControlsSection({ data, rateDraft, overrideDraft, onRateDraft, onOver
                 </div>
                 <div className="flex items-center gap-2">
                   <Chip tone="accent">{override.daily_limit} requests</Chip>
-                  <IconButton label="Remove user override" onClick={() => onDeleteOverride(override.user_id)} icon={Trash2} tone="danger" />
+                  <IconButton label="Remove user override" onClick={() => onDeleteOverride(override)} icon={Trash2} tone="danger" disabled={busy} />
                 </div>
               </div>
             )) : <p className="text-sm text-text-muted">No per-user overrides yet.</p>}
           </div>
         </Panel>
 
-        <Panel title="Prompt Templates" eyebrow="Gemini prompts" icon={Edit3} action={<PrimaryButton onClick={onCreatePrompt} icon={Plus}>New template</PrimaryButton>}>
+        <Panel title="Prompt Templates" eyebrow="Gemini prompts" icon={Edit3} action={<PrimaryButton onClick={onCreatePrompt} icon={Plus} disabled={busy}>New template</PrimaryButton>}>
           <div className="space-y-3">
             {templates.length ? templates.map((template) => (
               <article key={template.id} className="rounded-[1.3rem] border border-border bg-surface-2 p-4">
@@ -803,9 +982,15 @@ function AiControlsSection({ data, rateDraft, overrideDraft, onRateDraft, onOver
                 <h3 className="mt-3 text-lg font-black text-text">{template.title}</h3>
                 <p className="mt-1 text-sm leading-6 text-text-muted">{template.description || 'No description.'}</p>
                 <p className="mt-2 text-xs text-text-muted">{template.content.length} characters · Updated {formatDateTime(template.updated_at)}</p>
+                {template.is_active && !hasSourcePlaceholder(template.content) ? (
+                  <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-500">Active template is missing {'{{source_text}}'}, so user lesson content may not reach Gemini.</p>
+                ) : null}
+                {template.is_active && ['flashcards', 'quiz'].includes(template.template_key) && !mentionsJson(template.content) ? (
+                  <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-500">Flashcard and quiz prompts should request valid JSON output.</p>
+                ) : null}
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  <SecondaryButton onClick={() => onEditPrompt(template)} icon={Edit3}>Edit</SecondaryButton>
-                  <DangerButton onClick={() => onDeletePrompt(template)} icon={Trash2}>Delete</DangerButton>
+                  <SecondaryButton onClick={() => onEditPrompt(template)} icon={Edit3} disabled={busy}>Edit</SecondaryButton>
+                  <DangerButton onClick={() => onDeletePrompt(template)} icon={Trash2} disabled={busy}>Delete</DangerButton>
                 </div>
               </article>
             )) : <EmptyState icon={Edit3} title="No prompt templates yet" body="AI generation will use built-in fallback prompts until you add active templates." />}
@@ -829,9 +1014,10 @@ function AiControlsSection({ data, rateDraft, overrideDraft, onRateDraft, onOver
   );
 }
 
-function HealthSection({ data, onDeleteLog, onClearOldLogs }) {
+function HealthSection({ data, onDeleteLog, onClearOldLogs, onLogPage, busy }) {
   const metrics = data?.metrics || {};
-  const logs = data?.logs || [];
+  const logsPage = normalizePagedList(data?.logs, HEALTH_PAGING_DEFAULTS.logPage, HEALTH_PAGING_DEFAULTS.logPageSize);
+  const logs = logsPage.items;
   const providers = data?.provider_health || [];
 
   return (
@@ -851,7 +1037,7 @@ function HealthSection({ data, onDeleteLog, onClearOldLogs }) {
         </div>
       </Panel>
 
-      <Panel title="System Logs" eyebrow="Read/delete" icon={Database} action={<SecondaryButton onClick={onClearOldLogs} icon={Trash2}>Clear 30+ days</SecondaryButton>}>
+      <Panel title="System Logs" eyebrow="Read/delete" icon={Database} action={<SecondaryButton onClick={onClearOldLogs} icon={Trash2} disabled={busy}>Clear 30+ days</SecondaryButton>}>
         <div className="space-y-3">
           {logs.length ? logs.map((log) => (
             <article key={log.id} className="grid gap-3 rounded-[1.25rem] border border-border bg-surface-2 p-4 lg:grid-cols-[1fr_auto]">
@@ -863,16 +1049,24 @@ function HealthSection({ data, onDeleteLog, onClearOldLogs }) {
                 <p className="mt-2 text-sm font-black text-text">{log.message}</p>
                 <p className="mt-2 text-xs text-text-muted">{formatDateTime(log.created_at)}</p>
               </div>
-              <IconButton label="Delete log" icon={Trash2} tone="danger" onClick={() => onDeleteLog(log.id)} />
+              <IconButton label="Delete log" icon={Trash2} tone="danger" onClick={() => onDeleteLog(log)} disabled={busy} />
             </article>
           )) : <EmptyState icon={Database} title="No logs yet" body="Operational logs will appear when the backend records warnings or errors." />}
         </div>
+        <Pagination
+          page={logsPage.pagination.page}
+          totalPages={logsPage.pagination.totalPages}
+          totalCount={logsPage.pagination.totalCount}
+          onPrev={() => onLogPage(Math.max(1, logsPage.pagination.page - 1))}
+          onNext={() => onLogPage(Math.min(logsPage.pagination.totalPages, logsPage.pagination.page + 1))}
+          disabled={busy}
+        />
       </Panel>
     </div>
   );
 }
 
-function SettingsSection({ draft, onDraft, onSave }) {
+function SettingsSection({ draft, onDraft, onSave, busy }) {
   return (
     <Panel title="Theme Settings" eyebrow="Light/Dark only" icon={Sun}>
       <div className="grid gap-4 md:grid-cols-2">
@@ -880,7 +1074,7 @@ function SettingsSection({ draft, onDraft, onSave }) {
         <ThemeCard active={draft.display_mode === 'dark'} icon={Moon} title="Dark mode" body="Lower-glare surfaces for longer admin review sessions." onClick={() => onDraft({ ...draft, display_mode: 'dark' })} />
       </div>
       <div className="mt-5 flex justify-end">
-        <PrimaryButton onClick={onSave} icon={CheckCircle2}>Save settings</PrimaryButton>
+        <PrimaryButton onClick={onSave} icon={CheckCircle2} disabled={busy}>Save settings</PrimaryButton>
       </div>
     </Panel>
   );
@@ -941,6 +1135,19 @@ function AnnouncementModal({ state, setState, onSubmit, busy }) {
 }
 
 function PromptModal({ state, setState, onSubmit, busy }) {
+  const starter = PROMPT_STARTERS[state.form.template_key] || PROMPT_STARTERS.study_guide;
+  const activeMissingSource = state.form.is_active && !hasSourcePlaceholder(state.form.content);
+  const activeJsonWarning = state.form.is_active && ['flashcards', 'quiz'].includes(state.form.template_key) && !mentionsJson(state.form.content);
+  const insertStarter = () => {
+    setState((current) => ({
+      ...current,
+      form: {
+        ...current.form,
+        content: current.form.content ? `${current.form.content.trim()}\n\n${starter}` : starter,
+      },
+    }));
+  };
+
   return (
     <Modal isOpen={state.open} onClose={() => setState({ open: false, mode: 'create', form: PROMPT_EMPTY, target: null })} title={state.mode === 'create' ? 'Create prompt template' : 'Edit prompt template'} size="xl">
       <form className="space-y-4" onSubmit={onSubmit}>
@@ -950,8 +1157,19 @@ function PromptModal({ state, setState, onSubmit, busy }) {
         </div>
         <Field label="Description"><input value={state.form.description} onChange={(event) => setState((current) => ({ ...current, form: { ...current.form, description: event.target.value } }))} className="admin-form-control" /></Field>
         <div className="rounded-[1.2rem] border border-border bg-surface-2 p-3 text-xs leading-6 text-text-muted">
-          Available placeholders: {'{{source_text}}'}, {'{{lesson_text}}'}, {'{{difficulty}}'}, {'{{difficulty_rules}}'}, {'{{count}}'}, {'{{target_count}}'}.
+          <p className="font-bold text-text">Required to save: template type, title, and prompt content with at least 20 characters.</p>
+          <p className="mt-1">Check "Make active" when this should replace the built-in Gemini prompt. Include {'{{source_text}}'} so user content reaches the AI.</p>
+          <p className="mt-1">Available placeholders: {'{{source_text}}'}, {'{{lesson_text}}'}, {'{{difficulty}}'}, {'{{difficulty_rules}}'}, {'{{count}}'}, {'{{target_count}}'}.</p>
+          <div className="mt-3">
+            <SecondaryButton onClick={insertStarter} icon={Plus} disabled={busy}>Insert starter prompt</SecondaryButton>
+          </div>
         </div>
+        {activeMissingSource ? (
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-500">This active template is missing {'{{source_text}}'}.</p>
+        ) : null}
+        {activeJsonWarning ? (
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-500">Flashcard and quiz templates should explicitly request valid JSON output.</p>
+        ) : null}
         <Field label="Prompt content">
           <textarea required rows={16} value={state.form.content} onChange={(event) => setState((current) => ({ ...current, form: { ...current.form, content: event.target.value } }))} className="admin-form-control font-mono" />
         </Field>
@@ -999,25 +1217,47 @@ function MetricCard({ icon: Icon, label, value, detail, tone = 'accent' }) {
   );
 }
 
-function DonutStat({ label, value }) {
-  const safeValue = Math.max(0, Math.min(Number(value || 0), 100));
+function DocumentReadinessCard({ metrics }) {
+  const total = Number(metrics.documents || 0);
+  const ready = Number(metrics.documents_done || 0);
+  const processing = Number(metrics.documents_processing || 0);
+  const failed = Number(metrics.documents_error || 0);
+  const readiness = total ? percent(ready, total) : 0;
+
   return (
     <article className="rounded-[1.4rem] border border-border bg-surface-2 p-4">
-      <div className="flex items-center gap-4">
-        <div
-          className="grid h-20 w-20 place-items-center rounded-full"
-          style={{ background: `conic-gradient(var(--color-accent) ${safeValue * 3.6}deg, var(--color-surface) 0deg)` }}
-          role="img"
-          aria-label={`${label}: ${safeValue}%`}
-        >
-          <div className="grid h-14 w-14 place-items-center rounded-full bg-surface text-sm font-black text-text">{safeValue}%</div>
-        </div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-bold text-text-muted">{label}</p>
-          <p className="mt-1 text-xl font-black text-text">Ready signal</p>
+          <p className="text-sm font-bold text-text-muted">Document readiness</p>
+          <p className="mt-1 text-2xl font-black text-text">{readiness}%</p>
         </div>
+        <span className="rounded-full bg-accent/10 px-3 py-1 text-xs font-black text-accent">{total ? `${ready}/${total} ready` : 'No documents yet'}</span>
+      </div>
+      <div
+        className="mt-4 h-3 overflow-hidden rounded-full bg-surface"
+        role="progressbar"
+        aria-label="Document readiness"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={readiness}
+      >
+        <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${readiness}%` }} />
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+        <MiniCount label="Ready" value={ready} />
+        <MiniCount label="Processing" value={processing} />
+        <MiniCount label="Errors" value={failed} />
       </div>
     </article>
+  );
+}
+
+function MiniCount({ label, value }) {
+  return (
+    <div className="rounded-xl bg-surface px-2 py-2">
+      <p className="text-sm font-black text-text">{value}</p>
+      <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-text-muted">{label}</p>
+    </div>
   );
 }
 
@@ -1078,7 +1318,7 @@ function NumberInput({ value, onChange, min, max }) {
 function Field({ label, children }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.14em] text-text-muted">{label}</span>
+      <span className="mb-1.5 flex min-h-8 items-end text-xs font-black uppercase leading-4 tracking-[0.14em] text-text-muted">{label}</span>
       {children}
     </label>
   );
@@ -1093,27 +1333,27 @@ function PrimaryButton({ children, icon: Icon, type = 'button', onClick, disable
   );
 }
 
-function SecondaryButton({ children, icon: Icon, onClick, type = 'button' }) {
+function SecondaryButton({ children, icon: Icon, onClick, type = 'button', disabled = false }) {
   return (
-    <button type={type} onClick={onClick} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-bold text-text transition hover:bg-surface-2">
+    <button type={type} onClick={onClick} disabled={disabled} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-bold text-text transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-60">
       {Icon ? createElement(Icon, { size: 16, 'aria-hidden': 'true' }) : null}
       {children}
     </button>
   );
 }
 
-function DangerButton({ children, icon: Icon, onClick, type = 'button' }) {
+function DangerButton({ children, icon: Icon, onClick, type = 'button', disabled = false }) {
   return (
-    <button type={type} onClick={onClick} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-red-700">
+    <button type={type} onClick={onClick} disabled={disabled} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60">
       {Icon ? createElement(Icon, { size: 16, 'aria-hidden': 'true' }) : null}
       {children}
     </button>
   );
 }
 
-function IconButton({ label, icon: Icon, onClick, tone = 'neutral' }) {
+function IconButton({ label, icon: Icon, onClick, tone = 'neutral', disabled = false }) {
   return (
-    <button type="button" onClick={onClick} aria-label={label} title={label} className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border ${tone === 'danger' ? 'bg-red-600 text-white' : 'bg-surface text-text'} transition hover:-translate-y-0.5`}>
+    <button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label} className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border ${tone === 'danger' ? 'bg-red-600 text-white' : 'bg-surface text-text'} transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60`}>
       {createElement(Icon, { size: 16, 'aria-hidden': 'true' })}
     </button>
   );
@@ -1130,13 +1370,13 @@ function Chip({ children, tone = 'neutral' }) {
   return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.12em] ${classes[tone] || classes.neutral}`}>{children}</span>;
 }
 
-function Pagination({ page, totalPages, totalCount, onPrev, onNext }) {
+function Pagination({ page, totalPages, totalCount, onPrev, onNext, disabled = false }) {
   return (
     <div className="mt-5 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-sm text-text-muted">{totalCount || 0} results · page {page || 1} of {totalPages || 1}</p>
       <div className="flex gap-2">
-        <SecondaryButton onClick={onPrev}>Previous</SecondaryButton>
-        <SecondaryButton onClick={onNext}>Next</SecondaryButton>
+        <SecondaryButton onClick={onPrev} disabled={disabled || page <= 1}>Previous</SecondaryButton>
+        <SecondaryButton onClick={onNext} disabled={disabled || page >= totalPages}>Next</SecondaryButton>
       </div>
     </div>
   );
@@ -1177,6 +1417,39 @@ function labelContentType(type) {
   if (type === 'flashcards') return 'Flashcards';
   if (type === 'quiz') return 'Quiz';
   return type || 'Content';
+}
+
+function normalizePagedList(value, fallbackPage = 1, fallbackPageSize = 10) {
+  if (Array.isArray(value)) {
+    return {
+      items: value,
+      pagination: {
+        page: fallbackPage,
+        pageSize: fallbackPageSize,
+        totalCount: value.length,
+        totalPages: Math.max(1, Math.ceil(value.length / fallbackPageSize)),
+      },
+    };
+  }
+
+  const items = value?.items || [];
+  return {
+    items,
+    pagination: {
+      page: Number(value?.pagination?.page || fallbackPage),
+      pageSize: Number(value?.pagination?.pageSize || fallbackPageSize),
+      totalCount: Number(value?.pagination?.totalCount || items.length),
+      totalPages: Number(value?.pagination?.totalPages || Math.max(1, Math.ceil(items.length / fallbackPageSize))),
+    },
+  };
+}
+
+function hasSourcePlaceholder(content = '') {
+  return /\{\{\s*source_text\s*\}\}/i.test(content);
+}
+
+function mentionsJson(content = '') {
+  return /\bjson\b/i.test(content);
 }
 
 function percent(value, total) {

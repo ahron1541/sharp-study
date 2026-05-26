@@ -1,4 +1,4 @@
-import { Activity, Bell, ChevronLeft, ChevronRight, FileWarning, LogOut, Menu, MonitorCog, Shield, SlidersHorizontal, Users, X } from 'lucide-react';
+import { Activity, Bell, ChevronLeft, ChevronRight, FileWarning, Loader2, LogOut, Menu, MonitorCog, Shield, SlidersHorizontal, Users, X } from 'lucide-react';
 import { Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 
@@ -68,80 +68,103 @@ export default function AdminShell() {
     }
   };
 
-  const navContent = (
-    <div className="flex min-h-full flex-col bg-sidebar">
-      <div className="border-b border-border px-4 py-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface text-accent shadow-card">
-              <VersoLogo size="compact" showText={false} />
-            </span>
-            {!collapsed ? (
-              <div className="min-w-0">
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Admin Control</p>
-                <p className="truncate text-lg font-black text-text">{firstName}</p>
+  const renderNavContent = (forceExpanded = false) => {
+    const compact = collapsed && !forceExpanded;
+
+    return (
+      <div className="flex h-full min-h-0 flex-col bg-sidebar">
+        <div className={`shrink-0 border-b border-border ${compact ? 'px-3 py-3' : 'px-4 py-4'}`}>
+          {compact ? (
+            <div className="flex flex-col items-center gap-2">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-surface text-accent shadow-card">
+                <VersoLogo size="compact" showText={false} />
+              </span>
+              <button
+                type="button"
+                onClick={handleCollapseToggle}
+                className="hidden h-9 w-9 cursor-pointer items-center justify-center rounded-xl text-text-muted transition-colors hover:bg-surface-2 lg:inline-flex"
+                aria-label="Expand admin sidebar"
+              >
+                <ChevronRight size={18} aria-hidden="true" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3 overflow-hidden">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface text-accent shadow-card">
+                  <VersoLogo size="compact" showText={false} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">Admin Control</p>
+                  <p className="truncate text-lg font-black text-text">{firstName}</p>
+                </div>
               </div>
-            ) : null}
-          </div>
+              <button
+                type="button"
+                onClick={handleCollapseToggle}
+                className="hidden h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-text-muted transition-colors hover:bg-surface-2 lg:inline-flex"
+                aria-label="Collapse admin sidebar"
+              >
+                <ChevronLeft size={18} aria-hidden="true" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        <nav className={`admin-sidebar-scroll min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain ${compact ? 'px-3 py-4' : 'px-3 py-4'}`} aria-label="Admin navigation">
+          {NAV_ITEMS.map((item) => {
+            const active = activeSection === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => goToSection(item.id)}
+                title={compact ? item.label : undefined}
+                aria-label={compact ? item.label : undefined}
+                className={`flex w-full cursor-pointer items-center rounded-2xl text-left transition-colors ${
+                  compact ? 'h-14 justify-center px-0' : 'gap-3 px-4 py-3'
+                } ${
+                  active
+                    ? 'bg-[var(--color-sidebar-active-bg)] text-[var(--color-sidebar-active-text)]'
+                    : 'text-sidebar-text hover:bg-surface-2 hover:text-text'
+                }`}
+              >
+                <item.icon size={20} aria-hidden="true" />
+                {!compact ? (
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-black">{item.label}</span>
+                    <span className={`block truncate text-xs ${active ? 'text-white/80' : 'text-text-muted'}`}>
+                      {item.id === 'overview' ? 'Simple platform snapshot' : item.id === 'users' ? 'Roles and accounts' : item.id === 'feedback' ? 'Reports and ratings' : item.id === 'announcements' ? 'User notifications' : item.id === 'ai' ? 'Prompts and limits' : item.id === 'health' ? 'Provider status' : 'Admin preferences'}
+                    </span>
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="shrink-0 border-t border-border p-3">
           <button
             type="button"
-            onClick={handleCollapseToggle}
-            className="hidden cursor-pointer rounded-xl p-2 text-text-muted transition-colors hover:bg-surface-2 lg:inline-flex"
-            aria-label={collapsed ? 'Expand admin sidebar' : 'Collapse admin sidebar'}
+            onClick={handleLogout}
+            disabled={loggingOut}
+            aria-label="Log out"
+            title={compact ? 'Log out' : undefined}
+            className={`inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-black text-rose-500 transition hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-60 ${compact ? 'px-0' : ''}`}
           >
-            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+            {loggingOut ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <LogOut size={16} aria-hidden="true" />}
+            {!compact ? <span>{loggingOut ? 'Signing out' : 'Log out'}</span> : null}
           </button>
         </div>
       </div>
-
-      <nav className="flex-1 space-y-2 overflow-y-auto px-3 py-4" aria-label="Admin navigation">
-        {NAV_ITEMS.map((item) => {
-          const active = activeSection === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => goToSection(item.id)}
-              className={`flex w-full cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 text-left transition-colors ${
-                active
-                  ? 'bg-[var(--color-sidebar-active-bg)] text-[var(--color-sidebar-active-text)]'
-                  : 'text-sidebar-text hover:bg-surface-2 hover:text-text'
-              }`}
-            >
-              <item.icon size={18} aria-hidden="true" />
-              {!collapsed ? (
-                <span>
-                  <span className="block text-sm font-black">{item.label}</span>
-                  <span className={`block text-xs ${active ? 'text-white/80' : 'text-text-muted'}`}>
-                    {item.id === 'overview' ? 'Simple platform snapshot' : item.id === 'users' ? 'Roles and accounts' : item.id === 'feedback' ? 'Reports and ratings' : item.id === 'announcements' ? 'User notifications' : item.id === 'ai' ? 'Prompts and limits' : item.id === 'health' ? 'Provider status' : 'Admin preferences'}
-                  </span>
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
-      </nav>
-
-      <div className="mt-auto space-y-2 border-t border-border p-3">
-        <Button
-          variant="danger"
-          size="sm"
-          className="w-full"
-          loading={loggingOut}
-          icon={<LogOut size={14} />}
-          onClick={handleLogout}
-        >
-          Log out
-        </Button>
-      </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="min-h-screen bg-bg lg:flex lg:items-start">
       <aside className={`hidden shrink-0 self-start border-r border-border bg-sidebar transition-[width] duration-300 lg:sticky lg:top-0 lg:block ${collapsed ? 'w-[96px]' : 'w-[280px]'}`}>
         <div className="h-screen">
-          {navContent}
+          {renderNavContent(false)}
         </div>
       </aside>
 
@@ -150,7 +173,7 @@ export default function AdminShell() {
           <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden" onClick={() => setMobileOpen(false)} aria-hidden="true" />
           <aside className="fixed inset-y-0 left-0 z-50 w-[280px] border-r border-border bg-sidebar lg:hidden">
             <div className="h-full">
-              {navContent}
+              {renderNavContent(true)}
             </div>
           </aside>
         </>

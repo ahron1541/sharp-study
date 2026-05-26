@@ -114,6 +114,24 @@ function parsePositiveInt(value, fallback, max = 50) {
   return Math.min(parsed, max);
 }
 
+function buildPagination(page, pageSize, totalCount) {
+  const safeTotal = Number(totalCount || 0);
+  return {
+    page,
+    pageSize,
+    totalCount: safeTotal,
+    totalPages: Math.max(1, Math.ceil(safeTotal / pageSize)),
+  };
+}
+
+function paginateArray(rows, page, pageSize) {
+  const from = (page - 1) * pageSize;
+  return {
+    items: rows.slice(from, from + pageSize),
+    pagination: buildPagination(page, pageSize, rows.length),
+  };
+}
+
 function normalizeSearch(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -199,7 +217,14 @@ async function fetchProfilesMap(userIds) {
   return new Map((data || []).map((profile) => [profile.id, profile]));
 }
 
-async function fetchOverview() {
+async function fetchOverview(options = {}) {
+  const aiPage = parsePositiveInt(options.aiPage, 1, 200);
+  const aiPageSize = parsePositiveInt(options.aiPageSize, 5, 25);
+  const activityPage = parsePositiveInt(options.activityPage, 1, 200);
+  const activityPageSize = parsePositiveInt(options.activityPageSize, 6, 25);
+  const activityFrom = (activityPage - 1) * activityPageSize;
+  const activityTo = activityFrom + activityPageSize - 1;
+
   const [
     profilesResult,
     documentsResult,
@@ -213,7 +238,11 @@ async function fetchOverview() {
     supabaseAdmin.from('study_guides').select('id, is_archived', { count: 'exact' }),
     supabaseAdmin.from('flashcard_sets').select('id, is_archived', { count: 'exact' }),
     supabaseAdmin.from('quizzes').select('id, is_archived', { count: 'exact' }),
-    supabaseAdmin.from('audit_logs').select('id, event, created_at, metadata, user_id').order('created_at', { ascending: false }).limit(8),
+    supabaseAdmin
+      .from('audit_logs')
+      .select('id, event, created_at, metadata, user_id', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(activityFrom, activityTo),
   ]);
 
   const errors = [
@@ -242,7 +271,7 @@ async function fetchOverview() {
     ai_requests_window: 0,
     ai_failed_window: 0,
   };
-  let topAiUsers = [];
+  let topAiUsers = { items: [], pagination: buildPagination(aiPage, aiPageSize, 0) };
 
   try {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -270,7 +299,7 @@ async function fetchOverview() {
 
     const aiUserIds = [...aiUserCounts.keys()];
     const profilesMap = await fetchProfilesMap(aiUserIds);
-    topAiUsers = [...aiUserCounts.values()]
+    const sortedAiUsers = [...aiUserCounts.values()]
       .map((entry) => {
         const profile = profilesMap.get(entry.user_id) || {};
         return {
@@ -279,8 +308,9 @@ async function fetchOverview() {
           email: sanitizeAuditText(profile.email || '', 180),
         };
       })
-      .sort((a, b) => b.requests - a.requests || b.failed - a.failed)
-      .slice(0, 5);
+      .sort((a, b) => b.requests - a.requests || b.failed - a.failed);
+
+    topAiUsers = paginateArray(sortedAiUsers, aiPage, aiPageSize);
 
     extraMetrics = {
       open_reports: reportRows.filter((item) => item.status === 'open').length,
@@ -323,7 +353,10 @@ async function fetchOverview() {
       documents_error: documents.filter((doc) => doc.status === 'error').length,
       ...extraMetrics,
     },
-    recent_activity: audits,
+    recent_activity: {
+      items: audits,
+      pagination: buildPagination(activityPage, activityPageSize, auditResult.count || audits.length),
+    },
     top_ai_users: topAiUsers,
   };
 }
@@ -478,7 +511,12 @@ async function fetchLearningInsights() {
 
 router.get('/overview', async (req, res) => {
   try {
-    const overview = await fetchOverview();
+    const overview = await fetchOverview({
+      aiPage: req.query.aiPage,
+      aiPageSize: req.query.aiPageSize,
+      activityPage: req.query.activityPage,
+      activityPageSize: req.query.activityPageSize,
+    });
     res.json(overview);
   } catch (error) {
     console.error('[ADMIN] Failed to fetch overview:', error.message);
@@ -1460,7 +1498,12 @@ router.delete('/ai-controls/prompt-templates/:id', async (req, res) => {
 router.get('/health', async (req, res) => {
   try {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const [eventsResult, logsResult] = await Promise.all([
+    const logPage = parsePositiveInt(req.query.logPage, 1, 200);
+    const logPageSize = parsePositiveInt(req.query.logPageSize, 8, 50);
+    const logFrom = (logPage - 1) * logPageSize;
+    const logTo = logFrom + logPageSize - 1;
+
+    const [eventsResult, logsResult, logMetricsResult] = await Promise.all([
       supabaseAdmin
         .from('ai_request_events')
         .select('id, user_id, feature, status, provider, metadata, created_at')
@@ -1469,27 +1512,37 @@ router.get('/health', async (req, res) => {
         .limit(200),
       supabaseAdmin
         .from('system_logs')
-        .select('*')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(logFrom, logTo),
+      supabaseAdmin
+        .from('system_logs')
+        .select('id, level')
         .order('created_at', { ascending: false })
         .limit(100),
     ]);
 
     if (eventsResult.error) throw eventsResult.error;
     if (logsResult.error) throw logsResult.error;
+    if (logMetricsResult.error) throw logMetricsResult.error;
 
     const events = eventsResult.data || [];
     const logs = logsResult.data || [];
+    const logMetricsRows = logMetricsResult.data || [];
     res.json({
       provider_health: providerHealth(),
       metrics: {
         ai_requests_24h: events.length,
         ai_failed_24h: events.filter((event) => event.status === 'failed').length,
         ai_cancelled_24h: events.filter((event) => event.status === 'cancelled').length,
-        error_logs: logs.filter((log) => log.level === 'error').length,
-        warning_logs: logs.filter((log) => log.level === 'warning').length,
+        error_logs: logMetricsRows.filter((log) => log.level === 'error').length,
+        warning_logs: logMetricsRows.filter((log) => log.level === 'warning').length,
       },
       recent_ai_events: events,
-      logs,
+      logs: {
+        items: logs,
+        pagination: buildPagination(logPage, logPageSize, logsResult.count || logs.length),
+      },
     });
   } catch (error) {
     if (relationMissing(error)) {
@@ -1497,7 +1550,7 @@ router.get('/health', async (req, res) => {
         provider_health: providerHealth(),
         metrics: { ai_requests_24h: 0, ai_failed_24h: 0, ai_cancelled_24h: 0, error_logs: 0, warning_logs: 0 },
         recent_ai_events: [],
-        logs: [],
+        logs: { items: [], pagination: buildPagination(1, 8, 0) },
       });
     }
     console.error('[ADMIN] Failed to load health:', error.message);

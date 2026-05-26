@@ -12,8 +12,8 @@ function toQuery(params = {}) {
   return serialized ? `?${serialized}` : '';
 }
 
-export function fetchAdminOverview() {
-  return apiRequest('/api/admin/overview');
+export function fetchAdminOverview(params) {
+  return apiRequest(`/api/admin/overview${toQuery(params)}`);
 }
 
 export function fetchAdminLearningInsights() {
@@ -150,8 +150,8 @@ export function deleteAdminPromptTemplate(id) {
   });
 }
 
-export function fetchAdminHealth() {
-  return apiRequest('/api/admin/health');
+export function fetchAdminHealth(params) {
+  return apiRequest(`/api/admin/health${toQuery(params)}`);
 }
 
 export function deleteAdminSystemLog(id) {
