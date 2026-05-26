@@ -1,38 +1,84 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Bell, CheckCheck, Megaphone } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { apiRequest } from '../../../config/api';
+import PaginationControls from '../../library/components/PaginationControls';
+import { notifyUnreadCountChanged } from '../notificationEvents';
+
+const NOTIFICATIONS_PAGE_SIZE = 8;
 
 export default function NotificationsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const page = Math.max(1, Number(searchParams.get('page') || 1));
 
-  async function loadNotifications() {
+  const setNotificationParams = useCallback((updates) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value === null || value === undefined || value === '') {
+        next.delete(key);
+      } else {
+        next.set(key, value);
+      }
+    });
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const updateUnreadCount = useCallback((updater) => {
+    setUnreadCount((current) => {
+      const rawNext = typeof updater === 'function' ? updater(current) : updater;
+      const next = Math.max(0, Number(rawNext || 0));
+      notifyUnreadCountChanged(next);
+      return next;
+    });
+  }, []);
+
+  const loadNotifications = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiRequest('/api/notifications');
+      const query = new URLSearchParams({
+        page: String(page),
+        limit: String(NOTIFICATIONS_PAGE_SIZE),
+      });
+      const data = await apiRequest(`/api/notifications?${query.toString()}`);
+      const pagination = data.pagination || {};
+      const nextUnreadCount = Math.max(0, Number(data.unread_count || 0));
+      const nextTotalPages = Math.max(1, Number(pagination.totalPages || pagination.total_pages || 1));
+      const nextTotalCount = Math.max(0, Number(pagination.totalCount ?? pagination.total_count ?? data.notifications?.length ?? 0));
+
       setNotifications(data.notifications || []);
-      setUnreadCount(Number(data.unread_count || 0));
+      setUnreadCount(nextUnreadCount);
+      setTotalPages(nextTotalPages);
+      setTotalCount(nextTotalCount);
+      notifyUnreadCountChanged(nextUnreadCount);
+
+      if (page > nextTotalPages) {
+        setNotificationParams({ page: nextTotalPages > 1 ? String(nextTotalPages) : null });
+      }
     } catch (error) {
       toast.error(error.message || 'Failed to load notifications.');
     } finally {
       setLoading(false);
     }
-  }
+  }, [page, setNotificationParams]);
 
   useEffect(() => {
     loadNotifications();
-  }, []);
+  }, [loadNotifications]);
 
   async function markRead(id) {
     setSaving(true);
     try {
       await apiRequest(`/api/notifications/${id}/read`, { method: 'POST' });
       setNotifications((current) => current.map((item) => item.id === id ? { ...item, read: true } : item));
-      setUnreadCount((count) => Math.max(0, count - 1));
+      updateUnreadCount((count) => count - 1);
     } catch (error) {
       toast.error(error.message || 'Could not mark notification read.');
     } finally {
@@ -45,7 +91,7 @@ export default function NotificationsPage() {
     try {
       await apiRequest('/api/notifications/read-all', { method: 'POST' });
       setNotifications((current) => current.map((item) => ({ ...item, read: true })));
-      setUnreadCount(0);
+      updateUnreadCount(0);
       toast.success('Notifications marked as read.');
     } catch (error) {
       toast.error(error.message || 'Could not mark notifications read.');
@@ -94,39 +140,49 @@ export default function NotificationsPage() {
             </span>
             <div>
               <h2 className="text-xl font-black text-[color:var(--color-text)]">Inbox</h2>
-              <p className="text-sm text-[color:var(--color-text-muted)]">{unreadCount} unread</p>
+              <p className="text-sm text-[color:var(--color-text-muted)]">{unreadCount} unread - {totalCount} total</p>
             </div>
           </div>
         </div>
 
         <div className="space-y-3">
-          {notifications.length ? notifications.map((notice) => (
-            <article key={notice.id} className={`rounded-[1.5rem] border p-4 transition ${notice.read ? 'border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]/60' : 'border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/10'}`}>
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-[color:var(--color-surface)] px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-[color:var(--color-text-muted)]">{notice.category}</span>
-                    <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.12em] ${notice.priority === 'high' ? 'bg-rose-500/10 text-rose-500' : 'bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)]'}`}>{notice.priority}</span>
-                    {!notice.read ? <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-emerald-500">New</span> : null}
+          {notifications.length ? (
+            <>
+              {notifications.map((notice) => (
+                <article key={notice.id} className={`rounded-[1.5rem] border p-4 transition ${notice.read ? 'border-[color:var(--color-border)] bg-[color:var(--color-surface-2)]/60' : 'border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/10'}`}>
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-[color:var(--color-surface)] px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-[color:var(--color-text-muted)]">{notice.category}</span>
+                        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.12em] ${notice.priority === 'high' ? 'bg-rose-500/10 text-rose-500' : 'bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)]'}`}>{notice.priority}</span>
+                        {!notice.read ? <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-emerald-500">New</span> : null}
+                      </div>
+                      <h3 className="mt-3 text-lg font-black text-[color:var(--color-text)]">{notice.title}</h3>
+                      <p className="mt-2 text-sm leading-7 text-[color:var(--color-text-muted)]">{notice.body}</p>
+                      <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">{formatDateTime(notice.published_at)}</p>
+                    </div>
+                    {!notice.read ? (
+                      <button
+                        type="button"
+                        onClick={() => markRead(notice.id)}
+                        disabled={saving}
+                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-sm font-bold text-[color:var(--color-text)] disabled:opacity-60"
+                      >
+                        <CheckCheck size={16} aria-hidden="true" />
+                        Mark read
+                      </button>
+                    ) : null}
                   </div>
-                  <h3 className="mt-3 text-lg font-black text-[color:var(--color-text)]">{notice.title}</h3>
-                  <p className="mt-2 text-sm leading-7 text-[color:var(--color-text-muted)]">{notice.body}</p>
-                  <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">{formatDateTime(notice.published_at)}</p>
-                </div>
-                {!notice.read ? (
-                  <button
-                    type="button"
-                    onClick={() => markRead(notice.id)}
-                    disabled={saving}
-                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-sm font-bold text-[color:var(--color-text)] disabled:opacity-60"
-                  >
-                    <CheckCheck size={16} aria-hidden="true" />
-                    Mark read
-                  </button>
-                ) : null}
-              </div>
-            </article>
-          )) : (
+                </article>
+              ))}
+
+              <PaginationControls
+                page={page}
+                totalPages={totalPages}
+                onChange={(nextPage) => setNotificationParams({ page: nextPage === 1 ? null : String(nextPage) })}
+              />
+            </>
+          ) : (
             <div className="rounded-[1.5rem] border border-dashed border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-10 text-center">
               <Megaphone className="mx-auto text-[color:var(--color-text-muted)]" size={36} aria-hidden="true" />
               <h2 className="mt-3 text-xl font-black text-[color:var(--color-text)]">No notifications yet</h2>

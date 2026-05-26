@@ -9,6 +9,41 @@ const router = express.Router();
 
 router.use(requireAuth);
 
+const DEFAULT_PAGE_SIZE = 8;
+const MAX_PAGE_SIZE = 25;
+const MAX_VISIBLE_NOTIFICATIONS = 1000;
+
+function parsePositiveInt(value, fallback, max = 1000) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, max);
+}
+
+function buildPagination(page, pageSize, totalCount) {
+  const safeTotal = Number(totalCount || 0);
+  const totalPages = Math.max(1, Math.ceil(safeTotal / pageSize));
+  return {
+    page,
+    pageSize,
+    page_size: pageSize,
+    totalCount: safeTotal,
+    total_count: safeTotal,
+    totalPages,
+    total_pages: totalPages,
+  };
+}
+
+function applyVisibleAnnouncementFilters(query, nowIso) {
+  return query
+    .eq('status', 'published')
+    .or([
+      'and(starts_at.is.null,ends_at.is.null)',
+      `and(starts_at.is.null,ends_at.gte.${nowIso})`,
+      `and(starts_at.lte.${nowIso},ends_at.is.null)`,
+      `and(starts_at.lte.${nowIso},ends_at.gte.${nowIso})`,
+    ].join(','));
+}
+
 function isVisibleAnnouncement(announcement) {
   const now = Date.now();
   const startsAt = announcement.starts_at ? new Date(announcement.starts_at).getTime() : null;
@@ -32,13 +67,24 @@ function normalizeAnnouncement(row, readIds = new Set()) {
 
 router.get('/', async (req, res) => {
   try {
-    const [{ data: announcements, error: announcementError }, { data: reads, error: readError }] = await Promise.all([
-      supabaseAdmin
-        .from('announcements')
-        .select('id, title, body, category, priority, status, starts_at, ends_at, created_at, updated_at')
-        .in('status', ['published'])
+    const page = parsePositiveInt(req.query.page, 1);
+    const pageSize = parsePositiveInt(req.query.limit || req.query.pageSize, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    const nowIso = new Date().toISOString();
+
+    const [
+      { data: announcements, error: announcementError, count },
+      { data: reads, error: readError },
+    ] = await Promise.all([
+      applyVisibleAnnouncementFilters(
+        supabaseAdmin
+          .from('announcements')
+          .select('id, title, body, category, priority, status, starts_at, ends_at, created_at, updated_at', { count: 'exact' }),
+        nowIso
+      )
         .order('updated_at', { ascending: false })
-        .limit(100),
+        .range(from, to),
       supabaseAdmin
         .from('announcement_reads')
         .select('announcement_id')
@@ -46,19 +92,38 @@ router.get('/', async (req, res) => {
     ]);
 
     if (announcementError?.code === '42P01' || readError?.code === '42P01') {
-      return res.json({ notifications: [], unread_count: 0 });
+      return res.json({
+        notifications: [],
+        unread_count: 0,
+        pagination: buildPagination(page, pageSize, 0),
+      });
     }
     if (announcementError) throw announcementError;
     if (readError) throw readError;
 
     const readIds = new Set((reads || []).map((item) => item.announcement_id));
+    let visibleReadIds = new Set();
+    if (readIds.size > 0) {
+      const { data: readAnnouncements, error: readAnnouncementsError } = await supabaseAdmin
+        .from('announcements')
+        .select('id, status, starts_at, ends_at')
+        .in('id', Array.from(readIds));
+
+      if (readAnnouncementsError) throw readAnnouncementsError;
+      visibleReadIds = new Set((readAnnouncements || [])
+        .filter(isVisibleAnnouncement)
+        .map((item) => item.id));
+    }
+
     const notifications = (announcements || [])
-      .filter(isVisibleAnnouncement)
       .map((item) => normalizeAnnouncement(item, readIds));
+    const totalCount = count ?? notifications.length;
+    const unreadCount = Math.max(0, totalCount - visibleReadIds.size);
 
     res.json({
       notifications,
-      unread_count: notifications.filter((item) => !item.read).length,
+      unread_count: unreadCount,
+      pagination: buildPagination(page, pageSize, totalCount),
     });
   } catch (error) {
     await writeSystemLog({
@@ -78,13 +143,29 @@ router.post('/:id/read', async (req, res) => {
       return res.status(400).json({ error: 'Invalid notification id.' });
     }
 
-    const { error } = await supabaseAdmin
+    const { data: existingRead, error: lookupError } = await supabaseAdmin
       .from('announcement_reads')
-      .upsert({
-        user_id: req.user.id,
-        announcement_id: announcementId,
-        read_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,announcement_id' });
+      .select('id')
+      .eq('user_id', req.user.id)
+      .eq('announcement_id', announcementId)
+      .limit(1)
+      .maybeSingle();
+
+    if (lookupError) throw lookupError;
+
+    const readPayload = { read_at: new Date().toISOString() };
+    const { error } = existingRead?.id
+      ? await supabaseAdmin
+        .from('announcement_reads')
+        .update(readPayload)
+        .eq('id', existingRead.id)
+      : await supabaseAdmin
+        .from('announcement_reads')
+        .insert({
+          user_id: req.user.id,
+          announcement_id: announcementId,
+          ...readPayload,
+        });
 
     if (error) throw error;
     res.json({ success: true });
@@ -101,31 +182,53 @@ router.post('/:id/read', async (req, res) => {
 
 router.post('/read-all', async (req, res) => {
   try {
-    const { data: announcements, error: announcementError } = await supabaseAdmin
-      .from('announcements')
-      .select('id, status, starts_at, ends_at')
-      .eq('status', 'published')
-      .limit(100);
+    const nowIso = new Date().toISOString();
+    const { data: announcements, error: announcementError } = await applyVisibleAnnouncementFilters(
+      supabaseAdmin
+        .from('announcements')
+        .select('id, status, starts_at, ends_at'),
+      nowIso
+    )
+      .order('updated_at', { ascending: false })
+      .limit(MAX_VISIBLE_NOTIFICATIONS);
 
     if (announcementError?.code === '42P01') {
       return res.json({ success: true, count: 0 });
     }
     if (announcementError) throw announcementError;
 
-    const visibleIds = (announcements || []).filter(isVisibleAnnouncement).map((item) => item.id);
+    const visibleIds = (announcements || [])
+      .filter(isVisibleAnnouncement)
+      .map((item) => item.id);
     if (!visibleIds.length) {
       return res.json({ success: true, count: 0 });
     }
 
+    const { data: existingReads, error: readLookupError } = await supabaseAdmin
+      .from('announcement_reads')
+      .select('announcement_id')
+      .eq('user_id', req.user.id)
+      .in('announcement_id', visibleIds);
+
+    if (readLookupError?.code === '42P01') {
+      return res.json({ success: true, count: 0 });
+    }
+    if (readLookupError) throw readLookupError;
+
+    const readIds = new Set((existingReads || []).map((item) => item.announcement_id));
+    const unreadIds = visibleIds.filter((announcementId) => !readIds.has(announcementId));
+    if (!unreadIds.length) {
+      return res.json({ success: true, count: visibleIds.length });
+    }
+
     const { error } = await supabaseAdmin
       .from('announcement_reads')
-      .upsert(
-        visibleIds.map((announcementId) => ({
+      .insert(
+        unreadIds.map((announcementId) => ({
           user_id: req.user.id,
           announcement_id: announcementId,
           read_at: new Date().toISOString(),
-        })),
-        { onConflict: 'user_id,announcement_id' }
+        }))
       );
 
     if (error) throw error;

@@ -24,6 +24,7 @@ export default function Sidebar({
   collapsed,
   isMobile,
   onMobileClose,
+  notificationUnreadCount = 0,
 }) {
   const location = useLocation();
   const { profile } = useAuth();
@@ -61,6 +62,10 @@ export default function Sidebar({
           const { to, label, disabled, badge } = navItem;
           const isActive = location.pathname === to ||
             (to === '/dashboard' && location.pathname === '/');
+          const unreadBadge = to === '/notifications' && notificationUnreadCount > 0
+            ? formatSidebarBadgeCount(notificationUnreadCount)
+            : '';
+          const navAriaLabel = unreadBadge ? `${label}, ${notificationUnreadCount} unread` : label;
             
           // If syncing, show skeleton items
           if (isTransitioning) {
@@ -98,11 +103,11 @@ export default function Sidebar({
             <li key={to}>
               <NavLink
                 to={to}
-                aria-label={collapsed ? label : undefined}
+                aria-label={collapsed || unreadBadge ? navAriaLabel : undefined}
                 aria-current={isActive ? 'page' : undefined}
                 onClick={isMobile ? onMobileClose : undefined}
                 className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-lg
+                  flex w-full items-center gap-3 px-3 py-2.5 rounded-lg
                   transition-colors duration-150 text-sm font-medium
                   focus-visible:outline-none focus-visible:ring-2
                   focus-visible:ring-accent focus-visible:ring-offset-1
@@ -111,9 +116,29 @@ export default function Sidebar({
                     : 'text-sidebar-text hover:bg-surface-2 hover:text-text'}
                 `}
               >
-                <navItem.icon size={18} aria-hidden="true" className="flex-shrink-0" />
+                <span className="relative flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center">
+                  <navItem.icon size={18} aria-hidden="true" />
+                  {unreadBadge && collapsed ? (
+                    <span
+                      aria-hidden="true"
+                      className="absolute -right-2.5 -top-2.5 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-[var(--color-accent)] px-1 text-[10px] font-black leading-none text-[var(--color-accent-text)] ring-2 ring-[var(--color-sidebar)]"
+                    >
+                      {unreadBadge}
+                    </span>
+                  ) : null}
+                </span>
                 {!collapsed && (
-                  <span className="whitespace-nowrap truncate">{label}</span>
+                  <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                    <span className="truncate">{label}</span>
+                    {unreadBadge ? (
+                      <span
+                        aria-hidden="true"
+                        className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-[var(--color-accent)] px-1.5 text-[10px] font-black leading-none text-[var(--color-accent-text)]"
+                      >
+                        {unreadBadge}
+                      </span>
+                    ) : null}
+                  </span>
                 )}
               </NavLink>
             </li>
@@ -185,4 +210,9 @@ export default function Sidebar({
   }
 
   return content;
+}
+
+function formatSidebarBadgeCount(count) {
+  const normalized = Math.max(0, Number(count || 0));
+  return normalized > 99 ? '99+' : String(normalized);
 }

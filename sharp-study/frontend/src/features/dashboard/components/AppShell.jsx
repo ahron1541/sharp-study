@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import TopBar  from './TopBar';
+import { apiRequest } from '../../../config/api';
+import { useAuth } from '../../auth/context/AuthContext';
+import { NOTIFICATION_UNREAD_COUNT_CHANGED } from '../../notifications/notificationEvents';
 
 const COLLAPSED_KEY = 'sharp-study-sidebar-collapsed';
 
@@ -10,6 +13,7 @@ const COLLAPSED_KEY = 'sharp-study-sidebar-collapsed';
  * Renders: Sidebar + TopBar + <Outlet /> (the active page).
  */
 export default function AppShell() {
+  const { profile } = useAuth();
   const [collapsed, setCollapsed]     = useState(() => {
     try {
       return localStorage.getItem(COLLAPSED_KEY) === 'true';
@@ -19,6 +23,7 @@ export default function AppShell() {
   });
   const [mobileOpen, setMobileOpen]   = useState(false);
   const [isMobile, setIsMobile]       = useState(window.innerWidth < 768);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
 
   useEffect(() => {
     const observer = new ResizeObserver(() => {
@@ -26,6 +31,36 @@ export default function AppShell() {
     });
     observer.observe(document.body);
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!profile?.id) {
+      setNotificationUnreadCount(0);
+      return undefined;
+    }
+
+    let mounted = true;
+    apiRequest('/api/notifications?limit=1')
+      .then((data) => {
+        if (!mounted) return;
+        setNotificationUnreadCount(Math.max(0, Number(data.unread_count || 0)));
+      })
+      .catch(() => {
+        if (mounted) setNotificationUnreadCount(0);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [profile?.id]);
+
+  useEffect(() => {
+    const handleUnreadCountChange = (event) => {
+      setNotificationUnreadCount(Math.max(0, Number(event.detail?.unreadCount || 0)));
+    };
+
+    window.addEventListener(NOTIFICATION_UNREAD_COUNT_CHANGED, handleUnreadCountChange);
+    return () => window.removeEventListener(NOTIFICATION_UNREAD_COUNT_CHANGED, handleUnreadCountChange);
   }, []);
 
   const handleMenuToggle = () => {
@@ -48,6 +83,7 @@ export default function AppShell() {
           <Sidebar
             collapsed={collapsed}
             onToggle={handleMenuToggle}
+            notificationUnreadCount={notificationUnreadCount}
           />
         </aside>
       )}
@@ -58,6 +94,7 @@ export default function AppShell() {
           collapsed={false}
           isMobile
           onMobileClose={() => setMobileOpen(false)}
+          notificationUnreadCount={notificationUnreadCount}
         />
       )}
 
