@@ -64,3 +64,104 @@ export function deleteAdminContent(type, id) {
     method: 'DELETE',
   });
 }
+
+export function fetchAdminFeedback(params) {
+  return apiRequest(`/api/admin/feedback${toQuery(params)}`);
+}
+
+export function updateAdminFeedbackReport(id, payload) {
+  return apiRequest(`/api/admin/feedback/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteAdminFeedbackReport(id) {
+  return apiRequest(`/api/admin/feedback/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export function fetchAdminAnnouncements(params) {
+  return apiRequest(`/api/admin/announcements${toQuery(params)}`);
+}
+
+export function createAdminAnnouncement(payload) {
+  return apiRequest('/api/admin/announcements', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAdminAnnouncement(id, payload) {
+  return apiRequest(`/api/admin/announcements/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteAdminAnnouncement(id) {
+  return apiRequest(`/api/admin/announcements/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export function fetchAdminAiControls() {
+  return apiRequest('/api/admin/ai-controls');
+}
+
+export function updateAdminAiRateLimit(payload) {
+  return apiRequest('/api/admin/ai-controls/rate-limit', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function upsertAdminAiRateLimitOverride(payload) {
+  return apiRequest('/api/admin/ai-controls/rate-limit-overrides', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteAdminAiRateLimitOverride(userId) {
+  return apiRequest(`/api/admin/ai-controls/rate-limit-overrides/${userId}`, {
+    method: 'DELETE',
+  });
+}
+
+export function createAdminPromptTemplate(payload) {
+  return apiRequest('/api/admin/ai-controls/prompt-templates', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAdminPromptTemplate(id, payload) {
+  return apiRequest(`/api/admin/ai-controls/prompt-templates/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteAdminPromptTemplate(id) {
+  return apiRequest(`/api/admin/ai-controls/prompt-templates/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export function fetchAdminHealth() {
+  return apiRequest('/api/admin/health');
+}
+
+export function deleteAdminSystemLog(id) {
+  return apiRequest(`/api/admin/health/logs/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export function clearAdminOldSystemLogs(days = 30) {
+  return apiRequest(`/api/admin/health/logs?older_than_days=${days}`, {
+    method: 'DELETE',
+  });
+}

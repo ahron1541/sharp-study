@@ -14,6 +14,8 @@ const {
 } = require('./ai.service');
 const { invalidateDashboardCache } = require('../dashboard/dashboard.cache');
 const { ACTIVITY_TYPES, recordStudyActivity } = require('../streaks/streaks.service');
+const { updateAiRequestEvent } = require('./aiUsage.service');
+const { writeSystemLog } = require('../../utils/systemLog');
 const {
   buildSnapshot,
   cancelJob,
@@ -471,7 +473,7 @@ async function extractText(file) {
 }
 
 async function processGenerationJob(job) {
-  const { file, generateOptions, userId, sourceStudyGuideId } = job.payload;
+  const { file, generateOptions, userId, sourceStudyGuideId, aiEventId } = job.payload;
   const docTitle = file?.originalname ? file.originalname.replace(/\.[^.]+$/, '') : '';
   let documentId = null;
   let sourceStudyGuide = null;
@@ -510,6 +512,11 @@ async function processGenerationJob(job) {
       const { data: existingSet, error: existingSetError } = await existingSetQuery.limit(1).maybeSingle();
       if (existingSetError) throw existingSetError;
       if (existingSet) {
+        await updateAiRequestEvent(aiEventId, 'completed', {
+          generated: ['flashcards'],
+          already_exists: true,
+          source_study_guide_id: guide.id,
+        });
         return {
           success: true,
           generated: ['flashcards'],
@@ -533,6 +540,11 @@ async function processGenerationJob(job) {
       const { data: existingQuiz, error: existingQuizError } = await existingQuizQuery.limit(1).maybeSingle();
       if (existingQuizError) throw existingQuizError;
       if (existingQuiz) {
+        await updateAiRequestEvent(aiEventId, 'completed', {
+          generated: ['quiz'],
+          already_exists: true,
+          source_study_guide_id: guide.id,
+        });
         return {
           success: true,
           generated: ['quiz'],
@@ -769,9 +781,38 @@ async function processGenerationJob(job) {
     });
 
     console.log(`[AI Queue] Completed job ${job.id} for user ${userId}`);
+    await updateAiRequestEvent(aiEventId, 'completed', {
+      generated: generateOptions,
+      created: createdRecords,
+      job_id: job.id,
+      source_study_guide_id: sourceStudyGuide?.id || sourceStudyGuideId || null,
+      document_id: doc?.id || documentId || null,
+    });
     return { success: true, generated: generateOptions, created: createdRecords };
   } catch (err) {
-    console.error('AI generation error:', err);
+    const wasCancelled = job.abortController?.signal?.aborted || err?.message === 'Generation aborted.';
+    console.error(wasCancelled ? 'AI generation cancelled:' : 'AI generation error:', err);
+    await updateAiRequestEvent(aiEventId, wasCancelled ? 'cancelled' : 'failed', {
+      generated: generateOptions,
+      job_id: job.id,
+      source_study_guide_id: sourceStudyGuide?.id || sourceStudyGuideId || null,
+      document_id: documentId || null,
+      message: sanitizeGeneratedPlainText(err.message || (wasCancelled ? 'AI generation cancelled.' : 'AI generation failed.'), 500),
+    });
+    if (!wasCancelled) {
+      await writeSystemLog({
+        level: 'error',
+        source: 'ai.generation',
+        message: err.message || 'AI generation failed.',
+        metadata: {
+          job_id: job.id,
+          user_id: userId,
+          generate_options: generateOptions,
+          source_study_guide_id: sourceStudyGuide?.id || sourceStudyGuideId || null,
+          document_id: documentId || null,
+        },
+      });
+    }
 
     if (generateOptions.includes('quiz')) {
       await logAiQuizEvent(userId, AI_QUIZ_FAILED_EVENT, {
@@ -825,6 +866,7 @@ const generateMaterials = [
           file,
           generateOptions,
           userId: req.user.id,
+          aiEventId: req.aiUsage?.eventId || null,
           abortController,
         },
       });
@@ -859,6 +901,7 @@ async function generateFlashcardsFromStudyGuide(req, res) {
         generateOptions: ['flashcards'],
         userId: req.user.id,
         sourceStudyGuideId,
+        aiEventId: req.aiUsage?.eventId || null,
         abortController,
       },
     });
@@ -890,6 +933,7 @@ async function generateQuizFromStudyGuide(req, res) {
         generateOptions: ['quiz'],
         userId: req.user.id,
         sourceStudyGuideId,
+        aiEventId: req.aiUsage?.eventId || null,
         abortController,
       },
     });
@@ -915,9 +959,17 @@ async function getGenerationStatus(req, res) {
 }
 
 async function cancelGeneration(req, res) {
+  const existingJob = getJob(req.params.jobId);
   const job = cancelJob(req.params.jobId, req.user.id);
   if (!job) {
     return res.status(404).json({ error: 'Generation job not found.' });
+  }
+
+  if (job.status === 'cancelled') {
+    await updateAiRequestEvent(existingJob?.payload?.aiEventId || null, 'cancelled', {
+      job_id: job.id,
+      cancelled_at: new Date().toISOString(),
+    });
   }
 
   return res.json({ success: true, job });

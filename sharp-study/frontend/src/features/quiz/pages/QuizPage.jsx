@@ -34,6 +34,7 @@ import Modal from '../../../shared/components/Modal';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
 import StudyNotice from '../../../shared/components/StudyNotice';
 import { QuizPageSkeleton } from '../../../shared/components/PageSkeletons';
+import ContentFeedbackWidget from '../../../shared/components/ContentFeedbackWidget';
 
 const SESSION_STORAGE_PREFIX = 'sharp-study-quiz-session';
 const CONTENT_STORAGE_PREFIX = 'sharp-study-quiz-content';
@@ -917,6 +918,15 @@ export default function QuizPage() {
     <>
       <main className="mx-auto w-full max-w-7xl px-4 py-6 pb-28 sm:px-6 lg:px-8">
         <Breadcrumb items={[{ label: 'Library', href: '/library?tab=quiz' }, { label: quiz?.title || 'Quiz' }]} />
+
+        {quiz?.id ? (
+          <ContentFeedbackWidget
+            contentType="quiz"
+            contentId={quiz.id}
+            label="quiz"
+            className="mt-4"
+          />
+        ) : null}
 
         {phase === 'preview' ? (
           <PreviewScreen

@@ -7,15 +7,15 @@ const {
   getGenerationStatus,
 } = require('./ai.controller');
 const { requireAuth } = require('../../middleware/auth.middleware');
-const { aiLimiter } = require('../../middleware/rateLimit.middleware');
+const { aiDailyLimit } = require('./aiUsage.service');
 
 const router = express.Router();
 
 // POST /api/ai/generate
-// Auth required + AI rate limit (10/hour)
-router.post('/generate', requireAuth, aiLimiter, ...generateMaterials);
-router.post('/study-guide/:id/flashcards', requireAuth, aiLimiter, generateFlashcardsFromStudyGuide);
-router.post('/study-guide/:id/quiz', requireAuth, aiLimiter, generateQuizFromStudyGuide);
+// Auth required + database-backed AI daily limit
+router.post('/generate', requireAuth, aiDailyLimit, ...generateMaterials);
+router.post('/study-guide/:id/flashcards', requireAuth, aiDailyLimit, generateFlashcardsFromStudyGuide);
+router.post('/study-guide/:id/quiz', requireAuth, aiDailyLimit, generateQuizFromStudyGuide);
 router.get('/generate/:jobId', requireAuth, getGenerationStatus);
 router.post('/generate/:jobId/cancel', requireAuth, cancelGeneration);
 

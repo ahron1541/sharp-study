@@ -12,7 +12,7 @@ import VersoLogo from '../../../shared/components/VersoLogo';
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Home',         icon: Home },
   { to: '/library',   label: 'Your Library', icon: BookMarked },
-  { to: '/notifications', label: 'Notification', icon: Bell, disabled: true, badge: 'Coming soon' },
+  { to: '/notifications', label: 'Notifications', icon: Bell },
 ];
 
 const FOOTER_ITEMS = [

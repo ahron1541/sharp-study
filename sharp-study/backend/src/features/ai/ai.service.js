@@ -1,4 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { supabaseAdmin } = require('../../config/supabase');
+const { writeSystemLog } = require('../../utils/systemLog');
 
 const REQUEST_TIMEOUT_MS = 45000;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite';
@@ -9,6 +11,8 @@ const geminiClient = process.env.GEMINI_API_KEY
   ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
   : null;
 const providerCooldowns = new Map();
+const promptTemplateCache = new Map();
+const PROMPT_TEMPLATE_CACHE_MS = 60 * 1000;
 
 function sleep(delayMs, signal) {
   return new Promise((resolve, reject) => {
@@ -129,6 +133,51 @@ function extractJsonPayload(text = '') {
   }
 
   throw new SyntaxError('AI response JSON was incomplete.');
+}
+
+function relationMissing(error) {
+  return error?.code === '42P01' || /relation .* does not exist/i.test(error?.message || '');
+}
+
+function renderPromptTemplate(template, variables = {}) {
+  return String(template || '').replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, key) => {
+    if (!Object.prototype.hasOwnProperty.call(variables, key)) return match;
+    return String(variables[key] ?? '');
+  });
+}
+
+async function resolvePromptTemplate(templateKey, fallbackPrompt, variables = {}) {
+  const now = Date.now();
+  const cached = promptTemplateCache.get(templateKey);
+  if (cached && now - cached.cachedAt < PROMPT_TEMPLATE_CACHE_MS) {
+    return cached.content ? renderPromptTemplate(cached.content, variables) : fallbackPrompt;
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('prompt_templates')
+      .select('content')
+      .eq('template_key', templateKey)
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    promptTemplateCache.set(templateKey, { content: data?.content || '', cachedAt: now });
+    return data?.content ? renderPromptTemplate(data.content, variables) : fallbackPrompt;
+  } catch (error) {
+    if (!relationMissing(error)) {
+      await writeSystemLog({
+        level: 'warning',
+        source: 'ai.prompt_templates',
+        message: 'Falling back to built-in AI prompt template.',
+        metadata: { template_key: templateKey, error: error.message },
+      });
+    }
+    promptTemplateCache.set(templateKey, { content: '', cachedAt: now });
+    return fallbackPrompt;
+  }
 }
 
 function parseJsonResponse(text) {
@@ -710,25 +759,68 @@ ${extractedText.substring(0, 12000)}
 }
 
 async function generateStudyGuide(extractedText, requestOptions = {}) {
+  const sourceText = extractedText.substring(0, 14000);
+  const fallbackPrompt = buildStudyGuidePrompt(extractedText);
+  const prompt = await resolvePromptTemplate('study_guide', fallbackPrompt, {
+    source_text: sourceText,
+    lesson_text: sourceText,
+  });
+
   return stripCodeFences(
-    await generateWithFallback(buildStudyGuidePrompt(extractedText), requestOptions, 'study guide generation')
+    await generateWithFallback(prompt, requestOptions, 'study guide generation')
   );
 }
 
 async function generateKeyReferences(extractedText, requestOptions = {}) {
-  return generateJsonWithFallback(buildKeyReferencesPrompt(extractedText), requestOptions, 'key reference generation');
+  const sourceText = extractedText.substring(0, 10000);
+  const prompt = await resolvePromptTemplate('key_references', buildKeyReferencesPrompt(extractedText), {
+    source_text: sourceText,
+    lesson_text: sourceText,
+  });
+
+  return generateJsonWithFallback(prompt, requestOptions, 'key reference generation');
 }
 
 async function generateDiscussionQuestions(extractedText, requestOptions = {}) {
-  return generateJsonWithFallback(buildDiscussionPrompt(extractedText), requestOptions, 'discussion question generation');
+  const sourceText = extractedText.substring(0, 7000);
+  const prompt = await resolvePromptTemplate('discussion_questions', buildDiscussionPrompt(extractedText), {
+    source_text: sourceText,
+    lesson_text: sourceText,
+  });
+
+  return generateJsonWithFallback(prompt, requestOptions, 'discussion question generation');
 }
 
 async function generateFlashcards(extractedText, requestOptions = {}, difficulty = 'normal', count = 15) {
-  return generateJsonWithFallback(buildFlashcardsPrompt(extractedText, difficulty, count), requestOptions, `${normalizeDifficulty(difficulty)} flashcard generation`);
+  const normalizedDifficulty = normalizeDifficulty(difficulty);
+  const targetCount = Math.max(4, Math.min(Number(count) || 15, 20));
+  const sourceText = extractedText.substring(0, 10000);
+  const prompt = await resolvePromptTemplate('flashcards', buildFlashcardsPrompt(extractedText, normalizedDifficulty, targetCount), {
+    source_text: sourceText,
+    lesson_text: sourceText,
+    difficulty: normalizedDifficulty,
+    difficulty_rules: buildDifficultyRules('flashcards', normalizedDifficulty),
+    count: targetCount,
+    target_count: targetCount,
+  });
+
+  return generateJsonWithFallback(prompt, requestOptions, `${normalizedDifficulty} flashcard generation`);
 }
 
 async function generateQuiz(extractedText, requestOptions = {}, difficulty = 'normal', count = 20) {
-  return generateJsonWithFallback(buildQuizPrompt(extractedText, difficulty, count), requestOptions, `${normalizeDifficulty(difficulty)} quiz generation`);
+  const normalizedDifficulty = normalizeDifficulty(difficulty);
+  const targetCount = Math.max(5, Math.min(Number(count) || 20, 24));
+  const sourceText = extractedText.substring(0, 12000);
+  const prompt = await resolvePromptTemplate('quiz', buildQuizPrompt(extractedText, normalizedDifficulty, targetCount), {
+    source_text: sourceText,
+    lesson_text: sourceText,
+    difficulty: normalizedDifficulty,
+    difficulty_rules: buildDifficultyRules('quiz', normalizedDifficulty),
+    count: targetCount,
+    target_count: targetCount,
+  });
+
+  return generateJsonWithFallback(prompt, requestOptions, `${normalizedDifficulty} quiz generation`);
 }
 
 module.exports = {

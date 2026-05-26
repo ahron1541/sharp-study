@@ -7,6 +7,7 @@ const { supabaseAdmin } = require('../../config/supabase');
 const { sanitizePlainText, sanitizeStudyGuideContent } = require('../../utils/studyGuideSanitize');
 const { USERNAME_RULE_MESSAGE, normalizeUsername, isValidUsername } = require('../../utils/usernamePolicy');
 const { setCache } = require('../../utils/cache');
+const { writeSystemLog } = require('../../utils/systemLog');
 
 const router = express.Router();
 
@@ -16,6 +17,13 @@ const CONTENT_TYPES = new Set(['documents', 'study_guides', 'flashcard_sets', 'q
 const QUIZ_ATTEMPT_EVENT = 'quiz_attempt_submitted';
 const AI_QUIZ_GENERATED_EVENT = 'ai.quiz.generated';
 const AI_QUIZ_FAILED_EVENT = 'ai.quiz.failed';
+const FEEDBACK_CONTENT_TYPES = new Set(['study_guide', 'flashcards', 'quiz']);
+const FEEDBACK_STATUSES = new Set(['open', 'reviewing', 'resolved', 'dismissed']);
+const ANNOUNCEMENT_STATUSES = new Set(['draft', 'published', 'archived']);
+const ANNOUNCEMENT_CATEGORIES = new Set(['general', 'update', 'maintenance', 'feature', 'security']);
+const ANNOUNCEMENT_PRIORITIES = new Set(['normal', 'high']);
+const PROMPT_TEMPLATE_KEYS = new Set(['study_guide', 'key_references', 'discussion_questions', 'flashcards', 'quiz']);
+const SYSTEM_LOG_LEVELS = new Set(['info', 'warning', 'error']);
 const ADMIN_PASSWORD_RULES = [
   { test: (value) => value.length >= 8, message: 'Password must be at least 8 characters long.' },
   { test: (value) => /[A-Z]/.test(value), message: 'Password must include at least one uppercase letter.' },
@@ -54,6 +62,50 @@ const updateContentSchema = z.object({
   message: 'At least one field is required.',
 });
 
+const updateReportSchema = z.object({
+  status: z.enum(['open', 'reviewing', 'resolved', 'dismissed']).optional(),
+  admin_notes: z.string().trim().max(800).optional().default(''),
+}).refine((payload) => Object.keys(payload).length > 0, {
+  message: 'At least one field is required.',
+});
+
+const announcementSchema = z.object({
+  title: z.string().trim().min(1).max(160),
+  body: z.string().trim().min(1).max(2000),
+  category: z.enum(['general', 'update', 'maintenance', 'feature', 'security']).default('general'),
+  priority: z.enum(['normal', 'high']).default('normal'),
+  status: z.enum(['draft', 'published', 'archived']).default('draft'),
+  starts_at: z.string().datetime().nullable().optional(),
+  ends_at: z.string().datetime().nullable().optional(),
+});
+
+const updateAnnouncementSchema = announcementSchema.partial().refine((payload) => Object.keys(payload).length > 0, {
+  message: 'At least one field is required.',
+});
+
+const promptTemplateSchema = z.object({
+  template_key: z.enum(['study_guide', 'key_references', 'discussion_questions', 'flashcards', 'quiz']),
+  title: z.string().trim().min(1).max(140),
+  description: z.string().trim().max(400).optional().default(''),
+  content: z.string().trim().min(20).max(20000),
+  is_active: z.boolean().default(false),
+});
+
+const updatePromptTemplateSchema = promptTemplateSchema.partial().refine((payload) => Object.keys(payload).length > 0, {
+  message: 'At least one field is required.',
+});
+
+const rateLimitSchema = z.object({
+  daily_limit: z.number().int().min(1).max(500),
+  window_hours: z.number().int().min(1).max(168).default(24),
+});
+
+const rateLimitOverrideSchema = z.object({
+  user_id: z.string().uuid(),
+  daily_limit: z.number().int().min(1).max(500),
+  is_enabled: z.boolean().default(true),
+});
+
 router.use(requireAdmin);
 
 function parsePositiveInt(value, fallback, max = 50) {
@@ -81,6 +133,55 @@ async function logAuditEvent(userId, event, metadata = {}) {
   } catch (error) {
     console.error('[AUDIT] Failed to record admin event:', error.message);
   }
+}
+
+function relationMissing(error) {
+  return error?.code === '42P01' || /relation .* does not exist/i.test(error?.message || '');
+}
+
+function safeIsoDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function normalizePromptTemplate(row) {
+  return {
+    id: row.id,
+    template_key: row.template_key,
+    title: sanitizeAuditText(row.title || 'Prompt template', 160),
+    description: sanitizeAuditText(row.description || '', 400),
+    content: String(row.content || ''),
+    is_active: Boolean(row.is_active),
+    updated_at: row.updated_at,
+    created_at: row.created_at,
+  };
+}
+
+function providerHealth() {
+  return [
+    {
+      provider: 'Gemini',
+      configured: Boolean(process.env.GEMINI_API_KEY),
+      model: process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite',
+      quota_available: null,
+      quota_note: 'Gemini token/quota availability is not exposed by this backend.',
+    },
+    {
+      provider: 'Groq',
+      configured: Boolean(process.env.GROQ_API_KEY),
+      model: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
+      quota_available: null,
+      quota_note: 'Fallback provider status only.',
+    },
+    {
+      provider: 'OpenRouter',
+      configured: Boolean(process.env.OPENROUTER_API_KEY),
+      model: process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-lite-001',
+      quota_available: null,
+      quota_note: 'Fallback provider status only.',
+    },
+  ];
 }
 
 function buildFullName(firstName, middleName, lastName) {
@@ -134,6 +235,70 @@ async function fetchOverview() {
   const flashcardSets = flashcardSetsResult.data || [];
   const quizzes = quizzesResult.data || [];
   const audits = auditResult.data || [];
+  let extraMetrics = {
+    open_reports: 0,
+    total_reports: 0,
+    published_announcements: 0,
+    ai_requests_window: 0,
+    ai_failed_window: 0,
+  };
+  let topAiUsers = [];
+
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const [reportsResult, announcementsResult, aiEventsResult] = await Promise.all([
+      supabaseAdmin.from('ai_content_reports').select('id, status', { count: 'exact' }),
+      supabaseAdmin.from('announcements').select('id, status', { count: 'exact' }),
+      supabaseAdmin.from('ai_request_events').select('id, user_id, status, feature, created_at').gte('created_at', since).limit(1000),
+    ]);
+
+    const optionalError = [reportsResult.error, announcementsResult.error, aiEventsResult.error].find(Boolean);
+    if (optionalError) throw optionalError;
+
+    const reportRows = reportsResult.data || [];
+    const announcementRows = announcementsResult.data || [];
+    const aiRows = aiEventsResult.data || [];
+    const aiUserCounts = new Map();
+
+    aiRows.forEach((event) => {
+      if (!event.user_id) return;
+      const current = aiUserCounts.get(event.user_id) || { user_id: event.user_id, requests: 0, failed: 0 };
+      current.requests += 1;
+      if (event.status === 'failed') current.failed += 1;
+      aiUserCounts.set(event.user_id, current);
+    });
+
+    const aiUserIds = [...aiUserCounts.keys()];
+    const profilesMap = await fetchProfilesMap(aiUserIds);
+    topAiUsers = [...aiUserCounts.values()]
+      .map((entry) => {
+        const profile = profilesMap.get(entry.user_id) || {};
+        return {
+          ...entry,
+          user_name: sanitizeAuditText(profile.full_name || profile.username || profile.email || 'Unknown user', 140),
+          email: sanitizeAuditText(profile.email || '', 180),
+        };
+      })
+      .sort((a, b) => b.requests - a.requests || b.failed - a.failed)
+      .slice(0, 5);
+
+    extraMetrics = {
+      open_reports: reportRows.filter((item) => item.status === 'open').length,
+      total_reports: reportsResult.count || reportRows.length,
+      published_announcements: announcementRows.filter((item) => item.status === 'published').length,
+      ai_requests_window: aiRows.length,
+      ai_failed_window: aiRows.filter((item) => item.status === 'failed').length,
+    };
+  } catch (error) {
+    if (!relationMissing(error)) {
+      await writeSystemLog({
+        level: 'warning',
+        source: 'admin.overview',
+        message: 'Admin overview optional metrics could not be loaded.',
+        metadata: { error: error.message },
+      });
+    }
+  }
 
   return {
     metrics: {
@@ -156,8 +321,10 @@ async function fetchOverview() {
       documents_processing: documents.filter((doc) => doc.status === 'processing').length,
       documents_done: documents.filter((doc) => doc.status === 'done').length,
       documents_error: documents.filter((doc) => doc.status === 'error').length,
+      ...extraMetrics,
     },
     recent_activity: audits,
+    top_ai_users: topAiUsers,
   };
 }
 
@@ -536,6 +703,52 @@ router.patch('/users/:id', async (req, res) => {
   }
 });
 
+async function deleteUserOwnedData(targetId, targetEmail = '') {
+  const [{ data: sets }, { data: quizzes }] = await Promise.all([
+    supabaseAdmin.from('flashcard_sets').select('id').eq('user_id', targetId),
+    supabaseAdmin.from('quizzes').select('id').eq('user_id', targetId),
+  ]);
+  const setIds = (sets || []).map((item) => item.id);
+  const quizIds = (quizzes || []).map((item) => item.id);
+
+  if (setIds.length) {
+    await supabaseAdmin.from('flashcard_attempts').delete().in('set_id', setIds);
+    await supabaseAdmin.from('flashcard_progress').delete().in('set_id', setIds);
+    await supabaseAdmin.from('flashcards').delete().in('set_id', setIds);
+  }
+
+  if (quizIds.length) {
+    await supabaseAdmin.from('quiz_questions').delete().in('quiz_id', quizIds);
+  }
+
+  const cleanupTasks = [
+    supabaseAdmin.from('ai_content_reactions').delete().eq('user_id', targetId),
+    supabaseAdmin.from('ai_content_reports').delete().or(`user_id.eq.${targetId},content_owner_id.eq.${targetId}`),
+    supabaseAdmin.from('announcement_reads').delete().eq('user_id', targetId),
+    supabaseAdmin.from('ai_request_events').delete().eq('user_id', targetId),
+    supabaseAdmin.from('ai_rate_limit_overrides').delete().eq('user_id', targetId),
+    supabaseAdmin.from('flashcard_sets').delete().eq('user_id', targetId),
+    supabaseAdmin.from('quizzes').delete().eq('user_id', targetId),
+    supabaseAdmin.from('study_guides').delete().eq('user_id', targetId),
+    supabaseAdmin.from('documents').delete().eq('user_id', targetId),
+    supabaseAdmin.from('study_activity_days').delete().eq('user_id', targetId),
+    supabaseAdmin.from('user_streaks').delete().eq('user_id', targetId),
+    supabaseAdmin.from('password_history').delete().eq('user_id', targetId),
+    supabaseAdmin.from('audit_logs').delete().eq('user_id', targetId),
+    supabaseAdmin.from('profiles').delete().eq('id', targetId),
+  ];
+
+  if (targetEmail) {
+    cleanupTasks.push(supabaseAdmin.from('login_attempts').delete().eq('email', targetEmail));
+    cleanupTasks.push(supabaseAdmin.from('otp_codes').delete().eq('email', targetEmail));
+  }
+
+  for (const task of cleanupTasks) {
+    const { error } = await task;
+    if (error && !relationMissing(error)) throw error;
+  }
+}
+
 router.delete('/users/:id', async (req, res) => {
   try {
     const targetId = req.params.id;
@@ -543,11 +756,25 @@ router.delete('/users/:id', async (req, res) => {
       return res.status(400).json({ error: 'You cannot delete your own admin account.' });
     }
 
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, email')
+      .eq('id', targetId)
+      .maybeSingle();
+
+    if (profileError) throw profileError;
+    if (!profile) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    await deleteUserOwnedData(targetId, profile.email);
+
     const { error } = await supabaseAdmin.auth.admin.deleteUser(targetId);
     if (error) throw error;
 
     await logAuditEvent(req.user.id, 'admin.user.deleted', {
       target_user_id: targetId,
+      privacy_cleanup: true,
     });
 
     res.json({ success: true });
@@ -791,6 +1018,516 @@ router.delete('/content/:type/:id', async (req, res) => {
   } catch (error) {
     console.error('[ADMIN] Failed to delete content:', error.message);
     res.status(500).json({ error: 'Failed to delete content.' });
+  }
+});
+
+router.get('/feedback', async (req, res) => {
+  try {
+    const page = parsePositiveInt(req.query.page, 1);
+    const pageSize = parsePositiveInt(req.query.pageSize, 10, 50);
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    const status = String(req.query.status || 'all').trim();
+    const type = String(req.query.type || 'all').trim();
+    const search = normalizeSearch(req.query.search);
+
+    let query = supabaseAdmin
+      .from('ai_content_reports')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false });
+
+    if (FEEDBACK_STATUSES.has(status)) query = query.eq('status', status);
+    if (FEEDBACK_CONTENT_TYPES.has(type)) query = query.eq('content_type', type);
+    if (search) query = query.or(`content_title.ilike.%${search}%,details.ilike.%${search}%`);
+
+    const { data, error, count } = await query.range(from, to);
+    if (error) throw error;
+
+    const reports = data || [];
+    const userIds = [...new Set(reports.flatMap((report) => [report.user_id, report.content_owner_id]).filter(Boolean))];
+    const profilesMap = await fetchProfilesMap(userIds);
+
+    const hydrated = await Promise.all(reports.map(async (report) => {
+      const [{ data: reactions }, { count: reportCount }] = await Promise.all([
+        supabaseAdmin
+          .from('ai_content_reactions')
+          .select('reaction')
+          .eq('content_type', report.content_type)
+          .eq('content_id', report.content_id),
+        supabaseAdmin
+          .from('ai_content_reports')
+          .select('id', { count: 'exact', head: true })
+          .eq('content_type', report.content_type)
+          .eq('content_id', report.content_id),
+      ]);
+      const reporter = profilesMap.get(report.user_id) || {};
+      const owner = profilesMap.get(report.content_owner_id) || {};
+      return {
+        ...report,
+        reporter: {
+          id: report.user_id,
+          name: sanitizeAuditText(reporter.full_name || reporter.username || reporter.email || 'Unknown user', 140),
+          email: sanitizeAuditText(reporter.email || '', 180),
+        },
+        owner: {
+          id: report.content_owner_id,
+          name: sanitizeAuditText(owner.full_name || owner.username || owner.email || 'Unknown owner', 140),
+          email: sanitizeAuditText(owner.email || '', 180),
+        },
+        reaction_counts: {
+          up: (reactions || []).filter((item) => item.reaction === 'up').length,
+          down: (reactions || []).filter((item) => item.reaction === 'down').length,
+        },
+        report_count_for_content: reportCount || 0,
+      };
+    }));
+
+    res.json({
+      reports: hydrated,
+      pagination: {
+        page,
+        pageSize,
+        totalCount: count || 0,
+        totalPages: Math.max(1, Math.ceil((count || 0) / pageSize)),
+      },
+    });
+  } catch (error) {
+    if (relationMissing(error)) {
+      return res.json({ reports: [], pagination: { page: 1, pageSize: 10, totalCount: 0, totalPages: 1 } });
+    }
+    console.error('[ADMIN] Failed to fetch feedback:', error.message);
+    res.status(500).json({ error: 'Failed to load feedback reports.' });
+  }
+});
+
+router.patch('/feedback/:id', async (req, res) => {
+  try {
+    const parsed = updateReportSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid report update.' });
+    }
+
+    const payload = { updated_at: new Date().toISOString() };
+    if (parsed.data.status) {
+      payload.status = parsed.data.status;
+      if (['resolved', 'dismissed'].includes(parsed.data.status)) {
+        payload.resolved_by = req.user.id;
+        payload.resolved_at = new Date().toISOString();
+      } else {
+        payload.resolved_by = null;
+        payload.resolved_at = null;
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'admin_notes')) {
+      payload.admin_notes = sanitizeAuditText(parsed.data.admin_notes || '', 800) || null;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('ai_content_reports')
+      .update(payload)
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    await logAuditEvent(req.user.id, 'admin.feedback.updated', { report_id: req.params.id, changes: payload });
+    res.json({ success: true, report: data });
+  } catch (error) {
+    console.error('[ADMIN] Failed to update feedback report:', error.message);
+    res.status(500).json({ error: 'Failed to update feedback report.' });
+  }
+});
+
+router.delete('/feedback/:id', async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin.from('ai_content_reports').delete().eq('id', req.params.id);
+    if (error) throw error;
+    await logAuditEvent(req.user.id, 'admin.feedback.deleted', { report_id: req.params.id });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[ADMIN] Failed to delete feedback report:', error.message);
+    res.status(500).json({ error: 'Failed to delete feedback report.' });
+  }
+});
+
+router.get('/announcements', async (req, res) => {
+  try {
+    const status = String(req.query.status || 'all').trim();
+    let query = supabaseAdmin
+      .from('announcements')
+      .select('*')
+      .order('updated_at', { ascending: false });
+
+    if (ANNOUNCEMENT_STATUSES.has(status)) query = query.eq('status', status);
+
+    const { data, error } = await query.limit(100);
+    if (error) throw error;
+    res.json({ announcements: data || [] });
+  } catch (error) {
+    if (relationMissing(error)) return res.json({ announcements: [] });
+    console.error('[ADMIN] Failed to fetch announcements:', error.message);
+    res.status(500).json({ error: 'Failed to load announcements.' });
+  }
+});
+
+router.post('/announcements', async (req, res) => {
+  try {
+    const parsed = announcementSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid announcement.' });
+    }
+
+    const payload = {
+      ...parsed.data,
+      title: sanitizeAuditText(parsed.data.title, 160),
+      body: sanitizeAuditText(parsed.data.body, 2000),
+      starts_at: safeIsoDate(parsed.data.starts_at),
+      ends_at: safeIsoDate(parsed.data.ends_at),
+      created_by: req.user.id,
+      updated_by: req.user.id,
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from('announcements')
+      .insert(payload)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    await logAuditEvent(req.user.id, 'admin.announcement.created', { announcement_id: data.id, status: data.status });
+    res.status(201).json({ success: true, announcement: data });
+  } catch (error) {
+    console.error('[ADMIN] Failed to create announcement:', error.message);
+    res.status(500).json({ error: 'Failed to create announcement.' });
+  }
+});
+
+router.patch('/announcements/:id', async (req, res) => {
+  try {
+    const parsed = updateAnnouncementSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid announcement update.' });
+    }
+
+    const payload = {
+      ...parsed.data,
+      updated_by: req.user.id,
+      updated_at: new Date().toISOString(),
+    };
+    if (payload.title) payload.title = sanitizeAuditText(payload.title, 160);
+    if (payload.body) payload.body = sanitizeAuditText(payload.body, 2000);
+    if (Object.prototype.hasOwnProperty.call(payload, 'starts_at')) payload.starts_at = safeIsoDate(payload.starts_at);
+    if (Object.prototype.hasOwnProperty.call(payload, 'ends_at')) payload.ends_at = safeIsoDate(payload.ends_at);
+
+    const { data, error } = await supabaseAdmin
+      .from('announcements')
+      .update(payload)
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    await logAuditEvent(req.user.id, 'admin.announcement.updated', { announcement_id: data.id, changes: payload });
+    res.json({ success: true, announcement: data });
+  } catch (error) {
+    console.error('[ADMIN] Failed to update announcement:', error.message);
+    res.status(500).json({ error: 'Failed to update announcement.' });
+  }
+});
+
+router.delete('/announcements/:id', async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin.from('announcements').delete().eq('id', req.params.id);
+    if (error) throw error;
+    await logAuditEvent(req.user.id, 'admin.announcement.deleted', { announcement_id: req.params.id });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[ADMIN] Failed to delete announcement:', error.message);
+    res.status(500).json({ error: 'Failed to delete announcement.' });
+  }
+});
+
+async function deactivatePromptTemplates(templateKey, exceptId = null) {
+  let query = supabaseAdmin
+    .from('prompt_templates')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq('template_key', templateKey);
+  if (exceptId) query = query.neq('id', exceptId);
+  const { error } = await query;
+  if (error) throw error;
+}
+
+router.get('/ai-controls', async (req, res) => {
+  try {
+    const [templatesResult, settingsResult, overridesResult, eventsResult] = await Promise.all([
+      supabaseAdmin.from('prompt_templates').select('*').order('updated_at', { ascending: false }),
+      supabaseAdmin.from('ai_rate_limit_settings').select('*').eq('id', 'global').maybeSingle(),
+      supabaseAdmin.from('ai_rate_limit_overrides').select('user_id, daily_limit, is_enabled, updated_at').order('updated_at', { ascending: false }).limit(50),
+      supabaseAdmin.from('ai_request_events').select('id, user_id, feature, status, provider, metadata, created_at').order('created_at', { ascending: false }).limit(50),
+    ]);
+
+    const optionalError = [templatesResult.error, settingsResult.error, overridesResult.error, eventsResult.error].find(Boolean);
+    if (optionalError) throw optionalError;
+
+    const userIds = [...new Set([
+      ...(overridesResult.data || []).map((row) => row.user_id),
+      ...(eventsResult.data || []).map((row) => row.user_id),
+    ].filter(Boolean))];
+    const profilesMap = await fetchProfilesMap(userIds);
+
+    const hydrateUser = (row) => {
+      const profile = profilesMap.get(row.user_id) || {};
+      return {
+        ...row,
+        user_name: sanitizeAuditText(profile.full_name || profile.username || profile.email || 'Unknown user', 140),
+        email: sanitizeAuditText(profile.email || '', 180),
+      };
+    };
+
+    res.json({
+      provider_health: providerHealth(),
+      rate_limit: settingsResult.data || { id: 'global', daily_limit: 10, window_hours: 24 },
+      overrides: (overridesResult.data || []).map(hydrateUser),
+      prompt_templates: (templatesResult.data || []).map(normalizePromptTemplate),
+      recent_events: (eventsResult.data || []).map(hydrateUser),
+    });
+  } catch (error) {
+    if (relationMissing(error)) {
+      return res.json({
+        provider_health: providerHealth(),
+        rate_limit: { id: 'global', daily_limit: 10, window_hours: 24 },
+        overrides: [],
+        prompt_templates: [],
+        recent_events: [],
+      });
+    }
+    console.error('[ADMIN] Failed to load AI controls:', error.message);
+    res.status(500).json({ error: 'Failed to load AI controls.' });
+  }
+});
+
+router.patch('/ai-controls/rate-limit', async (req, res) => {
+  try {
+    const parsed = rateLimitSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid rate limit.' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('ai_rate_limit_settings')
+      .upsert({
+        id: 'global',
+        daily_limit: parsed.data.daily_limit,
+        window_hours: parsed.data.window_hours,
+        updated_by: req.user.id,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    await logAuditEvent(req.user.id, 'admin.ai_rate_limit.updated', parsed.data);
+    res.json({ success: true, rate_limit: data });
+  } catch (error) {
+    console.error('[ADMIN] Failed to update AI rate limit:', error.message);
+    res.status(500).json({ error: 'Failed to update AI rate limit.' });
+  }
+});
+
+router.put('/ai-controls/rate-limit-overrides', async (req, res) => {
+  try {
+    const parsed = rateLimitOverrideSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid rate limit override.' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('ai_rate_limit_overrides')
+      .upsert({
+        ...parsed.data,
+        updated_by: req.user.id,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    await logAuditEvent(req.user.id, 'admin.ai_rate_limit_override.updated', { target_user_id: parsed.data.user_id });
+    res.json({ success: true, override: data });
+  } catch (error) {
+    console.error('[ADMIN] Failed to update AI rate limit override:', error.message);
+    res.status(500).json({ error: 'Failed to update user rate limit.' });
+  }
+});
+
+router.delete('/ai-controls/rate-limit-overrides/:userId', async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin.from('ai_rate_limit_overrides').delete().eq('user_id', req.params.userId);
+    if (error) throw error;
+    await logAuditEvent(req.user.id, 'admin.ai_rate_limit_override.deleted', { target_user_id: req.params.userId });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[ADMIN] Failed to delete AI rate limit override:', error.message);
+    res.status(500).json({ error: 'Failed to remove user rate limit.' });
+  }
+});
+
+router.post('/ai-controls/prompt-templates', async (req, res) => {
+  try {
+    const parsed = promptTemplateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid prompt template.' });
+    }
+
+    if (parsed.data.is_active) await deactivatePromptTemplates(parsed.data.template_key);
+
+    const { data, error } = await supabaseAdmin
+      .from('prompt_templates')
+      .insert({
+        ...parsed.data,
+        title: sanitizeAuditText(parsed.data.title, 140),
+        description: sanitizeAuditText(parsed.data.description || '', 400) || null,
+        created_by: req.user.id,
+        updated_by: req.user.id,
+      })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    await logAuditEvent(req.user.id, 'admin.prompt_template.created', { template_id: data.id, template_key: data.template_key });
+    res.status(201).json({ success: true, template: normalizePromptTemplate(data) });
+  } catch (error) {
+    console.error('[ADMIN] Failed to create prompt template:', error.message);
+    res.status(500).json({ error: 'Failed to create prompt template.' });
+  }
+});
+
+router.patch('/ai-controls/prompt-templates/:id', async (req, res) => {
+  try {
+    const parsed = updatePromptTemplateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid prompt template update.' });
+    }
+
+    const { data: current, error: loadError } = await supabaseAdmin
+      .from('prompt_templates')
+      .select('id, template_key')
+      .eq('id', req.params.id)
+      .single();
+    if (loadError) throw loadError;
+
+    const nextKey = parsed.data.template_key || current.template_key;
+    if (parsed.data.is_active) await deactivatePromptTemplates(nextKey, current.id);
+
+    const payload = {
+      ...parsed.data,
+      updated_by: req.user.id,
+      updated_at: new Date().toISOString(),
+    };
+    if (payload.title) payload.title = sanitizeAuditText(payload.title, 140);
+    if (Object.prototype.hasOwnProperty.call(payload, 'description')) {
+      payload.description = sanitizeAuditText(payload.description || '', 400) || null;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('prompt_templates')
+      .update(payload)
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    await logAuditEvent(req.user.id, 'admin.prompt_template.updated', { template_id: data.id, template_key: data.template_key });
+    res.json({ success: true, template: normalizePromptTemplate(data) });
+  } catch (error) {
+    console.error('[ADMIN] Failed to update prompt template:', error.message);
+    res.status(500).json({ error: 'Failed to update prompt template.' });
+  }
+});
+
+router.delete('/ai-controls/prompt-templates/:id', async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin.from('prompt_templates').delete().eq('id', req.params.id);
+    if (error) throw error;
+    await logAuditEvent(req.user.id, 'admin.prompt_template.deleted', { template_id: req.params.id });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[ADMIN] Failed to delete prompt template:', error.message);
+    res.status(500).json({ error: 'Failed to delete prompt template.' });
+  }
+});
+
+router.get('/health', async (req, res) => {
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const [eventsResult, logsResult] = await Promise.all([
+      supabaseAdmin
+        .from('ai_request_events')
+        .select('id, user_id, feature, status, provider, metadata, created_at')
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(200),
+      supabaseAdmin
+        .from('system_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100),
+    ]);
+
+    if (eventsResult.error) throw eventsResult.error;
+    if (logsResult.error) throw logsResult.error;
+
+    const events = eventsResult.data || [];
+    const logs = logsResult.data || [];
+    res.json({
+      provider_health: providerHealth(),
+      metrics: {
+        ai_requests_24h: events.length,
+        ai_failed_24h: events.filter((event) => event.status === 'failed').length,
+        ai_cancelled_24h: events.filter((event) => event.status === 'cancelled').length,
+        error_logs: logs.filter((log) => log.level === 'error').length,
+        warning_logs: logs.filter((log) => log.level === 'warning').length,
+      },
+      recent_ai_events: events,
+      logs,
+    });
+  } catch (error) {
+    if (relationMissing(error)) {
+      return res.json({
+        provider_health: providerHealth(),
+        metrics: { ai_requests_24h: 0, ai_failed_24h: 0, ai_cancelled_24h: 0, error_logs: 0, warning_logs: 0 },
+        recent_ai_events: [],
+        logs: [],
+      });
+    }
+    console.error('[ADMIN] Failed to load health:', error.message);
+    res.status(500).json({ error: 'Failed to load system health.' });
+  }
+});
+
+router.delete('/health/logs/:id', async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin.from('system_logs').delete().eq('id', req.params.id);
+    if (error) throw error;
+    await logAuditEvent(req.user.id, 'admin.system_log.deleted', { log_id: req.params.id });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[ADMIN] Failed to delete system log:', error.message);
+    res.status(500).json({ error: 'Failed to delete log.' });
+  }
+});
+
+router.delete('/health/logs', async (req, res) => {
+  try {
+    const olderThanDays = Math.max(1, Math.min(Number(req.query.older_than_days || 30), 365));
+    const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000).toISOString();
+    const { error } = await supabaseAdmin.from('system_logs').delete().lt('created_at', cutoff);
+    if (error) throw error;
+    await logAuditEvent(req.user.id, 'admin.system_logs.cleared', { older_than_days: olderThanDays });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[ADMIN] Failed to clear system logs:', error.message);
+    res.status(500).json({ error: 'Failed to clear old logs.' });
   }
 });
 

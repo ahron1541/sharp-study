@@ -17,6 +17,7 @@ const TermsOfServicePage = lazy(() => import('../features/legal/pages/TermsOfSer
 const DashboardPage = lazy(() => import('../features/dashboard/pages/DashboardPage'));
 const LibraryPage = lazy(() => import('../features/library/pages/LibraryPage'));
 const ArchivePage = lazy(() => import('../features/archive/pages/ArchivePage'));
+const NotificationsPage = lazy(() => import('../features/notifications/pages/NotificationsPage'));
 const StudyGuidePage = lazy(() => import('../features/study-guide/pages/StudyGuidePage'));
 const StudyGuideCreatePage = lazy(() => import('../features/study-guide/pages/StudyGuideCreatePage'));
 const FlashcardsCreatePage = lazy(() => import('../features/flashcards/pages/FlashcardsCreatePage'));
@@ -77,6 +78,7 @@ export default function AppRouter() {
           >
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/library" element={<LibraryPage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/archive" element={<ArchivePage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/study-guide/new" element={<StudyGuideCreatePage />} />

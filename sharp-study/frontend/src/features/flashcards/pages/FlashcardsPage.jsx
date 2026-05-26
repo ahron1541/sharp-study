@@ -33,6 +33,7 @@ import { apiRequest } from '../../../config/api';
 import { sanitizePlainText } from '../../../shared/utils/sanitize';
 import StudyNotice from '../../../shared/components/StudyNotice';
 import { FlashcardsPageSkeleton } from '../../../shared/components/PageSkeletons';
+import ContentFeedbackWidget from '../../../shared/components/ContentFeedbackWidget';
 
 const HINT_DELAY_MS = 45000;
 const SYNC_DELAY_MS = 20000;
@@ -779,6 +780,13 @@ export default function FlashcardsPage() {
             <div className="h-full rounded-full bg-[color:var(--color-accent)] transition-[width] duration-500" style={{ width: `${percent}%` }} />
           </div>
         </section>
+
+        <ContentFeedbackWidget
+          contentType="flashcards"
+          contentId={set.id}
+          label="flashcard set"
+          className="mt-4"
+        />
 
         {orderedCards.length === 0 ? (
           <section className="mt-6 rounded-[2rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-8 text-center">

@@ -9,6 +9,7 @@ import Breadcrumb from '../../../shared/components/Breadcrumb';
 import Modal from '../../../shared/components/Modal';
 import { sanitizeHtml } from '../../../shared/utils/sanitize';
 import StudyNotice from '../../../shared/components/StudyNotice';
+import ContentFeedbackWidget from '../../../shared/components/ContentFeedbackWidget';
 import { StudyGuidePageSkeleton } from '../../../shared/components/PageSkeletons';
 import StudyGuideEditor from '../components/StudyGuideEditor';
 import StudyGuideSidebar from '../components/StudyGuideSidebar';
@@ -993,6 +994,13 @@ export default function StudyGuidePage() {
             </StudyNotice>
           </div>
         </section>
+
+        <ContentFeedbackWidget
+          contentType="study_guide"
+          contentId={guide.id}
+          label="study guide"
+          className="mt-4 study-guide-fade-up"
+        />
 
         {!editing && (
           <div

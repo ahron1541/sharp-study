@@ -1,4 +1,4 @@
-import { Archive, BarChart3, ChevronLeft, ChevronRight, FileText, LogOut, Menu, MonitorCog, Shield, Users, X } from 'lucide-react';
+import { Activity, Bell, ChevronLeft, ChevronRight, FileWarning, LogOut, Menu, MonitorCog, Shield, SlidersHorizontal, Users, X } from 'lucide-react';
 import { Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 
@@ -9,9 +9,10 @@ import VersoLogo from '../../../shared/components/VersoLogo';
 const NAV_ITEMS = [
   { id: 'overview', label: 'Overview', icon: Shield },
   { id: 'users', label: 'User Management', icon: Users },
-  { id: 'insights', label: 'Learning Insights', icon: BarChart3 },
-  { id: 'content', label: 'Active Content', icon: FileText },
-  { id: 'archived', label: 'Archived Content', icon: Archive },
+  { id: 'feedback', label: 'Feedback', icon: FileWarning },
+  { id: 'announcements', label: 'Announcements & Updates', icon: Bell },
+  { id: 'ai', label: 'AI Controls', icon: SlidersHorizontal },
+  { id: 'health', label: 'Health & Logs', icon: Activity },
   { id: 'settings', label: 'Settings', icon: MonitorCog },
 ];
 const COLLAPSED_KEY = 'sharp-study-admin-sidebar-collapsed';
@@ -52,22 +53,7 @@ export default function AdminShell() {
   const goToSection = (section) => {
     const next = new URLSearchParams(searchParams);
     next.set('section', section);
-    if (section !== 'content' && section !== 'archived') {
-      next.delete('owner');
-      next.delete('owner_id');
-      next.delete('type');
-      next.delete('q');
-      next.delete('page');
-      next.delete('archived');
-    }
-    next.delete('preview_id');
-    next.delete('preview_type');
-    if (section === 'content') {
-      next.set('archived', 'active');
-    }
-    if (section === 'archived') {
-      next.set('archived', 'archived');
-    }
+    ['owner', 'owner_id', 'type', 'q', 'page', 'archived', 'preview_id', 'preview_type', 'status', 'user_q', 'role', 'user_page'].forEach((key) => next.delete(key));
     setSearchParams(next, { replace: location.pathname === '/admin' });
     setMobileOpen(false);
   };
@@ -127,7 +113,7 @@ export default function AdminShell() {
                 <span>
                   <span className="block text-sm font-black">{item.label}</span>
                   <span className={`block text-xs ${active ? 'text-white/80' : 'text-text-muted'}`}>
-                    {item.id === 'overview' ? 'System health' : item.id === 'users' ? 'Roles and accounts' : item.id === 'insights' ? 'Quiz learning signals' : item.id === 'content' ? 'Current materials' : item.id === 'archived' ? 'Stored and archived' : 'Admin preferences'}
+                    {item.id === 'overview' ? 'Simple platform snapshot' : item.id === 'users' ? 'Roles and accounts' : item.id === 'feedback' ? 'Reports and ratings' : item.id === 'announcements' ? 'User notifications' : item.id === 'ai' ? 'Prompts and limits' : item.id === 'health' ? 'Provider status' : 'Admin preferences'}
                   </span>
                 </span>
               ) : null}
