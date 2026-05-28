@@ -1,6 +1,7 @@
 import { useAccessibility } from '../context/useAccessibility';
 import Modal from '../../../shared/components/Modal';
 import Button from '../../../shared/components/Button';
+import { FONT_SIZE_PRESETS } from '../../theme/constants/themes';
 
 const fontOptions = [
   { id: 'default',      label: 'Default', family: 'inherit' },
@@ -10,23 +11,21 @@ const fontOptions = [
 ];
 
 const themeOptions = [
-  { id: 'light',        label: '☀️ Light',         '--accent': '#4361ee', '--bg': '#f5f7ff' },
-  { id: 'dark',         label: '🌙 Dark',          '--accent': '#5b8dee', '--bg': '#0f1117' },
-  { id: 'high-contrast',label: '⬛ High Contrast', '--accent': '#ffff00', '--bg': '#000000' },
-  { id: 'warm',         label: '🟡 Warm Sepia',    '--accent': '#c87941', '--bg': '#fdf6e3' },
+  { id: 'light', label: 'Light' },
+  { id: 'dark', label: 'Dark' },
 ];
 
 export default function AccessibilityPanel({ isOpen, onClose }) {
   const {
     theme, setTheme,
-    fontSize, increaseFontSize, decreaseFontSize,
+    fontSizePreset, setFontSizePreset,
     fontFamily, setFontFamily,
     lineHeight, setLineHeight,
     letterSpacing, setLetterSpacing,
   } = useAccessibility();
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="♿ Accessibility Settings" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Accessibility Settings" size="md">
       <div className="space-y-6">
 
         {/* Theme */}
@@ -55,50 +54,26 @@ export default function AccessibilityPanel({ isOpen, onClose }) {
         {/* Font size */}
         <section aria-labelledby="fontsize-label">
           <h3 id="fontsize-label" className="text-sm font-semibold text-[var(--text-color)] mb-3">
-            Font Size: <span aria-live="polite">{fontSize}px</span>
+            Study Text Size
           </h3>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={decreaseFontSize}
-              disabled={fontSize <= 12}
-              aria-label="Decrease font size"
-              className="w-10 h-10 rounded-full border border-[var(--card-border)] flex items-center
-                         justify-center text-lg font-bold hover:bg-[var(--card-border)] transition-colors
-                         disabled:opacity-40 focus-visible:outline focus-visible:outline-2
-                         focus-visible:outline-[var(--accent)]"
-            >
-              A-
-            </button>
-            <div className="flex-1 relative">
-              <input
-                type="range"
-                min={12}
-                max={28}
-                step={2}
-                value={fontSize}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  if (val > fontSize) increaseFontSize();
-                  else decreaseFontSize();
-                }}
-                aria-label="Font size slider"
-                aria-valuemin={12}
-                aria-valuemax={28}
-                aria-valuenow={fontSize}
-                className="w-full accent-[var(--accent)]"
-              />
-            </div>
-            <button
-              onClick={increaseFontSize}
-              disabled={fontSize >= 28}
-              aria-label="Increase font size"
-              className="w-10 h-10 rounded-full border border-[var(--card-border)] flex items-center
-                         justify-center text-lg font-bold hover:bg-[var(--card-border)] transition-colors
-                         disabled:opacity-40 focus-visible:outline focus-visible:outline-2
-                         focus-visible:outline-[var(--accent)]"
-            >
-              A+
-            </button>
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-labelledby="fontsize-label">
+            {FONT_SIZE_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => setFontSizePreset(preset.id)}
+                role="radio"
+                aria-checked={fontSizePreset === preset.id}
+                className={`min-h-12 rounded-xl border px-3 py-2 text-left text-sm font-bold transition-all
+                           focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]
+                           ${fontSizePreset === preset.id
+                             ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
+                             : 'border-[var(--card-border)] text-[var(--text-color)] hover:border-[var(--accent)]/50'}`}
+              >
+                <span>{preset.label}</span>
+                {preset.badge ? <span className="ml-1 text-xs text-[var(--muted)]">({preset.badge})</span> : null}
+              </button>
+            ))}
           </div>
         </section>
 
@@ -171,6 +146,7 @@ export default function AccessibilityPanel({ isOpen, onClose }) {
           className="w-full"
           onClick={() => {
             setTheme('light');
+            setFontSizePreset('medium');
             setFontFamily('default');
             setLineHeight(1.75);
             setLetterSpacing(0);

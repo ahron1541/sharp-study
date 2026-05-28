@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { applyPreferences, getPreferenceCacheUpdatedAt } from '../../theme/hooks/useTheme';
+import { applyPreferences, getPreferenceCacheUpdatedAt, normalizePreferences } from '../../theme/hooks/useTheme';
 import { fetchPreferences, savePreferences } from '../../theme/services/preferences.service';
 import { DEFAULT_PREFERENCES } from '../../theme/constants/themes';
 import { useAuth } from '../../auth/context/AuthContext';
@@ -8,12 +8,13 @@ import toast from 'react-hot-toast';
 export function useSettings() {
   const { profile } = useAuth();
   const lastLocalSaveAtRef = useRef(0);
+  const lastDraftChangeAtRef = useRef(0);
   const loadCurrent = () => {
     try {
       const raw = localStorage.getItem('sharp-study-prefs');
-      return raw ? { ...DEFAULT_PREFERENCES, ...JSON.parse(raw) } : { ...DEFAULT_PREFERENCES };
+      return raw ? normalizePreferences(JSON.parse(raw)) : normalizePreferences(DEFAULT_PREFERENCES);
     } catch {
-      return { ...DEFAULT_PREFERENCES };
+      return normalizePreferences(DEFAULT_PREFERENCES);
     }
   };
 
@@ -21,6 +22,16 @@ export function useSettings() {
   const [saved, setSaved] = useState(initialPrefs);
   const [draft, setDraft] = useState(initialPrefs);
   const [saveState, setSaveState] = useState({ phase: 'idle', progress: 0, title: '', detail: '' });
+  const savedRef = useRef(initialPrefs);
+  const draftRef = useRef(initialPrefs);
+
+  useEffect(() => {
+    savedRef.current = saved;
+  }, [saved]);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
   useEffect(() => {
     let isMounted = true;
@@ -30,7 +41,8 @@ export function useSettings() {
       .then(({ preferences }) => {
         if (!isMounted || !preferences) return;
         if (getPreferenceCacheUpdatedAt() > requestStartedAt) return;
-        const nextPrefs = { ...DEFAULT_PREFERENCES, ...preferences };
+        if (lastDraftChangeAtRef.current > requestStartedAt) return;
+        const nextPrefs = normalizePreferences({ ...DEFAULT_PREFERENCES, ...preferences });
         setSaved(nextPrefs);
         setDraft(nextPrefs);
         applyPreferences(nextPrefs, { touchCache: false });
@@ -45,17 +57,28 @@ export function useSettings() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      const latestSaved = savedRef.current;
+      const latestDraft = draftRef.current;
+      if (JSON.stringify(latestSaved) !== JSON.stringify(latestDraft)) {
+        applyPreferences(latestSaved, { persist: false });
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (lastLocalSaveAtRef.current && Date.now() - lastLocalSaveAtRef.current < 10000) return;
     const timerStart = Date.now();
 
     const profilePreferences = profile?.preferences
-      ? { ...DEFAULT_PREFERENCES, ...profile.preferences }
+      ? normalizePreferences({ ...DEFAULT_PREFERENCES, ...profile.preferences })
       : null;
 
     if (!profilePreferences) return;
 
     const timer = window.setTimeout(() => {
       if (getPreferenceCacheUpdatedAt() > timerStart) return;
+      if (lastDraftChangeAtRef.current > timerStart) return;
       setSaved(profilePreferences);
       setDraft(profilePreferences);
       applyPreferences(profilePreferences, { touchCache: false });
@@ -66,13 +89,21 @@ export function useSettings() {
 
   const updateDraft = useCallback((key, value) => {
     setDraft((prev) => {
-      return { ...prev, [key]: value };
+      const next = normalizePreferences({ ...prev, [key]: value });
+      lastDraftChangeAtRef.current = Date.now();
+      applyPreferences(next, { persist: false });
+      return next;
     });
   }, []);
 
-  const discardChanges = useCallback(() => {
-    setDraft({ ...saved });
-    toast('Changes discarded');
+  const discardChanges = useCallback((options = {}) => {
+    const nextSaved = normalizePreferences(saved);
+    lastDraftChangeAtRef.current = 0;
+    setDraft(nextSaved);
+    applyPreferences(nextSaved, { persist: false });
+    if (options.notify !== false) {
+      toast('Changes discarded');
+    }
   }, [saved]);
 
   const hasChanges = JSON.stringify(draft) !== JSON.stringify(saved);
@@ -87,9 +118,11 @@ export function useSettings() {
     });
 
     try {
-      applyPreferences(draft);
+      const nextDraft = normalizePreferences(draft);
+      applyPreferences(nextDraft);
       lastLocalSaveAtRef.current = Date.now();
-      setSaved({ ...draft });
+      lastDraftChangeAtRef.current = 0;
+      setSaved(nextDraft);
 
       setSaveState({
         phase: 'syncing',
@@ -98,8 +131,8 @@ export function useSettings() {
         detail: 'Sending your saved settings to the database now.',
       });
 
-      const response = await savePreferences(draft);
-      const syncedPrefs = { ...DEFAULT_PREFERENCES, ...(response.preferences || draft) };
+      const response = await savePreferences(nextDraft);
+      const syncedPrefs = normalizePreferences({ ...DEFAULT_PREFERENCES, ...(response.preferences || nextDraft) });
       setSaved(syncedPrefs);
       setDraft(syncedPrefs);
       applyPreferences(syncedPrefs, { touchCache: false });

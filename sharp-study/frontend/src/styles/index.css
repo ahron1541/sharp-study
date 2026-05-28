@@ -181,6 +181,8 @@
 :root {
   --font-scale: 16px;
   --reader-font-size: 16px;
+  --learning-font-size: 1rem;
+  --learning-line-height: 1.75;
   --font-body: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
 }
 

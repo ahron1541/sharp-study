@@ -1,20 +1,29 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
 import { fetchPreferences, savePreferences } from '../services/preferences.service';
-import { DEFAULT_PREFERENCES, FONT_SIZE_MAX, FONT_SIZE_MIN } from '../constants/themes';
+import {
+  DEFAULT_PREFERENCES,
+  FONT_SIZE_PRESET_IDS,
+  getFontSizePreset,
+  getFontSizePresetIdFromSize,
+} from '../constants/themes';
 import { supabase } from '../../auth/context/AuthContext';
 
 export const PREFERENCES_CACHE_KEY = 'sharp-study-prefs';
 export const PREFERENCES_CACHE_UPDATED_AT_KEY = 'sharp-study-prefs-updated-at';
 
-function normalizePreferences(prefs = {}) {
+export function normalizePreferences(prefs = {}) {
   const nextPrefs = { ...DEFAULT_PREFERENCES, ...(prefs || {}) };
-  const rawSize = Number(nextPrefs.font_size) || DEFAULT_PREFERENCES.font_size;
-  const size = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, rawSize));
+  const rawPreset = prefs?.font_size_preset;
+  const presetId = FONT_SIZE_PRESET_IDS.includes(rawPreset)
+    ? rawPreset
+    : getFontSizePresetIdFromSize(prefs?.font_size);
+  const preset = getFontSizePreset(presetId);
 
   return {
     ...nextPrefs,
     display_mode: nextPrefs.display_mode === 'dark' ? 'dark' : 'light',
-    font_size: size,
+    font_size_preset: preset.id,
+    font_size: preset.fontSize,
   };
 }
 
@@ -42,10 +51,13 @@ export function applyPreferences(prefs, options = {}) {
   root.setAttribute('data-font', font);
 
   // Font size
-  const size = nextPrefs.font_size;
+  const preset = getFontSizePreset(nextPrefs.font_size_preset);
   root.style.setProperty('--font-scale', '16px');
   root.style.setProperty('--base-font-size', '16px');
-  root.style.setProperty('--reader-font-size', `${size}px`);
+  root.style.setProperty('--reader-font-size', preset.readerFontSize);
+  root.style.setProperty('--learning-font-size', preset.learningFontSize);
+  root.style.setProperty('--learning-line-height', String(preset.lineHeight));
+  root.setAttribute('data-font-size-preset', preset.id);
 
   // Persist to localStorage for instant reload without flash
   if (persist) {
@@ -60,7 +72,7 @@ export function applyPreferences(prefs, options = {}) {
   }
 
   window.dispatchEvent(new CustomEvent('sharp-study-preferences-applied', {
-    detail: { ...nextPrefs, font_size: size },
+    detail: { ...nextPrefs, font_size_preset: preset.id, font_size: preset.fontSize },
   }));
 }
 

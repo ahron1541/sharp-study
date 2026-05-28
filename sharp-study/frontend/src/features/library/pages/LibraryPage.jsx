@@ -603,15 +603,15 @@ export default function LibraryPage() {
 
   return (
     <>
-      <main className="mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 lg:px-8">
+      <main className="learning-content mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 lg:px-8">
         <section className="rounded-[2rem] border border-border bg-surface px-6 py-6 shadow-card sm:px-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <p className="text-xs font-black uppercase tracking-[0.24em] text-text-muted">Your library</p>
-              <h1 className="mt-3 text-[clamp(2.1rem,4vw,3.8rem)] font-display font-black leading-none text-text">
+              <h1 className="learning-title mt-3 text-[clamp(2.1rem,4vw,3.8rem)] font-display font-black leading-none text-text">
                 Keep your study momentum moving.
               </h1>
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-text-muted sm:text-base">
+              <p className="learning-copy mt-4 max-w-2xl text-text-muted">
                 Return to the lesson you need, stay focused on one material type at a time, and build a library that makes every study session easier to start.
               </p>
             </div>
@@ -663,7 +663,7 @@ export default function LibraryPage() {
             <div>
               <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">{activeMeta.label}</p>
               <h2 className="mt-2 text-3xl font-black text-text">{activeMeta.plural}</h2>
-              <p className="mt-2 text-sm leading-7 text-text-muted">
+              <p className="learning-copy mt-2 text-text-muted">
                 One clear page at a time, so you can review, practice, and keep making progress without losing your focus.
               </p>
             </div>
@@ -692,8 +692,8 @@ export default function LibraryPage() {
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-2">
                 <MaterialTypeIcon type={activeType} size={28} className="text-text-muted" />
               </div>
-              <h3 className="mt-4 text-xl font-bold text-text">No {activeMeta.plural.toLowerCase()} yet</h3>
-              <p className="mt-2 max-w-md mx-auto text-text-muted">
+              <h3 className="learning-title mt-4 text-xl font-bold text-text">No {activeMeta.plural.toLowerCase()} yet</h3>
+              <p className="learning-copy mx-auto mt-2 max-w-md text-text-muted">
                 {search
                   ? `No ${activeMeta.plural.toLowerCase()} match "${search}".`
                   : `Create your first ${activeMeta.label.toLowerCase()} or move older ones into the archive when this section grows.`}
@@ -757,7 +757,7 @@ export default function LibraryPage() {
                     </div>
 
                     <p className="text-xs font-black uppercase tracking-[0.2em] text-text-muted">{activeMeta.label}</p>
-                    <h3 className="mt-2 min-h-14 text-lg font-bold text-text">{material.title}</h3>
+                    <h3 className="material-card-title mt-2 min-h-14 font-bold text-text">{material.title}</h3>
                     <div className="mt-5 flex items-center justify-between">
                       <p className="text-xs font-semibold text-text-muted">
                         {new Date(material.created_at).toLocaleDateString('en-PH', {
@@ -776,7 +776,7 @@ export default function LibraryPage() {
               </div>
 
               <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-text-muted">
+                <p className="learning-copy-sm text-text-muted">
                   Showing {items.length} of {totalVisible} {activeMeta.plural.toLowerCase()}.
                 </p>
                 <PaginationControls page={page} totalPages={totalPages} onChange={(nextPage) => setLibraryParams({ page: nextPage === 1 ? null : String(nextPage) })} />

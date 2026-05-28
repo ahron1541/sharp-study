@@ -95,15 +95,15 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 lg:px-8">
+    <main className="learning-content mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 lg:px-8">
       <section className="rounded-[2rem] border border-border bg-surface px-6 py-6 shadow-card sm:px-8 sm:py-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-xs font-black uppercase tracking-[0.24em] text-text-muted">Dashboard</p>
-            <h1 className="mt-3 text-[clamp(2.2rem,4vw,4rem)] font-display font-black leading-none text-text">
+            <h1 className="learning-title mt-3 text-[clamp(2.2rem,4vw,4rem)] font-display font-black leading-none text-text">
               {isFirstTime ? `Welcome, ${firstName}.` : `Welcome back, ${firstName}.`}
             </h1>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-text-muted sm:text-base">
+            <p className="learning-copy mt-4 max-w-2xl text-text-muted">
               {isFirstTime
                 ? 'Start with a document or build your first study material manually.'
                 : 'Pick up your next study session from the library without the extra clutter.'}
@@ -210,7 +210,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <p className="mt-5 text-sm leading-7 text-text-muted">{streakMeta.message}</p>
+          <p className="learning-copy mt-5 text-text-muted">{streakMeta.message}</p>
           {longestStreak > 0 ? (
             <p className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-text-muted">
               Best streak: {longestStreak} days
@@ -285,8 +285,8 @@ export default function DashboardPage() {
                   <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-2">
                     <MaterialTypeIcon type={routeType} size={28} className="text-text-muted" />
                   </div>
-                  <h3 className="mt-4 text-xl font-bold text-text">No {label.toLowerCase()} yet</h3>
-                  <p className="mt-2 text-text-muted">Create one from the library and it will show up here.</p>
+                  <h3 className="learning-title mt-4 text-xl font-bold text-text">No {label.toLowerCase()} yet</h3>
+                  <p className="learning-copy mt-2 text-text-muted">Create one from the library and it will show up here.</p>
                   <button
                     type="button"
                     onClick={() => navigate(`/library?modal=create&type=${routeType}`)}
@@ -312,7 +312,7 @@ export default function DashboardPage() {
                       <p className="mt-5 text-xs font-black uppercase tracking-[0.2em] text-text-muted">
                         {singularLabel}
                       </p>
-                      <h3 className="mt-2 min-h-14 text-lg font-bold text-text">{item.title}</h3>
+                      <h3 className="material-card-title mt-2 min-h-14 font-bold text-text">{item.title}</h3>
                       <div className="mt-5 flex items-center justify-between">
                         <p className="text-xs font-semibold text-text-muted">
                           {new Date(item.created_at).toLocaleDateString('en-PH', {
@@ -367,8 +367,8 @@ function QuickAccessCard({ icon, label, sub, onClick, tone = 'default' }) {
         <QuickIcon className="relative" size={27} strokeWidth={2.4} aria-hidden="true" />
       </span>
       <div className="min-w-0">
-        <h3 className="text-lg font-bold text-text">{label}</h3>
-        <p className="text-sm leading-6 text-text-muted">{sub}</p>
+        <h3 className="material-card-title font-bold text-text">{label}</h3>
+        <p className="learning-copy-sm text-text-muted">{sub}</p>
       </div>
     </button>
   );

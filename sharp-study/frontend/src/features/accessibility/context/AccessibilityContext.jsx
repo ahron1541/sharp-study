@@ -1,9 +1,16 @@
 import { useState, useEffect } from 'react';
 import { AccessibilityContext } from './accessibility-context-core';
+import {
+  DEFAULT_PREFERENCES,
+  FONT_SIZE_PRESET_IDS,
+  getFontSizePreset,
+  getFontSizePresetIdFromSize,
+} from '../../theme/constants/themes';
+import { applyPreferences, normalizePreferences } from '../../theme/hooks/useTheme';
 
 const DEFAULT_ACCESSIBILITY = {
   theme: 'light',
-  fontSize: 16,
+  fontSizePreset: 'medium',
   fontFamily: 'default',
   lineHeight: 1.75,
   letterSpacing: 0,
@@ -27,39 +34,27 @@ function getInitialTheme() {
 }
 
 function getInitialFontSize() {
-  const cachedSize = Number(readCachedPreferences().font_size);
-  return Number.isFinite(cachedSize) && cachedSize > 0 ? cachedSize : DEFAULT_ACCESSIBILITY.fontSize;
+  const cachedPrefs = readCachedPreferences();
+  if (FONT_SIZE_PRESET_IDS.includes(cachedPrefs.font_size_preset)) {
+    return cachedPrefs.font_size_preset;
+  }
+  return getFontSizePresetIdFromSize(cachedPrefs.font_size);
 }
 
 export function AccessibilityProvider({ children }) {
   const [theme, setThemeState] = useState(getInitialTheme);
-  const [fontSize, setFontSizeState] = useState(getInitialFontSize);
+  const [fontSizePreset, setFontSizePresetState] = useState(getInitialFontSize);
   const [fontFamily, setFontFamilyState] = useState(DEFAULT_ACCESSIBILITY.fontFamily);
   const [lineHeight, setLineHeightState] = useState(DEFAULT_ACCESSIBILITY.lineHeight);
   const [letterSpacing, setLetterSpacingState] = useState(DEFAULT_ACCESSIBILITY.letterSpacing);
+  const fontPreset = getFontSizePreset(fontSizePreset);
+  const fontSize = fontPreset.fontSize;
 
   useEffect(() => {
     const root = document.documentElement;
-    root.setAttribute('data-theme', theme);
-    if (theme === 'light' || theme === 'dark') {
-      root.setAttribute('data-display', theme);
-    }
-    root.style.setProperty('--reader-font-size', `${fontSize}px`);
     root.style.setProperty('--line-height', String(lineHeight));
     root.style.setProperty('--letter-spacing', `${letterSpacing}em`);
-
-    try {
-      const cachedPrefs = readCachedPreferences();
-      if (theme === 'light' || theme === 'dark') {
-        localStorage.setItem(
-          'sharp-study-prefs',
-          JSON.stringify({ ...cachedPrefs, display_mode: theme, font_size: fontSize })
-        );
-      }
-    } catch {
-      // localStorage unavailable — non-fatal
-    }
-  }, [theme, fontSize, fontFamily, lineHeight, letterSpacing]);
+  }, [lineHeight, letterSpacing]);
 
   useEffect(() => {
     const handlePreferencesApplied = (event) => {
@@ -67,9 +62,9 @@ export function AccessibilityProvider({ children }) {
       if (mode === 'light' || mode === 'dark') {
         setThemeState((current) => current === mode ? current : mode);
       }
-      const nextFontSize = Number(event.detail?.font_size);
-      if (Number.isFinite(nextFontSize)) {
-        setFontSizeState((current) => current === nextFontSize ? current : nextFontSize);
+      const preset = event.detail?.font_size_preset || getFontSizePresetIdFromSize(event.detail?.font_size);
+      if (FONT_SIZE_PRESET_IDS.includes(preset)) {
+        setFontSizePresetState((current) => current === preset ? current : preset);
       }
     };
 
@@ -79,10 +74,32 @@ export function AccessibilityProvider({ children }) {
     };
   }, []);
 
-  const setTheme = (t) => setThemeState(t);
-  const toggleTheme = () => setThemeState((t) => t === 'light' ? 'dark' : 'light');
-  const increaseFontSize = () => setFontSizeState((s) => Math.min(s + 2, 28));
-  const decreaseFontSize = () => setFontSizeState((s) => Math.max(s - 2, 12));
+  const applyCachedPreferenceUpdate = (updates) => {
+    const next = normalizePreferences({ ...DEFAULT_PREFERENCES, ...readCachedPreferences(), ...updates });
+    applyPreferences(next);
+    setThemeState(next.display_mode);
+    setFontSizePresetState(next.font_size_preset);
+  };
+
+  const setTheme = (t) => {
+    if (t === 'light' || t === 'dark') {
+      applyCachedPreferenceUpdate({ display_mode: t });
+    }
+  };
+  const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : 'light');
+  const setFontSizePreset = (preset) => {
+    if (FONT_SIZE_PRESET_IDS.includes(preset)) {
+      applyCachedPreferenceUpdate({ font_size_preset: preset });
+    }
+  };
+  const increaseFontSize = () => {
+    const index = FONT_SIZE_PRESET_IDS.indexOf(fontSizePreset);
+    setFontSizePreset(FONT_SIZE_PRESET_IDS[Math.min(FONT_SIZE_PRESET_IDS.length - 1, index + 1)]);
+  };
+  const decreaseFontSize = () => {
+    const index = FONT_SIZE_PRESET_IDS.indexOf(fontSizePreset);
+    setFontSizePreset(FONT_SIZE_PRESET_IDS[Math.max(0, index - 1)]);
+  };
   const setFontFamily = (f) => setFontFamilyState(f);
   const setLineHeight = (v) => setLineHeightState(v);
   const setLetterSpacing = (v) => setLetterSpacingState(v);
@@ -90,7 +107,7 @@ export function AccessibilityProvider({ children }) {
   return (
     <AccessibilityContext.Provider value={{
       theme, setTheme, toggleTheme,
-      fontSize, increaseFontSize, decreaseFontSize,
+      fontSize, fontSizePreset, setFontSizePreset, increaseFontSize, decreaseFontSize,
       fontFamily, setFontFamily,
       lineHeight, setLineHeight,
       letterSpacing, setLetterSpacing,

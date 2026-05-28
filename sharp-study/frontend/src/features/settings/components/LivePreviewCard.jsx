@@ -1,10 +1,11 @@
 import React from 'react';
-import { ATMOSPHERE_PRESETS } from '../../theme/constants/themes';
+import { ATMOSPHERE_PRESETS, getFontSizePreset } from '../../theme/constants/themes';
 import { BookOpen, CreditCard, Flame, Menu, User } from 'lucide-react';
 
-export default function LivePreviewCard({ draft }) {
+export default function LivePreviewCard({ draft, showHeading = true }) {
   const preset = ATMOSPHERE_PRESETS.find(p => p.id === draft.atmosphere) || ATMOSPHERE_PRESETS[0];
   const isDark = draft.display_mode === 'dark';
+  const fontPreset = getFontSizePreset(draft.font_size_preset);
 
   const previewStyle = {
     '--color-bg': isDark ? '#020617' : '#F8FAFC',
@@ -18,16 +19,19 @@ export default function LivePreviewCard({ draft }) {
                 draft.font_family === 'syne' ? 'Syne, sans-serif' :
                 draft.font_family === 'opendyslexic' ? 'Inter, Verdana, sans-serif' :
                 '"DM Sans", sans-serif',
-    fontSize: `${Math.max(12, Number(draft.font_size) || 16) * 0.58}px`
+    fontSize: `calc(${fontPreset.learningFontSize} * 0.72)`,
+    lineHeight: fontPreset.lineHeight,
   };
 
   return (
-    <div className="relative group p-4">
-      <p className="text-xs font-bold text-text-muted uppercase tracking-widest mb-4 ml-2">Real-time Preview</p>
+    <div className="relative group p-1 sm:p-2">
+      {showHeading ? (
+        <p className="mb-4 ml-2 text-xs font-bold uppercase tracking-widest text-text-muted">Real-time Preview</p>
+      ) : null}
       
       <div 
         style={previewStyle}
-        className="w-full max-w-[18rem] mx-auto rounded-[1.75rem] border-[3px] border-border bg-bg overflow-hidden shadow-2xl transition-all duration-300"
+        className="mx-auto w-full max-w-[20rem] overflow-hidden rounded-[1.75rem] border-[3px] border-border bg-bg shadow-2xl transition-all duration-300"
       >
         <div className="flex min-h-[21rem]">
           <aside className="w-12 shrink-0 border-r border-border bg-surface p-2">

@@ -1,11 +1,11 @@
 import React from 'react';
-import { Check, Sun, Moon, Type, Layers, Save, RotateCcw, Loader2 } from 'lucide-react';
+import { Check, Sun, Moon, Type, Layers, Save, RotateCcw, Loader2, Eye } from 'lucide-react';
 import { 
   ATMOSPHERE_PRESETS, 
   DISPLAY_MODES, 
   FONT_FAMILIES, 
-  FONT_SIZE_MIN, 
-  FONT_SIZE_MAX 
+  FONT_SIZE_PRESETS,
+  getFontSizePreset,
 } from '../../theme/constants/themes';
 
 const FONT_PREVIEW = {
@@ -26,6 +26,8 @@ export default function PersonalizationPanel({
   discardChanges,
   save,
 }) {
+  const selectedFontSize = getFontSizePreset(draft.font_size_preset);
+
   return (
     <div className="relative space-y-12" aria-busy={blocking}>
       {blocking ? (
@@ -122,24 +124,61 @@ export default function PersonalizationPanel({
 
       {/* Text Size */}
       <section className="space-y-6">
-        <div className="flex items-center justify-between">
-           <h3 className="text-sm font-bold text-text-muted uppercase tracking-widest">Legibility (Font Size)</h3>
-           <span className="text-accent font-black text-xl">{draft.font_size}px</span>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 id="font-size-preset-label" className="text-sm font-bold text-text-muted uppercase tracking-widest">
+              Legibility
+            </h3>
+            <p className="mt-2 text-sm font-semibold leading-6 text-text-muted">
+              Choose a stable study text size. Navigation and buttons stay steady.
+            </p>
+          </div>
+          <span className="inline-flex w-fit rounded-full bg-accent/10 px-3 py-1 text-sm font-black text-accent">
+            {selectedFontSize.label}{selectedFontSize.badge ? ` (${selectedFontSize.badge})` : ''}
+          </span>
         </div>
-        <div className="px-2">
-           <input 
-             type="range"
-             min={FONT_SIZE_MIN}
-             max={FONT_SIZE_MAX}
-             value={draft.font_size}
-             disabled={blocking}
-             onChange={(e) => updateDraft('font_size', Number(e.target.value))}
-             className="w-full h-3 bg-surface-2 rounded-full appearance-none cursor-pointer accent-accent"
-           />
-           <div className="flex justify-between mt-3 text-xs font-bold text-text-muted">
-              <span>Standard (14px)</span>
-              <span>Readable (22px)</span>
-           </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" role="radiogroup" aria-labelledby="font-size-preset-label">
+          {FONT_SIZE_PRESETS.map((preset) => {
+            const isActive = draft.font_size_preset === preset.id;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                disabled={blocking}
+                onClick={() => updateDraft('font_size_preset', preset.id)}
+                role="radio"
+                aria-checked={isActive}
+                className={`min-h-32 rounded-2xl border-2 p-4 text-left transition-all ${
+                  isActive
+                    ? 'border-accent bg-accent/5 text-accent ring-2 ring-accent/10'
+                    : 'border-border bg-surface-2 text-text hover:border-accent/40'
+                }`}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className="font-black">{preset.label}</span>
+                  {preset.badge ? (
+                    <span className="rounded-full bg-surface px-2 py-1 text-[0.68rem] font-black uppercase tracking-[0.12em] text-text-muted">
+                      {preset.badge}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="mt-3 block text-sm font-semibold leading-6 text-current opacity-75">
+                  {preset.description}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="rounded-[1.75rem] border border-accent/10 bg-accent/5 p-5">
+          <h4 className="flex items-center gap-2 font-bold text-accent">
+            <Eye size={18} aria-hidden="true" />
+            Accessibility tip
+          </h4>
+          <p className="mt-2 text-sm leading-7 text-text-muted">
+            Larger study text, high contrast display modes, and Dyslexia-friendly fonts can make reading easier without changing the dashboard controls.
+          </p>
         </div>
       </section>
 

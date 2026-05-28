@@ -3,6 +3,9 @@
    ============================= */
 :root {
   --base-font-size: 16px;
+  --reader-font-size: 16px;
+  --learning-font-size: 1rem;
+  --learning-line-height: 1.75;
 
   /* Light theme defaults */
   --bg-color: #f5f7ff;
@@ -55,6 +58,51 @@ img, video, canvas {
   max-width: 100%;
   height: auto;
   display: block;
+}
+
+.learning-content {
+  --learning-title-scale: 1;
+}
+
+.learning-copy,
+.learning-content .learning-copy {
+  font-size: var(--learning-font-size, 1rem);
+  line-height: var(--learning-line-height, 1.75);
+  overflow-wrap: anywhere;
+}
+
+.learning-copy-sm,
+.learning-content .learning-copy-sm {
+  font-size: max(0.875rem, calc(var(--learning-font-size, 1rem) * 0.88));
+  line-height: var(--learning-line-height, 1.75);
+  overflow-wrap: anywhere;
+}
+
+.learning-title,
+.learning-content .learning-title {
+  line-height: 1.16;
+  overflow-wrap: anywhere;
+}
+
+.material-card-title,
+.learning-content .material-card-title {
+  font-size: clamp(1.05rem, calc(var(--learning-font-size, 1rem) * 1.12), 1.35rem);
+  line-height: 1.22;
+  overflow-wrap: anywhere;
+}
+
+.flashcard-study-copy,
+.learning-content .flashcard-study-copy {
+  font-size: clamp(1.25rem, calc(var(--reader-font-size, 16px) * 1.35), 2.15rem);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.quiz-question-copy,
+.learning-content .quiz-question-copy {
+  font-size: clamp(1.1rem, calc(var(--learning-font-size, 1rem) * 1.18), 1.55rem);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 /* =============================
@@ -319,7 +367,7 @@ body {
   min-height: 100%;
   color: var(--text-color);
   font-size: var(--reader-font-size, 1rem);
-  line-height: 1.85;
+  line-height: var(--learning-line-height, 1.85);
   outline: none;
   caret-color: var(--color-accent);
 }
@@ -521,7 +569,7 @@ body {
 .study-guide-content {
   color: var(--text-color);
   font-size: var(--reader-font-size, 1rem);
-  line-height: 1.8;
+  line-height: var(--learning-line-height, 1.8);
   overflow-wrap: anywhere;
 }
 

@@ -927,7 +927,7 @@ export default function QuizPage() {
 
   return (
     <>
-      <main className="mx-auto w-full max-w-7xl px-4 py-6 pb-28 sm:px-6 lg:px-8">
+      <main className="learning-content mx-auto w-full max-w-7xl px-4 py-6 pb-28 sm:px-6 lg:px-8">
         <Breadcrumb items={[{ label: 'Library', href: '/library?tab=quiz' }, { label: quiz?.title || 'Quiz' }]} />
 
         {quiz?.id ? (
@@ -1303,10 +1303,10 @@ function PreviewScreen({
               </span>
               <div className="min-w-0">
                 <p className="text-xs font-black uppercase tracking-[0.22em] text-[color:var(--color-text-muted)]">Quiz preview</p>
-                <h1 className="mt-1 text-3xl font-black leading-tight text-[color:var(--color-text)] sm:text-4xl">{quiz?.title}</h1>
+                <h1 className="learning-title mt-1 text-3xl font-black leading-tight text-[color:var(--color-text)] sm:text-4xl">{quiz?.title}</h1>
               </div>
             </div>
-            <p className="mt-4 max-w-3xl text-sm leading-7 text-[color:var(--color-text-muted)]">
+            <p className="learning-copy mt-4 max-w-3xl text-[color:var(--color-text-muted)]">
               Set the quiz shape first, read the rules, then start when you are ready. The score log below keeps your retakes visible.
             </p>
           </div>
@@ -1432,7 +1432,7 @@ function PreviewScreen({
               {sampleQuestions.map((question, index) => (
                 <article key={question.id} className="rounded-[1.25rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-4">
                   <p className="text-xs font-black uppercase tracking-[0.16em] text-[color:var(--color-text-muted)]">Question {index + 1} · {question.type === 'identification' ? 'Identification' : 'Multiple choice'}</p>
-                  <p className="mt-2 text-sm font-bold leading-6 text-[color:var(--color-text)]">{question.question}</p>
+                  <p className="learning-copy mt-2 font-bold text-[color:var(--color-text)]">{question.question}</p>
                 </article>
               ))}
               {!sampleQuestions.length ? (
@@ -1450,7 +1450,7 @@ function PreviewScreen({
               <Trophy className="text-amber-500" size={22} />
               <h2 className="text-xl font-black text-[color:var(--color-text)]">Ready check</h2>
             </div>
-            <p className="mt-3 text-sm leading-7 text-[color:var(--color-text-muted)]">
+            <p className="learning-copy mt-3 text-[color:var(--color-text-muted)]">
               {difficulty.label} mode starts with a {formatTimer(getQuizTimeLimitSeconds(settings))} timer. Take a breath, scan the rules, then go.
             </p>
             <div className="mt-5 space-y-3">
@@ -1610,7 +1610,7 @@ function QuestionCard({ question, index, answer, feedback, explanationOpen, prac
         ) : null}
       </div>
 
-      <h2 className="mt-4 text-lg font-black leading-snug text-[color:var(--color-text)] sm:text-xl">{question.question}</h2>
+      <h2 className="quiz-question-copy mt-4 font-black text-[color:var(--color-text)]">{question.question}</h2>
 
       {question.type === 'multiple_choice' ? (
         <fieldset className="mt-4">
@@ -1640,7 +1640,7 @@ function QuestionCard({ question, index, answer, feedback, explanationOpen, prac
                 >
                   <span className="flex items-start gap-2.5">
                     <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current text-xs font-black">{choiceIndex + 1}</span>
-                    <span className="text-sm font-bold leading-6 sm:text-base">{choice}</span>
+                    <span className="learning-copy-sm font-bold text-[color:var(--color-text)]">{choice}</span>
                   </span>
                 </button>
               );
@@ -1691,7 +1691,7 @@ function FeedbackPanel({ question, selectedIndex, isCorrect, message, expanded, 
       <p className={`font-black ${isCorrect ? 'text-emerald-500' : 'text-amber-500'}`}>
         {isCorrect ? 'Brilliant work.' : message || 'No problem. You are still learning.'}
       </p>
-      <p className="mt-2 text-sm leading-7 text-[color:var(--color-text-muted)]">
+      <p className="learning-copy-sm mt-2 text-[color:var(--color-text-muted)]">
         <strong className="text-[color:var(--color-text)]">Correct answer:</strong> {question.correct_answer}
       </p>
 
@@ -1711,9 +1711,9 @@ function FeedbackPanel({ question, selectedIndex, isCorrect, message, expanded, 
 
       {!isCorrect && expanded ? (
         <div className="mt-3 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3">
-          <p className="text-sm leading-7 text-[color:var(--color-text-muted)]">{question.explanation}</p>
+          <p className="learning-copy-sm text-[color:var(--color-text-muted)]">{question.explanation}</p>
           {wrongExplanation ? (
-            <p className="mt-2 text-sm leading-7 text-[color:var(--color-text-muted)]">{wrongExplanation}</p>
+            <p className="learning-copy-sm mt-2 text-[color:var(--color-text-muted)]">{wrongExplanation}</p>
           ) : null}
           {question.support_snippet ? (
             <p className="mt-3 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] px-3 py-2 text-xs font-semibold leading-6 text-[color:var(--color-text-muted)]">
@@ -1737,8 +1737,8 @@ function ResultsScreen({ quiz, result, attempts, onBackToPreview, onRetake, onRe
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)]">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.22em] text-[color:var(--color-text-muted)]">Results</p>
-            <h1 className="mt-2 text-3xl font-black leading-tight text-[color:var(--color-text)] sm:text-4xl">{getResultMessage(percent, result.session_type)}</h1>
-            <p className="mt-4 max-w-3xl text-sm leading-7 text-[color:var(--color-text-muted)]">
+            <h1 className="learning-title mt-2 text-3xl font-black leading-tight text-[color:var(--color-text)] sm:text-4xl">{getResultMessage(percent, result.session_type)}</h1>
+            <p className="learning-copy mt-4 max-w-3xl text-[color:var(--color-text-muted)]">
               {quiz?.title} · {difficulty.label} difficulty · {result.pending ? 'This attempt is saved locally and will sync when the server is reachable.' : 'This attempt is saved in your score history.'}
             </p>
           </div>
@@ -1777,12 +1777,12 @@ function ResultsScreen({ quiz, result, attempts, onBackToPreview, onRetake, onRe
                 {answer.is_correct ? <CheckCircle2 className="mt-1 shrink-0 text-emerald-500" size={20} /> : <XCircle className="mt-1 shrink-0 text-rose-500" size={20} />}
                 <div className="min-w-0">
                   <p className="text-sm font-black text-[color:var(--color-text-muted)]">Question {answer.order}</p>
-                  <h2 className="mt-1 text-lg font-black leading-7 text-[color:var(--color-text)]">{answer.question}</h2>
+                  <h2 className="quiz-question-copy mt-1 font-black text-[color:var(--color-text)]">{answer.question}</h2>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     <AnswerPill label="Your answer" value={answer.user_answer || 'Unanswered'} tone={answer.is_correct ? 'success' : 'danger'} />
                     <AnswerPill label="Correct answer" value={answer.correct_answer} tone="success" />
                   </div>
-                  <p className="mt-3 text-sm leading-7 text-[color:var(--color-text-muted)]">{answer.explanation}</p>
+                  <p className="learning-copy-sm mt-3 text-[color:var(--color-text-muted)]">{answer.explanation}</p>
                 </div>
               </div>
             </article>
