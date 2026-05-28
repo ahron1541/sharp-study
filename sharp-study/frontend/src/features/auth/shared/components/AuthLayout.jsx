@@ -62,7 +62,7 @@ export default function AuthLayout({ children, busy = false, busyLabel = 'Prepar
             className={styles.backBtn}
             aria-label="Back to landing page"
           >
-            <img src={backIcon} alt="" className={styles.backIcon} />
+            <img src={backIcon} alt="" aria-hidden="true" className={styles.backIcon} />
           </button>
 
           {/* Animated form content */}

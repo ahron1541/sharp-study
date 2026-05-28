@@ -1,93 +1,133 @@
 import React from 'react';
 import { ATMOSPHERE_PRESETS, getFontSizePreset } from '../../theme/constants/themes';
-import { BookOpen, CreditCard, Flame, Menu, User } from 'lucide-react';
+import { Bell, BookOpen, Home, Layers, Menu, User } from 'lucide-react';
+
+const FONT_PREVIEW = {
+  'dm-sans': '"DM Sans", ui-sans-serif, system-ui, sans-serif',
+  serif: 'Georgia, "Times New Roman", serif',
+  monospace: '"Courier New", ui-monospace, monospace',
+};
 
 export default function LivePreviewCard({ draft, showHeading = true }) {
-  const preset = ATMOSPHERE_PRESETS.find(p => p.id === draft.atmosphere) || ATMOSPHERE_PRESETS[0];
+  const preset = ATMOSPHERE_PRESETS.find((item) => item.id === draft.atmosphere) || ATMOSPHERE_PRESETS[0];
   const isDark = draft.display_mode === 'dark';
   const fontPreset = getFontSizePreset(draft.font_size_preset);
+  const previewReaderFontSize = `${Math.max(12, fontPreset.fontSize * 0.74).toFixed(2)}px`;
 
   const previewStyle = {
-    '--color-bg': isDark ? '#020617' : '#F8FAFC',
-    '--color-surface': isDark ? '#0F172A' : '#FFFFFF',
-    '--color-surface-2': isDark ? '#1E293B' : '#F1F5F9',
-    '--color-text': isDark ? '#F8FAFC' : '#0F172A',
-    '--color-text-muted': isDark ? '#94A3B8' : '#64748B',
-    '--color-border': isDark ? '#334155' : '#E2E8F0',
-    fontFamily: draft.font_family === 'serif' ? 'Georgia, "Times New Roman", serif' :
-                draft.font_family === 'monospace' ? '"Courier New", monospace' :
-                draft.font_family === 'syne' ? 'Syne, sans-serif' :
-                draft.font_family === 'opendyslexic' ? 'Inter, Verdana, sans-serif' :
-                '"DM Sans", sans-serif',
-    fontSize: `calc(${fontPreset.learningFontSize} * 0.72)`,
-    lineHeight: fontPreset.lineHeight,
+    '--preview-bg': isDark ? '#020617' : '#F8FAFC',
+    '--preview-surface': isDark ? '#0F172A' : '#FFFFFF',
+    '--preview-surface-2': isDark ? '#1E293B' : '#F1F5F9',
+    '--preview-text': isDark ? '#F8FAFC' : '#0F172A',
+    '--preview-muted': isDark ? '#94A3B8' : '#64748B',
+    '--preview-border': isDark ? '#334155' : '#E2E8F0',
+    '--preview-reader-size': fontPreset.readerFontSize,
+    '--preview-learning-size': fontPreset.learningFontSize,
+    '--preview-line-height': fontPreset.lineHeight,
+    fontFamily: FONT_PREVIEW[draft.font_family] || FONT_PREVIEW['dm-sans'],
+    lineHeight: 'var(--preview-line-height)',
   };
 
   return (
-    <div className="relative group p-1 sm:p-2">
+    <div className="relative p-1 sm:p-2">
       {showHeading ? (
         <p className="mb-4 ml-2 text-xs font-bold uppercase tracking-widest text-text-muted">Real-time Preview</p>
       ) : null}
-      
-      <div 
+
+      <div
         style={previewStyle}
-        className="mx-auto w-full max-w-[20rem] overflow-hidden rounded-[1.75rem] border-[3px] border-border bg-bg shadow-2xl transition-all duration-300"
+        className="mx-auto w-full max-w-[23rem] overflow-hidden rounded-[1.75rem] border-[3px] border-[var(--preview-border)] bg-[var(--preview-bg)] shadow-2xl transition-all duration-300"
+        role="group"
+        aria-label="Preview of saved dashboard personalization"
       >
-        <div className="flex min-h-[21rem]">
-          <aside className="w-12 shrink-0 border-r border-border bg-surface p-2">
-            <div className="mb-4 h-8 rounded-xl" style={{ background: preset.bg }} />
-            <div className="space-y-2">
-              <div className="h-7 rounded-lg bg-surface-2" />
-              <div className="h-7 rounded-lg bg-surface-2" />
-              <div className="h-7 rounded-lg bg-surface-2" />
-            </div>
+        <div className="flex min-h-[31rem] text-[0.78rem] text-[var(--preview-text)]">
+          <aside className="w-14 shrink-0 border-r border-[var(--preview-border)] bg-[var(--preview-surface)] p-2.5">
+            <div className="mb-4 h-9 rounded-2xl shadow-sm" style={{ background: preset.bg }} aria-hidden="true" />
+            <nav className="space-y-2" aria-label="Preview sidebar">
+              {[Home, BookOpen, Bell, Layers].map((Icon, index) => (
+                <div
+                  key={index}
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                    index === 0 ? 'text-white' : 'text-[var(--preview-muted)]'
+                  }`}
+                  style={index === 0 ? { background: preset.bg } : undefined}
+                  aria-hidden="true"
+                >
+                  <Icon size={15} />
+                </div>
+              ))}
+            </nav>
           </aside>
 
-          <div className="flex-1 min-w-0">
-            <div className="h-9 border-b border-border bg-surface flex items-center justify-between px-3">
-              <Menu size={12} style={{ color: 'var(--color-text-muted)' }} />
+          <div className="min-w-0 flex-1">
+            <header className="flex h-11 items-center justify-between border-b border-[var(--preview-border)] bg-[var(--preview-surface)] px-3">
               <div className="flex items-center gap-2">
-                <span className="text-[0.65em] font-bold" style={{ color: 'var(--color-text)' }}>Ahron</span>
-                <User size={12} style={{ color: 'var(--color-text-muted)' }} />
+                <Menu size={15} className="text-[var(--preview-muted)]" aria-hidden="true" />
+                <span className="h-5 w-16 rounded-full bg-[var(--preview-surface-2)]" aria-hidden="true" />
               </div>
-            </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[0.72em] font-black text-[var(--preview-text)]">Ahron</span>
+                <User size={14} className="text-[var(--preview-muted)]" aria-hidden="true" />
+              </div>
+            </header>
 
-            <div className="p-4 space-y-3">
-              <div 
-                className="rounded-2xl p-4 text-white"
+            <main className="space-y-3 p-3.5">
+              <section
+                className="rounded-2xl p-4 shadow-sm"
                 style={{ background: preset.bg, color: preset.textColor }}
               >
-                <h4 className="text-[0.7em] font-bold uppercase tracking-widest opacity-70 mb-1">Welcome back</h4>
-                <p className="text-[1.25em] font-black leading-tight">Continue studying today.</p>
-              </div>
+                <p className="mb-1 text-[0.62em] font-black uppercase tracking-[0.16em] opacity-80">Welcome back</p>
+                <h4 className="text-[1.36em] font-black leading-tight">Continue studying today.</h4>
+              </section>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-surface border border-border p-3 rounded-2xl">
-                  <Flame className="text-orange-500 mb-1" size={14} />
-                  <p className="text-[0.8em] font-bold" style={{ color: 'var(--color-text)' }}>5 Days</p>
-                </div>
-                <div className="bg-surface border border-border p-3 rounded-2xl">
-                  <BookOpen className="mb-1" size={14} style={{ color: '#3B82F6' }} />
-                  <p className="text-[0.8em] font-bold" style={{ color: 'var(--color-text)' }}>12 Guides</p>
-                </div>
-              </div>
+              <section className="grid grid-cols-2 gap-2">
+                <article className="rounded-2xl border border-[var(--preview-border)] bg-[var(--preview-surface)] p-3">
+                  <p className="text-[0.68em] font-black uppercase tracking-[0.13em] text-[var(--preview-muted)]">Streak</p>
+                  <p className="mt-1 text-[1.08em] font-black text-[var(--preview-text)]">5 Days</p>
+                </article>
+                <article className="rounded-2xl border border-[var(--preview-border)] bg-[var(--preview-surface)] p-3">
+                  <p className="text-[0.68em] font-black uppercase tracking-[0.13em] text-[var(--preview-muted)]">Guides</p>
+                  <p className="mt-1 text-[1.08em] font-black text-[var(--preview-text)]">12 Items</p>
+                </article>
+              </section>
 
-              <div className="bg-surface border border-border p-3 rounded-2xl space-y-2">
-                <div className="flex items-center gap-2">
-                  <CreditCard size={13} style={{ color: 'var(--color-text-muted)' }} />
-                  <div className="h-2 w-20 bg-surface-2 rounded-full" />
+              <section className="rounded-2xl border border-[var(--preview-border)] bg-[var(--preview-surface)] p-3.5">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-[0.7em] font-black uppercase tracking-[0.14em] text-[var(--preview-muted)]">
+                      Study guide
+                    </p>
+                    <h4 className="truncate text-[1.05em] font-black text-[var(--preview-text)]">
+                      Information Management
+                    </h4>
+                  </div>
+                  <span className="rounded-full bg-[var(--preview-surface-2)] px-2 py-1 text-[0.7em] font-black text-[var(--preview-muted)]">
+                    Open
+                  </span>
                 </div>
-                <div className="h-2 w-full bg-surface-2 rounded-full" />
-                <div className="h-2 w-2/3 bg-surface-2 rounded-full" />
-              </div>
 
-              <button 
-                className="w-full py-2.5 rounded-xl font-bold text-white shadow-xl"
+                <div
+                  className="rounded-2xl bg-[var(--preview-surface-2)] p-3 text-[var(--preview-text)]"
+                  style={{
+                    fontSize: previewReaderFontSize,
+                    lineHeight: 'var(--preview-line-height)',
+                  }}
+                >
+                  <p className="mb-2 font-black">Overview</p>
+                  <p className="text-[var(--preview-muted)]">
+                    Study content, summaries, cards, and quiz questions follow the selected legibility preset while the main controls stay stable.
+                  </p>
+                </div>
+              </section>
+
+              <div
+                className="min-h-10 w-full rounded-2xl px-4 py-2 text-center text-[0.82em] font-black text-white shadow-xl"
                 style={{ background: preset.bg }}
+                aria-hidden="true"
               >
                 Continue Learning
-              </button>
-            </div>
+              </div>
+            </main>
           </div>
         </div>
       </div>

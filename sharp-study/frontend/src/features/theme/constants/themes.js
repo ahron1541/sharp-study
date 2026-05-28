@@ -18,11 +18,11 @@ export const DISPLAY_MODES = [
 
 export const FONT_FAMILIES = [
   { id: 'dm-sans',       label: 'DM Sans (Default)',   sample: 'Aa' },
-  { id: 'syne',          label: 'Syne',                sample: 'Aa' },
-  { id: 'opendyslexic',  label: 'Dyslexia Friendly',   sample: 'Aa' },
   { id: 'serif',         label: 'Serif',               sample: 'Aa' },
   { id: 'monospace',     label: 'Monospace',           sample: 'Aa' },
 ];
+
+export const FONT_FAMILY_IDS = FONT_FAMILIES.map((font) => font.id);
 
 export const FONT_SIZE_PRESETS = [
   {

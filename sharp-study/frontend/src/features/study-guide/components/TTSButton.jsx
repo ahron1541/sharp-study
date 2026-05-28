@@ -13,7 +13,7 @@ export default function TTSButton({ text }) {
     const plainText = text.replace(/<[^>]+>/g, '');
     const utterance = new SpeechSynthesisUtterance(plainText);
     utterance.lang = 'en-US';
-    utterance.rate = 0.85;   // Slightly slower — better for dyslexia
+    utterance.rate = 0.85;   // Slightly slower for clearer listening.
     utterance.pitch = 1;
     utterance.onstart = () => setSpeaking(true);
     utterance.onend = () => setSpeaking(false);

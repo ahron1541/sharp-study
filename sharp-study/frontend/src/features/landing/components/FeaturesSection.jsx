@@ -19,7 +19,7 @@ const FEATURES = [
   {
     id: 3,
     title: 'Comfort Controls',
-    body: 'Use dark mode, larger text, dyslexia-friendly settings, and narrator support for easier reading.',
+    body: 'Use dark mode, larger study text, stronger contrast, and narrator support for easier reading.',
     src: 'https://placehold.co/420x540/fff2df/3d2814.svg?text=Accessible+Tools',
     alt: 'Accessibility tools placeholder',
   },

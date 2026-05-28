@@ -38,7 +38,7 @@ html {
 
 body {
   font-size: 1rem;      /* Relative to html — scales automatically */
-  line-height: 1.75;    /* Important for dyslexia readability */
+  line-height: 1.75;    /* Keeps study text easier to scan at larger sizes. */
   color: var(--text-color);
   background-color: var(--bg-color);
   transition: background-color 0.2s, color 0.2s;
@@ -121,13 +121,6 @@ img, video, canvas {
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 1rem;
-}
-
-.font-dyslexia * {
-  font-family: 'Arial', 'Verdana', 'Trebuchet MS', sans-serif !important;
-  letter-spacing: 0.05em;
-  word-spacing: 0.15em;
-  line-height: 1.9;
 }
 
 /* =============================

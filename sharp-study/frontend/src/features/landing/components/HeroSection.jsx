@@ -51,7 +51,7 @@ export default function HeroSection() {
           <p className={styles.subheadline}>
             Verso turns school documents into short study guides, flashcards,
             quizzes, and spoken lessons built for students with low vision,
-            dyslexia, ADHD, and other learning needs.
+            visual impairments, attention challenges, and other learning needs.
           </p>
           <div className={styles.ctaRow}>
             <Link to="/register" className={styles.ctaBtn}>

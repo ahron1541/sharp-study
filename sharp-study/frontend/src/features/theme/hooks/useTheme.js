@@ -2,6 +2,7 @@ import { useEffect, useCallback, useRef, useState } from 'react';
 import { fetchPreferences, savePreferences } from '../services/preferences.service';
 import {
   DEFAULT_PREFERENCES,
+  FONT_FAMILY_IDS,
   FONT_SIZE_PRESET_IDS,
   getFontSizePreset,
   getFontSizePresetIdFromSize,
@@ -22,6 +23,7 @@ export function normalizePreferences(prefs = {}) {
   return {
     ...nextPrefs,
     display_mode: nextPrefs.display_mode === 'dark' ? 'dark' : 'light',
+    font_family: FONT_FAMILY_IDS.includes(nextPrefs.font_family) ? nextPrefs.font_family : DEFAULT_PREFERENCES.font_family,
     font_size_preset: preset.id,
     font_size: preset.fontSize,
   };

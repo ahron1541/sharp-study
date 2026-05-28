@@ -5,7 +5,6 @@ import { FONT_SIZE_PRESETS } from '../../theme/constants/themes';
 
 const fontOptions = [
   { id: 'default',      label: 'Default', family: 'inherit' },
-  { id: 'dyslexic',     label: 'OpenDyslexic', family: 'OpenDyslexic, sans-serif' },
   { id: 'serif',        label: 'Serif', family: 'Georgia, serif' },
   { id: 'mono',         label: 'Monospace', family: 'Courier New, monospace' },
 ];

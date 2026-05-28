@@ -91,7 +91,6 @@ export function useSettings() {
     setDraft((prev) => {
       const next = normalizePreferences({ ...prev, [key]: value });
       lastDraftChangeAtRef.current = Date.now();
-      applyPreferences(next, { persist: false });
       return next;
     });
   }, []);

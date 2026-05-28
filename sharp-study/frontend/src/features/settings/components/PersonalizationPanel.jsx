@@ -10,8 +10,6 @@ import {
 
 const FONT_PREVIEW = {
   'dm-sans': "'DM Sans', ui-sans-serif, system-ui, sans-serif",
-  syne: "'Syne', ui-sans-serif, system-ui, sans-serif",
-  opendyslexic: "'Inter', 'Verdana', ui-sans-serif, system-ui, sans-serif",
   serif: "'Georgia', 'Times New Roman', serif",
   monospace: "'Courier New', ui-monospace, monospace",
 };
@@ -42,7 +40,7 @@ export default function PersonalizationPanel({
       {/* Theme Mode */}
       <section className="space-y-4">
         <h3 className="text-sm font-bold text-text-muted uppercase tracking-widest flex items-center gap-2">
-          <Layers size={14} /> Display Preference
+          <Layers size={14} aria-hidden="true" /> Display Preference
         </h3>
         <div className="grid max-w-sm grid-cols-1 gap-2 rounded-3xl border border-border bg-surface-2 p-1.5 sm:grid-cols-2">
           {DISPLAY_MODES.map((mode) => {
@@ -60,7 +58,7 @@ export default function PersonalizationPanel({
                     : 'text-text-muted hover:text-text'
                 }`}
               >
-                <Icon size={18} />
+                <Icon size={18} aria-hidden="true" />
                 {mode.label}
               </button>
             );
@@ -96,9 +94,9 @@ export default function PersonalizationPanel({
       {/* Font Style */}
       <section className="space-y-4">
         <h3 className="text-sm font-bold text-text-muted uppercase tracking-widest flex items-center gap-2">
-          <Type size={14} /> Typography
+          <Type size={14} aria-hidden="true" /> Typography
         </h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" role="radiogroup" aria-label="Typography">
            {FONT_FAMILIES.map((font) => {
              const isActive = draft.font_family === font.id;
              return (
@@ -107,6 +105,8 @@ export default function PersonalizationPanel({
                   type="button"
                   disabled={blocking}
                   onClick={() => updateDraft('font_family', font.id)}
+                  role="radio"
+                  aria-checked={isActive}
                   style={{ fontFamily: FONT_PREVIEW[font.id] }}
                   className={`min-h-32 rounded-2xl border-2 p-4 text-left transition-all sm:p-5 ${
                     isActive 
@@ -177,7 +177,7 @@ export default function PersonalizationPanel({
             Accessibility tip
           </h4>
           <p className="mt-2 text-sm leading-7 text-text-muted">
-            Larger study text, high contrast display modes, and Dyslexia-friendly fonts can make reading easier without changing the dashboard controls.
+            Larger study text, strong contrast, and steady control sizes can make reading easier for learners with visual impairments.
           </p>
         </div>
       </section>

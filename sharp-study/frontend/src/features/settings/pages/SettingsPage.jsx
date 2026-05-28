@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Palette, Shield, X } from 'lucide-react';
+import { Eye, EyeOff, Maximize2, Minus, Palette, Shield, X } from 'lucide-react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import PersonalizationPanel from '../components/PersonalizationPanel';
 import AccountSecurityPanel from '../components/AccountSecurityPanel';
@@ -14,6 +14,7 @@ const TABS = [
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('personalization');
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewMinimized, setPreviewMinimized] = useState(false);
   const settings = useSettings();
 
   const changeTab = (tabId) => {
@@ -22,8 +23,17 @@ export default function SettingsPage() {
     }
     if (tabId !== 'personalization') {
       setPreviewOpen(false);
+      setPreviewMinimized(false);
     }
     setActiveTab(tabId);
+  };
+
+  const togglePreview = () => {
+    setPreviewOpen((value) => {
+      const next = !value;
+      if (next) setPreviewMinimized(false);
+      return next;
+    });
   };
 
   return (
@@ -54,7 +64,7 @@ export default function SettingsPage() {
           {activeTab === 'personalization' ? (
             <button
               type="button"
-              onClick={() => setPreviewOpen((value) => !value)}
+              onClick={togglePreview}
               aria-expanded={previewOpen}
               aria-controls="settings-live-preview"
               className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-surface px-5 py-3 font-bold text-text transition hover:border-accent/45 hover:text-accent sm:w-auto"
@@ -118,6 +128,7 @@ export default function SettingsPage() {
           <Motion.aside
             id="settings-live-preview"
             role="dialog"
+            aria-modal="false"
             aria-label="Live personalization preview"
             initial={{ opacity: 0, y: 24, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -125,21 +136,51 @@ export default function SettingsPage() {
             transition={{ duration: 0.2 }}
             className="fixed inset-x-3 bottom-3 z-30 max-h-[calc(100vh-6rem)] overflow-y-auto rounded-[1.75rem] border border-border bg-surface p-3 shadow-[0_24px_80px_rgba(15,23,42,0.24)] sm:inset-auto sm:bottom-6 sm:right-6 sm:w-[min(24rem,calc(100vw-3rem))] sm:p-4"
           >
-            <div className="mb-3 flex items-center justify-between gap-3 px-1">
+            <div className={`${previewMinimized ? '' : 'mb-3'} flex items-center justify-between gap-3 px-1`}>
               <div className="min-w-0">
                 <p className="text-xs font-black uppercase tracking-[0.18em] text-text-muted">Live preview</p>
-                <p className="text-sm font-semibold text-text-muted">Updates as you change personalization.</p>
+                <p className="text-sm font-semibold text-text-muted">
+                  {previewMinimized ? 'Preview minimized.' : 'Unsaved changes appear here first.'}
+                </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setPreviewOpen(false)}
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-text-muted transition hover:text-text"
-                aria-label="Close live preview"
-              >
-                <X size={18} aria-hidden="true" />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPreviewMinimized((value) => !value)}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface-2 text-text-muted transition hover:text-text"
+                  aria-label={previewMinimized ? 'Restore live preview' : 'Minimize live preview'}
+                  aria-expanded={!previewMinimized}
+                  aria-controls="settings-live-preview-body"
+                >
+                  {previewMinimized ? <Maximize2 size={18} aria-hidden="true" /> : <Minus size={18} aria-hidden="true" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPreviewOpen(false);
+                    setPreviewMinimized(false);
+                  }}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface-2 text-text-muted transition hover:text-text"
+                  aria-label="Close live preview"
+                >
+                  <X size={18} aria-hidden="true" />
+                </button>
+              </div>
             </div>
-            <LivePreviewCard draft={settings.draft} showHeading={false} />
+            <AnimatePresence initial={false}>
+              {!previewMinimized ? (
+                <Motion.div
+                  id="settings-live-preview-body"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.18 }}
+                  className="overflow-hidden"
+                >
+                  <LivePreviewCard draft={settings.draft} showHeading={false} />
+                </Motion.div>
+              ) : null}
+            </AnimatePresence>
           </Motion.aside>
         ) : null}
       </AnimatePresence>
