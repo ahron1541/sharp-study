@@ -1,76 +1,64 @@
 import { useState, useEffect } from 'react';
 import { AccessibilityContext } from './accessibility-context-core';
 
-const FONT_FAMILIES = {
-  default:   'inherit',
-  dyslexic:  'OpenDyslexic, sans-serif',
-  serif:     'Georgia, serif',
-  mono:      'Courier New, monospace',
+const DEFAULT_ACCESSIBILITY = {
+  theme: 'light',
+  fontSize: 16,
+  fontFamily: 'default',
+  lineHeight: 1.75,
+  letterSpacing: 0,
 };
 
-function getInitialTheme() {
+function readCachedPreferences() {
   try {
-    const cachedPrefs = JSON.parse(localStorage.getItem('sharp-study-prefs') || '{}');
-    if (cachedPrefs.display_mode === 'light' || cachedPrefs.display_mode === 'dark') {
-      return cachedPrefs.display_mode;
-    }
+    return JSON.parse(localStorage.getItem('sharp-study-prefs') || '{}');
   } catch {
-    // Fall through to the legacy accessibility preference.
+    return {};
   }
-
-  return localStorage.getItem('theme') || 'light';
 }
 
-function getDisplayMode(theme) {
-  if (theme === 'light' || theme === 'dark') {
-    return theme;
+function getInitialTheme() {
+  const cachedPrefs = readCachedPreferences();
+  if (cachedPrefs.display_mode === 'light' || cachedPrefs.display_mode === 'dark') {
+    return cachedPrefs.display_mode;
   }
 
-  return null;
+  return DEFAULT_ACCESSIBILITY.theme;
+}
+
+function getInitialFontSize() {
+  const cachedSize = Number(readCachedPreferences().font_size);
+  return Number.isFinite(cachedSize) && cachedSize > 0 ? cachedSize : DEFAULT_ACCESSIBILITY.fontSize;
 }
 
 export function AccessibilityProvider({ children }) {
   const [theme, setThemeState] = useState(getInitialTheme);
-  const [fontSize, setFontSizeState] = useState(() => Number(localStorage.getItem('fontSize')) || 16);
-  const [fontFamily, setFontFamilyState] = useState(() => localStorage.getItem('fontFamily') || 'default');
-  const [lineHeight, setLineHeightState] = useState(() => Number(localStorage.getItem('lineHeight')) || 1.75);
-  const [letterSpacing, setLetterSpacingState] = useState(() => Number(localStorage.getItem('letterSpacing')) || 0);
+  const [fontSize, setFontSizeState] = useState(getInitialFontSize);
+  const [fontFamily, setFontFamilyState] = useState(DEFAULT_ACCESSIBILITY.fontFamily);
+  const [lineHeight, setLineHeightState] = useState(DEFAULT_ACCESSIBILITY.lineHeight);
+  const [letterSpacing, setLetterSpacingState] = useState(DEFAULT_ACCESSIBILITY.letterSpacing);
 
   useEffect(() => {
     const root = document.documentElement;
-    const displayMode = getDisplayMode(theme);
-    // Theme
     root.setAttribute('data-theme', theme);
-    if (displayMode) {
-      root.setAttribute('data-display', displayMode);
-    } else {
-      root.removeAttribute('data-display');
-    }
-    // Font size
-    root.style.setProperty('--base-font-size', `${fontSize}px`);
-    // Font family
-    root.style.setProperty('--body-font', FONT_FAMILIES[fontFamily] || 'inherit');
-    // Line height
-    root.style.setProperty('--line-height', String(lineHeight));
-    // Letter spacing
-    root.style.setProperty('--letter-spacing', `${letterSpacing}em`);
-    // Persist
-    localStorage.setItem('theme', theme);
     if (theme === 'light' || theme === 'dark') {
-      try {
-        const cachedPrefs = JSON.parse(localStorage.getItem('sharp-study-prefs') || '{}');
+      root.setAttribute('data-display', theme);
+    }
+    root.style.setProperty('--reader-font-size', `${fontSize}px`);
+    root.style.setProperty('--line-height', String(lineHeight));
+    root.style.setProperty('--letter-spacing', `${letterSpacing}em`);
+
+    try {
+      const cachedPrefs = readCachedPreferences();
+      if (theme === 'light' || theme === 'dark') {
         localStorage.setItem(
           'sharp-study-prefs',
-          JSON.stringify({ ...cachedPrefs, display_mode: theme })
+          JSON.stringify({ ...cachedPrefs, display_mode: theme, font_size: fontSize })
         );
-      } catch {
-        // localStorage parsing can fail if old data is malformed; the legacy key still persists.
       }
+    } catch {
+      // localStorage unavailable — non-fatal
     }
-    localStorage.setItem('fontSize', String(fontSize));
-    localStorage.setItem('fontFamily', fontFamily);
-    localStorage.setItem('lineHeight', String(lineHeight));
-    localStorage.setItem('letterSpacing', String(letterSpacing));
   }, [theme, fontSize, fontFamily, lineHeight, letterSpacing]);
 
   useEffect(() => {
@@ -78,6 +66,10 @@ export function AccessibilityProvider({ children }) {
       const mode = event.detail?.display_mode;
       if (mode === 'light' || mode === 'dark') {
         setThemeState((current) => current === mode ? current : mode);
+      }
+      const nextFontSize = Number(event.detail?.font_size);
+      if (Number.isFinite(nextFontSize)) {
+        setFontSizeState((current) => current === nextFontSize ? current : nextFontSize);
       }
     };
 

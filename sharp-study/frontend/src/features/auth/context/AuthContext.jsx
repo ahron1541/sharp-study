@@ -2,7 +2,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { FullPageShellSkeleton } from '../../../shared/components/PageSkeletons';
-import { applyPreferences } from '../../theme/hooks/useTheme';
+import { applyPreferences, resetPreferencesToDefault } from '../../theme/hooks/useTheme';
 import { DEFAULT_PREFERENCES } from '../../theme/constants/themes';
 
 // Singleton pattern to prevent Vite HMR from creating multiple instances
@@ -90,7 +90,7 @@ export function AuthProvider({ children }) {
           setProfile(null);
           localStorage.removeItem('sharp-study-token');
           localStorage.removeItem('sharp-study-role');
-          localStorage.removeItem('sharp-study-prefs');
+          resetPreferencesToDefault();
         }
       }
     );
@@ -102,7 +102,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const resetThemeOnLogout = () => {
-    applyPreferences(DEFAULT_PREFERENCES);
+    resetPreferencesToDefault();
     localStorage.removeItem('sharp-study-token');
     localStorage.removeItem('sharp-study-refresh');
     localStorage.removeItem('sharp-study-role');

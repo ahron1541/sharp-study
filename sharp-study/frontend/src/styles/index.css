@@ -180,6 +180,7 @@
 ═══════════════════════════════════════════════════════════════ */
 :root {
   --font-scale: 16px;
+  --reader-font-size: 16px;
   --font-body: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
 }
 

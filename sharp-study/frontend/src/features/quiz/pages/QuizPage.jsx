@@ -35,6 +35,7 @@ import { sanitizePlainText } from '../../../shared/utils/sanitize';
 import StudyNotice from '../../../shared/components/StudyNotice';
 import { QuizPageSkeleton } from '../../../shared/components/PageSkeletons';
 import ContentFeedbackWidget from '../../../shared/components/ContentFeedbackWidget';
+import { recordRecentMaterialOpen } from '../../dashboard/services/recentMaterials';
 
 const SESSION_STORAGE_PREFIX = 'sharp-study-quiz-session';
 const CONTENT_STORAGE_PREFIX = 'sharp-study-quiz-content';
@@ -494,6 +495,16 @@ export default function QuizPage() {
     }
     return undefined;
   }, [quiz?.id, syncPendingAttempts]);
+
+  useEffect(() => {
+    if (!quiz?.id || loading) return;
+
+    recordRecentMaterialOpen({
+      content_type: 'quiz',
+      content_id: quiz.id,
+      title: quiz.title,
+    }).catch(() => {});
+  }, [loading, quiz?.id, quiz?.title]);
 
   useEffect(() => {
     if (phase !== 'taking' || !activeQuestions.length) return;
@@ -1344,7 +1355,7 @@ function PreviewScreen({
                 onChange={(value) => onUpdateSetting('difficulty', value)}
               />
 
-              <div className="grid items-start gap-3 md:grid-cols-2">
+              <div className="grid items-start gap-3 lg:grid-cols-2">
                 <SegmentedSetting
                   label="Quiz mode"
                   value={settings.sessionType}
@@ -1375,7 +1386,7 @@ function PreviewScreen({
                     <option value="identification">Identification ({questionCounts.identification})</option>
                   </select>
                 </label>
-                <div className="grid gap-3 sm:grid-cols-2 md:col-span-2">
+                <div className="grid gap-3 sm:grid-cols-2 lg:col-span-2">
                   <label className="block rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-3 sm:p-4">
                     <span className="text-sm font-black text-[color:var(--color-text)]">Items</span>
                     <input

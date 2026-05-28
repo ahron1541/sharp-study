@@ -11,6 +11,7 @@ import { sanitizeHtml } from '../../../shared/utils/sanitize';
 import StudyNotice from '../../../shared/components/StudyNotice';
 import ContentFeedbackWidget from '../../../shared/components/ContentFeedbackWidget';
 import { StudyGuidePageSkeleton } from '../../../shared/components/PageSkeletons';
+import { recordRecentMaterialOpen } from '../../dashboard/services/recentMaterials';
 import StudyGuideEditor from '../components/StudyGuideEditor';
 import StudyGuideSidebar from '../components/StudyGuideSidebar';
 import SelectionToolbar from '../components/SelectionToolbar';
@@ -269,6 +270,16 @@ export default function StudyGuidePage() {
       lastSyncedAt,
     });
   }, [content, flashcardSetId, guide, id, lastSyncedAt, quizId, savedContent]);
+
+  useEffect(() => {
+    if (!guide?.id || loading) return;
+
+    recordRecentMaterialOpen({
+      content_type: 'study_guide',
+      content_id: guide.id,
+      title: guide.title,
+    }).catch(() => {});
+  }, [guide?.id, guide?.title, loading]);
 
   const sections = useMemo(() => extractStudyGuideSections(deferredContent), [deferredContent]);
   const lessonText = useMemo(
@@ -961,7 +972,7 @@ export default function StudyGuidePage() {
 
   return (
     <>
-      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-7xl px-4 py-6 pb-40 sm:px-6 lg:px-8">
         <Breadcrumb
           items={[
             { label: 'Library', href: '/library' },
@@ -1004,14 +1015,14 @@ export default function StudyGuidePage() {
 
         {!editing && (
           <div
-            className="mt-6 grid items-start gap-6 transition-[grid-template-columns] duration-300 lg:grid-cols-[var(--study-guide-sidebar-width)_minmax(0,1fr)]"
-            style={{ '--study-guide-sidebar-width': sidebarCollapsed ? '5.75rem' : 'clamp(20rem,24vw,24rem)' }}
+            className="mt-6 grid items-start gap-6 transition-[grid-template-columns] duration-300 xl:grid-cols-[var(--study-guide-sidebar-width)_minmax(0,1fr)]"
+            style={{ '--study-guide-sidebar-width': sidebarCollapsed ? '5rem' : 'clamp(17rem,22vw,22rem)' }}
           >
-            <div className="space-y-4 lg:sticky lg:top-5 lg:h-[calc(100dvh-9.5rem)] lg:min-h-[24rem] lg:self-start">
+            <div className="space-y-4 xl:sticky xl:top-5 xl:h-[calc(100dvh-9.5rem)] xl:min-h-[24rem] xl:self-start">
               <button
                 type="button"
                 onClick={() => setMobileSidebarOpen((value) => !value)}
-                className="study-guide-fade-up flex w-full items-center justify-between rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-3 text-left shadow-[0_18px_60px_rgba(15,23,42,0.08)] lg:hidden"
+                  className="study-guide-fade-up flex w-full items-center justify-between rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-3 text-left shadow-[0_18px_60px_rgba(15,23,42,0.08)] xl:hidden"
               >
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.2em] text-[color:var(--color-text-muted)]">Contents</p>
@@ -1022,7 +1033,7 @@ export default function StudyGuidePage() {
                 {mobileSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
               </button>
 
-              <div className={`${mobileSidebarOpen ? 'block' : 'hidden'} lg:block lg:h-full`}>
+              <div className={`${mobileSidebarOpen ? 'block' : 'hidden'} xl:block xl:h-full`}>
                 <StudyGuideSidebar
                   sections={sections}
                   onJumpToSection={jumpToSection}
@@ -1083,7 +1094,7 @@ export default function StudyGuidePage() {
                       >
                         <article
                           ref={articleRef}
-                          className="study-guide-content max-w-none text-[color:var(--color-text)]"
+                          className="study-guide-content mx-auto max-w-[74ch] text-[color:var(--color-text)]"
                           dangerouslySetInnerHTML={{ __html: sanitizedRenderedHtml }}
                         />
                       </div>
@@ -1180,13 +1191,13 @@ export default function StudyGuidePage() {
 
         {!editing && (
           <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
-            <div className="pointer-events-auto w-full max-w-4xl rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/94 p-3 shadow-[0_24px_64px_rgba(15,23,42,0.18)] backdrop-blur-xl">
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="pointer-events-auto w-full max-w-5xl rounded-[1.5rem] border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/94 p-3 shadow-[0_24px_64px_rgba(15,23,42,0.18)] backdrop-blur-xl">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                   <button
                     type="button"
                     onClick={handleReadAloud}
-                    className={`inline-flex h-11 items-center justify-center gap-2 rounded-2xl border px-4 text-sm font-bold transition-all duration-200 ${
+                    className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border px-4 py-2 text-sm font-bold transition-all duration-200 ${
                       speaking
                         ? 'border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/10 text-[color:var(--color-text)]'
                         : 'border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-text)] hover:bg-[color:var(--color-surface-2)]'
@@ -1194,13 +1205,13 @@ export default function StudyGuidePage() {
                     aria-label={speaking ? (speechPaused ? 'Resume reading aloud' : 'Pause reading aloud') : 'Read study guide aloud'}
                   >
                     {speaking ? (speechPaused ? <Play size={18} /> : <Pause size={18} />) : <Volume2 size={18} />}
-                    <span>{speaking ? (speechPaused ? 'Resume' : 'Pause') : 'Read aloud'}</span>
+                    <span className="min-w-0 break-words">{speaking ? (speechPaused ? 'Resume' : 'Pause') : 'Read aloud'}</span>
                   </button>
                   {speaking ? (
                     <button
                       type="button"
                       onClick={stopReading}
-                      className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-rose-500/40 bg-rose-500/10 text-rose-500 transition hover:bg-rose-500/15"
+                      className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-rose-500/40 bg-rose-500/10 text-rose-500 transition hover:bg-rose-500/15"
                       aria-label="Stop reading aloud"
                       title="Stop reading"
                     >
@@ -1212,19 +1223,19 @@ export default function StudyGuidePage() {
                   type="button"
                   onClick={requestCreateFlashcards}
                   disabled={Boolean(flashcardGeneration || quizGeneration)}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 text-sm font-bold text-[color:var(--color-text)] transition-all duration-200 hover:bg-[color:var(--color-surface-2)] disabled:cursor-wait disabled:opacity-60"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-2 text-sm font-bold text-[color:var(--color-text)] transition-all duration-200 hover:bg-[color:var(--color-surface-2)] disabled:cursor-wait disabled:opacity-60"
                 >
                   {flashcardGeneration ? <Loader2 className="animate-spin" size={18} /> : flashcardSetId ? <Layers3 size={18} /> : <Sparkles size={18} />}
-                  <span>{flashcardSetId ? 'Open flashcards' : flashcardGeneration ? 'Creating cards' : 'Create flashcards'}</span>
+                  <span className="min-w-0 break-words">{flashcardSetId ? 'Open flashcards' : flashcardGeneration ? 'Creating cards' : 'Create flashcards'}</span>
                 </button>
                 <button
                   type="button"
                   onClick={requestCreateQuiz}
                   disabled={Boolean(flashcardGeneration || quizGeneration)}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 text-sm font-bold text-[color:var(--color-text)] transition-all duration-200 hover:bg-[color:var(--color-surface-2)] disabled:cursor-wait disabled:opacity-60"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-2 text-sm font-bold text-[color:var(--color-text)] transition-all duration-200 hover:bg-[color:var(--color-surface-2)] disabled:cursor-wait disabled:opacity-60"
                 >
                   {quizGeneration ? <Loader2 className="animate-spin" size={18} /> : quizId ? <FileQuestion size={18} /> : <Sparkles size={18} />}
-                  <span>{quizId ? 'Try quiz now' : quizGeneration ? 'Creating quiz' : 'Create quiz'}</span>
+                  <span className="min-w-0 break-words">{quizId ? 'Try quiz now' : quizGeneration ? 'Creating quiz' : 'Create quiz'}</span>
                 </button>
                 <button
                   type="button"
@@ -1233,10 +1244,10 @@ export default function StudyGuidePage() {
                     setEditing(true);
                   }}
                   disabled={Boolean(flashcardGeneration || quizGeneration)}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 text-sm font-bold text-[color:var(--color-accent-text)] transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95 disabled:cursor-wait disabled:opacity-60"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 py-2 text-sm font-bold text-[color:var(--color-accent-text)] transition-all duration-200 hover:-translate-y-0.5 hover:opacity-95 disabled:cursor-wait disabled:opacity-60"
                 >
                   <Edit2 size={18} />
-                  <span>Edit</span>
+                  <span className="min-w-0 break-words">Edit</span>
                 </button>
               </div>
             </div>

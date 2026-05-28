@@ -1,20 +1,37 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
 import { fetchPreferences, savePreferences } from '../services/preferences.service';
-import { DEFAULT_PREFERENCES } from '../constants/themes';
+import { DEFAULT_PREFERENCES, FONT_SIZE_MAX, FONT_SIZE_MIN } from '../constants/themes';
 import { supabase } from '../../auth/context/AuthContext';
+
+export const PREFERENCES_CACHE_KEY = 'sharp-study-prefs';
+export const PREFERENCES_CACHE_UPDATED_AT_KEY = 'sharp-study-prefs-updated-at';
+
+function normalizePreferences(prefs = {}) {
+  const nextPrefs = { ...DEFAULT_PREFERENCES, ...(prefs || {}) };
+  const rawSize = Number(nextPrefs.font_size) || DEFAULT_PREFERENCES.font_size;
+  const size = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, rawSize));
+
+  return {
+    ...nextPrefs,
+    display_mode: nextPrefs.display_mode === 'dark' ? 'dark' : 'light',
+    font_size: size,
+  };
+}
 
 /**
  * Applies a preferences object to the document root element
  * by setting data attributes and CSS custom properties.
  * This is a pure side-effect function — no React state.
  */
-export function applyPreferences(prefs) {
+export function applyPreferences(prefs, options = {}) {
   const root = document.documentElement;
-  const nextPrefs = { ...DEFAULT_PREFERENCES, ...prefs };
+  const nextPrefs = normalizePreferences(prefs);
+  const { persist = true, touchCache = true } = options;
 
   // Display mode
   const mode = nextPrefs.display_mode;
   root.setAttribute('data-display', mode);
+  root.setAttribute('data-theme', mode);
 
   // Atmosphere
   const atmosphere = nextPrefs.atmosphere;
@@ -25,15 +42,21 @@ export function applyPreferences(prefs) {
   root.setAttribute('data-font', font);
 
   // Font size
-  const size = Number(nextPrefs.font_size) || DEFAULT_PREFERENCES.font_size;
-  root.style.setProperty('--font-scale', `${size}px`);
-  root.style.setProperty('--base-font-size', `${size}px`);
+  const size = nextPrefs.font_size;
+  root.style.setProperty('--font-scale', '16px');
+  root.style.setProperty('--base-font-size', '16px');
+  root.style.setProperty('--reader-font-size', `${size}px`);
 
   // Persist to localStorage for instant reload without flash
-  try {
-    localStorage.setItem('sharp-study-prefs', JSON.stringify({ ...nextPrefs, font_size: size }));
-  } catch {
-    // localStorage unavailable — non-fatal
+  if (persist) {
+    try {
+      localStorage.setItem(PREFERENCES_CACHE_KEY, JSON.stringify(nextPrefs));
+      if (touchCache) {
+        localStorage.setItem(PREFERENCES_CACHE_UPDATED_AT_KEY, String(Date.now()));
+      }
+    } catch {
+      // localStorage unavailable — non-fatal
+    }
   }
 
   window.dispatchEvent(new CustomEvent('sharp-study-preferences-applied', {
@@ -45,13 +68,36 @@ export function applyPreferences(prefs) {
  * Reads cached preferences from localStorage.
  * Returns null if nothing is cached.
  */
-function getCachedPreferences() {
+export function getCachedPreferences() {
   try {
-    const raw = localStorage.getItem('sharp-study-prefs');
-    return raw ? JSON.parse(raw) : null;
+    const raw = localStorage.getItem(PREFERENCES_CACHE_KEY);
+    return raw ? normalizePreferences(JSON.parse(raw)) : null;
   } catch {
     return null;
   }
+}
+
+export function getPreferenceCacheUpdatedAt() {
+  try {
+    const value = Number(localStorage.getItem(PREFERENCES_CACHE_UPDATED_AT_KEY) || 0);
+    return Number.isFinite(value) ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function resetPreferencesToDefault() {
+  try {
+    localStorage.removeItem(PREFERENCES_CACHE_KEY);
+    localStorage.removeItem(PREFERENCES_CACHE_UPDATED_AT_KEY);
+    localStorage.removeItem('theme');
+    localStorage.removeItem('fontSize');
+    localStorage.removeItem('fontFamily');
+  } catch {
+    // localStorage unavailable — non-fatal
+  }
+
+  applyPreferences(DEFAULT_PREFERENCES);
 }
 
 /**
@@ -91,16 +137,17 @@ export function useTheme() {
     // Step 1: Apply cached prefs immediately to prevent flicker
     const cached = getCachedPreferences();
     if (cached) {
-      applyPreferences(cached);
+      applyPreferences(cached, { touchCache: false });
     } else {
       // No cache — use OS preference as temporary fallback
       applyPreferences({
         ...DEFAULT_PREFERENCES,
         display_mode: detectOSColorScheme(),
-      });
+      }, { touchCache: false });
     }
 
     const loadPreferences = async () => {
+      const requestStartedAt = Date.now();
       const token = localStorage.getItem('sharp-study-token');
       if (!token) {
         // Not logged in, stop loading
@@ -134,7 +181,8 @@ export function useTheme() {
 
         if (!isMounted.current || !preferences) return;
         if (Object.keys(preferences).length > 0) {
-          applyPreferences({ ...DEFAULT_PREFERENCES, ...preferences });
+          if (getPreferenceCacheUpdatedAt() > requestStartedAt) return;
+          applyPreferences({ ...DEFAULT_PREFERENCES, ...preferences }, { touchCache: false });
         }
       } catch (error) {
         // Network error or timeout — cached/OS fallback stays in place
@@ -156,6 +204,19 @@ export function useTheme() {
 
     loadPreferences();
 
+    const reapplyCachedPreferences = () => {
+      applyPreferences(getCachedPreferences() || DEFAULT_PREFERENCES, { touchCache: false });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        reapplyCachedPreferences();
+      }
+    };
+
+    window.addEventListener('pageshow', reapplyCachedPreferences);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!session?.access_token) return;
       await loadPreferences();
@@ -163,6 +224,8 @@ export function useTheme() {
 
     return () => {
       isMounted.current = false;
+      window.removeEventListener('pageshow', reapplyCachedPreferences);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       subscription.unsubscribe();
     };
   }, []);

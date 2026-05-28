@@ -34,6 +34,7 @@ import { sanitizePlainText } from '../../../shared/utils/sanitize';
 import StudyNotice from '../../../shared/components/StudyNotice';
 import { FlashcardsPageSkeleton } from '../../../shared/components/PageSkeletons';
 import ContentFeedbackWidget from '../../../shared/components/ContentFeedbackWidget';
+import { recordRecentMaterialOpen } from '../../dashboard/services/recentMaterials';
 
 const HINT_DELAY_MS = 45000;
 const SYNC_DELAY_MS = 20000;
@@ -512,6 +513,16 @@ export default function FlashcardsPage() {
       relatedQuizId,
     });
   }, [cards, id, relatedQuizId, relatedStudyGuideId, set]);
+
+  useEffect(() => {
+    if (!set?.id || loading) return;
+
+    recordRecentMaterialOpen({
+      content_type: 'flashcards',
+      content_id: set.id,
+      title: set.title,
+    }).catch(() => {});
+  }, [loading, set?.id, set?.title]);
 
   useEffect(() => {
     if (!set?.id || !user?.id) return undefined;
@@ -1106,7 +1117,7 @@ function FlashcardPreview({
             </div>
         </div>
 
-        <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
+        <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
           <DifficultyOptionGrid
             value={difficulty}
             options={difficulties}
@@ -1142,7 +1153,7 @@ function FlashcardPreview({
                 <PlayCircle size={20} aria-hidden="true" />
                 Start flashcards
               </button>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
                 <button type="button" onClick={onEdit} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-2.5 text-sm font-black text-[color:var(--color-text)] transition hover:bg-[color:var(--color-surface)]">
                   <BookOpen size={17} aria-hidden="true" />
                   Edit set

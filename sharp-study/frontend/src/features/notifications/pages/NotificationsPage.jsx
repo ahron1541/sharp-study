@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Bell, CheckCheck, Megaphone } from 'lucide-react';
+import { Bell, CheckCheck, Megaphone, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { apiRequest } from '../../../config/api';
@@ -100,6 +100,41 @@ export default function NotificationsPage() {
     }
   }
 
+  async function clearNotification(id) {
+    const target = notifications.find((item) => item.id === id);
+    setSaving(true);
+    try {
+      await apiRequest(`/api/notifications/${id}/dismiss`, { method: 'POST' });
+      setNotifications((current) => current.filter((item) => item.id !== id));
+      if (target && !target.read) {
+        updateUnreadCount((count) => count - 1);
+      }
+      setTotalCount((count) => Math.max(0, count - 1));
+      toast.success('Notification cleared.');
+    } catch (error) {
+      toast.error(error.message || 'Could not clear notification.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function clearAllNotifications() {
+    setSaving(true);
+    try {
+      await apiRequest('/api/notifications/dismiss-all', { method: 'POST' });
+      setNotifications([]);
+      setTotalCount(0);
+      setTotalPages(1);
+      updateUnreadCount(0);
+      setNotificationParams({ page: null });
+      toast.success('Notifications cleared.');
+    } catch (error) {
+      toast.error(error.message || 'Could not clear notifications.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (loading) {
     return (
       <main className="mx-auto w-full max-w-5xl space-y-5 px-4 py-6 sm:px-6 lg:px-8" aria-busy="true">
@@ -120,15 +155,26 @@ export default function NotificationsPage() {
               Updates from the admin team about website changes, maintenance, and important study workspace notices.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={markAllRead}
-            disabled={saving || unreadCount === 0}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 py-2.5 font-black text-[color:var(--color-accent-text)] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <CheckCheck size={18} aria-hidden="true" />
-            Mark all read
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={markAllRead}
+              disabled={saving || unreadCount === 0}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-2.5 font-black text-[color:var(--color-text)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <CheckCheck size={18} aria-hidden="true" />
+              Mark all read
+            </button>
+            <button
+              type="button"
+              onClick={clearAllNotifications}
+              disabled={saving || totalCount === 0}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 py-2.5 font-black text-[color:var(--color-accent-text)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <XCircle size={18} aria-hidden="true" />
+              Clear all
+            </button>
+          </div>
         </div>
       </section>
 
@@ -161,17 +207,28 @@ export default function NotificationsPage() {
                       <p className="mt-2 text-sm leading-7 text-[color:var(--color-text-muted)]">{notice.body}</p>
                       <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">{formatDateTime(notice.published_at)}</p>
                     </div>
-                    {!notice.read ? (
+                    <div className="flex flex-wrap gap-2 sm:justify-end">
+                      {!notice.read ? (
+                        <button
+                          type="button"
+                          onClick={() => markRead(notice.id)}
+                          disabled={saving}
+                          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-sm font-bold text-[color:var(--color-text)] disabled:opacity-60"
+                        >
+                          <CheckCheck size={16} aria-hidden="true" />
+                          Mark read
+                        </button>
+                      ) : null}
                       <button
                         type="button"
-                        onClick={() => markRead(notice.id)}
+                        onClick={() => clearNotification(notice.id)}
                         disabled={saving}
-                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-sm font-bold text-[color:var(--color-text)] disabled:opacity-60"
+                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-sm font-bold text-[color:var(--color-text-muted)] disabled:opacity-60"
                       >
-                        <CheckCheck size={16} aria-hidden="true" />
-                        Mark read
+                        <XCircle size={16} aria-hidden="true" />
+                        Clear
                       </button>
-                    ) : null}
+                    </div>
                   </div>
                 </article>
               ))}

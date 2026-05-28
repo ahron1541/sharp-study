@@ -39,7 +39,7 @@ export default function SettingsPage() {
            <p className="text-text-muted font-medium">Fine-tune your workspace to match your learning style.</p>
         </header>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_20rem] gap-8 items-start">
+        <div className="grid grid-cols-1 gap-8 items-start 2xl:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="space-y-10">
             {/* Desktop Navigation */}
             <div className="flex flex-wrap gap-4">
@@ -52,7 +52,7 @@ export default function SettingsPage() {
                     type="button"
                     disabled={settings.blocking}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center gap-3 px-6 py-4 rounded-3xl transition-all duration-300 border-2 ${
+                    className={`flex min-h-14 min-w-[min(100%,14rem)] flex-1 items-center gap-3 rounded-3xl border-2 px-5 py-3 transition-all duration-300 sm:flex-none sm:px-6 sm:py-4 ${
                       isActive 
                         ? 'bg-accent border-accent text-white shadow-xl shadow-accent/20' 
                         : 'bg-surface border-border text-text-muted hover:border-accent/40'
@@ -70,7 +70,7 @@ export default function SettingsPage() {
             {/* Panel area */}
             <Motion.div
               layout
-              className="bg-surface rounded-[2.5rem] p-8 md:p-10 border border-border shadow-card"
+              className="bg-surface rounded-[2rem] p-5 border border-border shadow-card sm:p-7 md:p-9"
             >
               <AnimatePresence mode="wait">
                 <Motion.div
@@ -88,7 +88,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Sticky Sidebar (Preview) */}
-          <aside className="xl:sticky xl:top-10 space-y-6">
+          <aside className="space-y-6 2xl:sticky 2xl:top-10">
              <div className="bg-surface-2 p-1 rounded-[2.8rem] border border-border">
                 <LivePreviewCard draft={settings.draft} />
              </div>

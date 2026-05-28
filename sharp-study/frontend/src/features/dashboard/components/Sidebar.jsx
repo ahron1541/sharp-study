@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import {
   Archive,
   Home,
@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../auth/context/AuthContext';
 import VersoLogo from '../../../shared/components/VersoLogo';
+import MaterialTypeIcon from '../../library/components/MaterialTypeIcon';
+import { getMaterialRoute } from '../../library/utils/materials';
 
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Home',         icon: Home },
@@ -25,6 +27,7 @@ export default function Sidebar({
   isMobile,
   onMobileClose,
   notificationUnreadCount = 0,
+  recentMaterials = [],
 }) {
   const location = useLocation();
   const { profile } = useAuth();
@@ -144,6 +147,52 @@ export default function Sidebar({
             </li>
           );
         })}
+
+        {!isTransitioning ? (
+          <li className={`mt-3 border-t border-border pt-3 ${collapsed ? 'px-0' : 'px-1'}`}>
+            {!collapsed ? (
+              <p className="px-2 text-[0.68rem] font-black uppercase tracking-[0.16em] text-text-muted">
+                Recent files
+              </p>
+            ) : null}
+
+            <div className={`mt-2 grid gap-1 ${collapsed ? 'justify-items-center' : ''}`}>
+              {recentMaterials.length ? recentMaterials.slice(0, 3).map((item) => {
+                const route = getMaterialRoute(item.content_type, item.content_id);
+                return (
+                  <Link
+                    key={`${item.content_type}-${item.content_id}`}
+                    to={route}
+                    onClick={isMobile ? onMobileClose : undefined}
+                    aria-label={`Open recent file ${item.title}`}
+                    title={item.title}
+                    className={`group flex min-w-0 items-center gap-3 rounded-lg text-sm font-medium text-sidebar-text transition-colors hover:bg-surface-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 ${
+                      collapsed ? 'h-10 w-10 justify-center p-0' : 'px-3 py-2'
+                    }`}
+                  >
+                    <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center text-current" aria-hidden="true">
+                      <MaterialTypeIcon type={item.content_type} size={18} />
+                    </span>
+                    {!collapsed ? (
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{item.title}</span>
+                        <span className="block truncate text-[0.68rem] font-semibold text-text-muted">
+                          {formatRecentType(item.content_type)}
+                        </span>
+                      </span>
+                    ) : null}
+                  </Link>
+                );
+              }) : (
+                !collapsed ? (
+                  <div className="mx-1 rounded-lg border border-dashed border-border px-3 py-3 text-xs font-semibold leading-5 text-text-muted">
+                    Recent files will appear after you open a study guide, flashcards, or quiz.
+                  </div>
+                ) : null
+              )}
+            </div>
+          </li>
+        ) : null}
       </ul>
 
       {/* Footer actions — pinned to bottom */}
@@ -215,4 +264,10 @@ export default function Sidebar({
 function formatSidebarBadgeCount(count) {
   const normalized = Math.max(0, Number(count || 0));
   return normalized > 99 ? '99+' : String(normalized);
+}
+
+function formatRecentType(type) {
+  if (type === 'flashcards') return 'Flashcards';
+  if (type === 'quiz') return 'Quiz';
+  return 'Study guide';
 }

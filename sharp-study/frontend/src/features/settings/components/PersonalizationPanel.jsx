@@ -42,7 +42,7 @@ export default function PersonalizationPanel({
         <h3 className="text-sm font-bold text-text-muted uppercase tracking-widest flex items-center gap-2">
           <Layers size={14} /> Display Preference
         </h3>
-        <div className="grid grid-cols-2 gap-4 p-1.5 bg-surface-2 rounded-3xl border border-border max-w-sm">
+        <div className="grid max-w-sm grid-cols-1 gap-2 rounded-3xl border border-border bg-surface-2 p-1.5 sm:grid-cols-2">
           {DISPLAY_MODES.map((mode) => {
             const isActive = draft.display_mode === mode.id;
             const Icon = mode.id === 'dark' ? Moon : Sun;
@@ -52,7 +52,7 @@ export default function PersonalizationPanel({
                 type="button"
                 disabled={blocking}
                 onClick={() => updateDraft('display_mode', mode.id)}
-                className={`flex items-center justify-center gap-2 py-3 rounded-2xl transition-all duration-300 font-bold ${
+                className={`flex min-h-12 items-center justify-center gap-2 rounded-2xl px-3 py-2 text-center font-bold transition-all duration-300 ${
                   isActive 
                     ? 'bg-surface text-accent shadow-sm' 
                     : 'text-text-muted hover:text-text'
@@ -69,7 +69,7 @@ export default function PersonalizationPanel({
       {/* Atmosphere / Color */}
       <section className="space-y-4">
         <h3 className="text-sm font-bold text-text-muted uppercase tracking-widest">Atmosphere Preset</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {ATMOSPHERE_PRESETS.map((preset) => {
             const isActive = draft.atmosphere === preset.id;
             return (
@@ -78,13 +78,13 @@ export default function PersonalizationPanel({
                 type="button"
                 disabled={blocking}
                 onClick={() => updateDraft('atmosphere', preset.id)}
-                className={`relative h-14 rounded-2xl px-6 flex items-center gap-3 transition-all duration-300 ${
+                className={`relative flex min-h-14 items-center gap-3 rounded-2xl px-5 py-3 text-left transition-all duration-300 ${
                   isActive ? 'ring-2 ring-accent ring-offset-4' : 'hover:scale-102'
                 }`}
                 style={{ background: preset.bg, color: preset.textColor }}
               >
                 {isActive && <Check size={18} />}
-                <span className="font-bold">{preset.label}</span>
+                <span className="font-bold leading-tight">{preset.label}</span>
               </button>
             );
           })}
@@ -96,7 +96,7 @@ export default function PersonalizationPanel({
         <h3 className="text-sm font-bold text-text-muted uppercase tracking-widest flex items-center gap-2">
           <Type size={14} /> Typography
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
            {FONT_FAMILIES.map((font) => {
              const isActive = draft.font_family === font.id;
              return (
@@ -106,7 +106,7 @@ export default function PersonalizationPanel({
                   disabled={blocking}
                   onClick={() => updateDraft('font_family', font.id)}
                   style={{ fontFamily: FONT_PREVIEW[font.id] }}
-                  className={`p-5 rounded-2xl border-2 text-left transition-all ${
+                  className={`min-h-32 rounded-2xl border-2 p-4 text-left transition-all sm:p-5 ${
                     isActive 
                       ? 'border-accent bg-accent/5 text-accent ring-2 ring-accent/10' 
                       : 'border-border bg-surface-2 text-text hover:border-accent/40'
@@ -162,12 +162,12 @@ export default function PersonalizationPanel({
       ) : null}
 
       {/* Footer Actions */}
-      <footer className="pt-8 border-t border-border flex items-center gap-4">
+      <footer className="flex flex-col gap-3 border-t border-border pt-8 sm:flex-row sm:flex-wrap sm:items-center">
         <button
           type="button"
           onClick={save}
           disabled={!hasChanges || saving}
-          className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-2xl font-bold transition-all ${
+          className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-6 py-3 font-bold transition-all sm:w-auto ${
             hasChanges 
               ? 'bg-accent text-white shadow-lg shadow-accent/20 hover:-translate-y-0.5' 
               : 'bg-surface-2 text-text-muted cursor-not-allowed opacity-50'
@@ -181,7 +181,7 @@ export default function PersonalizationPanel({
             type="button"
             disabled={blocking}
             onClick={discardChanges}
-            className="px-8 py-4 rounded-2xl font-bold text-text-muted hover:bg-surface-2 transition-all flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-6 py-3 font-bold text-text-muted transition-all hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
             <RotateCcw size={18} />
             Discard

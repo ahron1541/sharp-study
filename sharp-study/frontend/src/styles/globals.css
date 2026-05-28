@@ -51,7 +51,7 @@ p  { font-size: 1rem; }
 /* =============================
    FLEXIBLE IMAGES
    ============================= */
-img, video, canvas, svg {
+img, video, canvas {
   max-width: 100%;
   height: auto;
   display: block;
@@ -318,7 +318,7 @@ body {
 .study-guide-editor .ProseMirror {
   min-height: 100%;
   color: var(--text-color);
-  font-size: 0.98rem;
+  font-size: var(--reader-font-size, 1rem);
   line-height: 1.85;
   outline: none;
   caret-color: var(--color-accent);
@@ -520,7 +520,7 @@ body {
 
 .study-guide-content {
   color: var(--text-color);
-  font-size: 0.975rem;
+  font-size: var(--reader-font-size, 1rem);
   line-height: 1.8;
   overflow-wrap: anywhere;
 }
@@ -589,7 +589,7 @@ body {
 .study-guide-content p {
   margin-bottom: 1em;
   color: var(--text-color);
-  font-size: 0.975rem;
+  font-size: 1em;
 }
 
 .study-guide-content code,
@@ -598,7 +598,7 @@ body {
 .study-guide-content summary,
 .study-guide-content blockquote,
 .study-guide-content li {
-  font-size: 0.95rem;
+  font-size: 0.95em;
 }
 
 .study-guide-content h1,

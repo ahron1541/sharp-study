@@ -5,6 +5,7 @@ import TopBar  from './TopBar';
 import { apiRequest } from '../../../config/api';
 import { useAuth } from '../../auth/context/AuthContext';
 import { NOTIFICATION_UNREAD_COUNT_CHANGED } from '../../notifications/notificationEvents';
+import { fetchRecentMaterials, RECENT_MATERIALS_CHANGED } from '../services/recentMaterials';
 
 const COLLAPSED_KEY = 'sharp-study-sidebar-collapsed';
 
@@ -24,6 +25,7 @@ export default function AppShell() {
   const [mobileOpen, setMobileOpen]   = useState(false);
   const [isMobile, setIsMobile]       = useState(window.innerWidth < 768);
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const [recentMaterials, setRecentMaterials] = useState([]);
 
   useEffect(() => {
     const observer = new ResizeObserver(() => {
@@ -36,6 +38,7 @@ export default function AppShell() {
   useEffect(() => {
     if (!profile?.id) {
       setNotificationUnreadCount(0);
+      setRecentMaterials([]);
       return undefined;
     }
 
@@ -51,6 +54,31 @@ export default function AppShell() {
 
     return () => {
       mounted = false;
+    };
+  }, [profile?.id]);
+
+  useEffect(() => {
+    if (!profile?.id) {
+      setRecentMaterials([]);
+      return undefined;
+    }
+
+    let mounted = true;
+    const loadRecent = () => {
+      fetchRecentMaterials(3)
+        .then((data) => {
+          if (mounted) setRecentMaterials(data.items || []);
+        })
+        .catch(() => {
+          if (mounted) setRecentMaterials([]);
+        });
+    };
+
+    loadRecent();
+    window.addEventListener(RECENT_MATERIALS_CHANGED, loadRecent);
+    return () => {
+      mounted = false;
+      window.removeEventListener(RECENT_MATERIALS_CHANGED, loadRecent);
     };
   }, [profile?.id]);
 
@@ -84,6 +112,7 @@ export default function AppShell() {
             collapsed={collapsed}
             onToggle={handleMenuToggle}
             notificationUnreadCount={notificationUnreadCount}
+            recentMaterials={recentMaterials}
           />
         </aside>
       )}
@@ -95,6 +124,7 @@ export default function AppShell() {
           isMobile
           onMobileClose={() => setMobileOpen(false)}
           notificationUnreadCount={notificationUnreadCount}
+          recentMaterials={recentMaterials}
         />
       )}
 

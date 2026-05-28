@@ -37,8 +37,8 @@
   /* Input */
   --input-height:        2.875rem;
   --input-padding-x:     1.25rem;
-  --input-border-color:  #D1D5DB;
-  --input-bg:            #FFFFFF;
+  --input-border-color:  var(--color-border, #D1D5DB);
+  --input-bg:            var(--color-surface, #FFFFFF);
   --input-focus-shadow:  0 0 0 3px rgba(67, 97, 238, 0.18);
 
   /* Button */
@@ -46,8 +46,8 @@
   --btn-padding-x: 1.5rem;
 
   /* Auth page background */
-  --auth-page-bg:   #F0F2F5;
-  --auth-right-bg:  #F5F5F5;
+  --auth-page-bg:   var(--color-bg, #F0F2F5);
+  --auth-right-bg:  var(--color-surface, #F5F5F5);
 
   /* Shadow */
   --shadow-card: 0 4px 32px rgba(0, 0, 0, 0.10);

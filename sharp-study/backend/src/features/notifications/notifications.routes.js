@@ -12,6 +12,7 @@ router.use(requireAuth);
 const DEFAULT_PAGE_SIZE = 8;
 const MAX_PAGE_SIZE = 25;
 const MAX_VISIBLE_NOTIFICATIONS = 1000;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function parsePositiveInt(value, fallback, max = 1000) {
   const parsed = Number.parseInt(String(value || ''), 10);
@@ -31,6 +32,10 @@ function buildPagination(page, pageSize, totalCount) {
     totalPages,
     total_pages: totalPages,
   };
+}
+
+function isMissingTableError(error) {
+  return error?.code === '42P01';
 }
 
 function applyVisibleAnnouncementFilters(query, nowIso) {
@@ -74,24 +79,29 @@ router.get('/', async (req, res) => {
     const nowIso = new Date().toISOString();
 
     const [
-      { data: announcements, error: announcementError, count },
+      { data: announcements, error: announcementError },
       { data: reads, error: readError },
+      { data: dismissals, error: dismissalError },
     ] = await Promise.all([
       applyVisibleAnnouncementFilters(
         supabaseAdmin
           .from('announcements')
-          .select('id, title, body, category, priority, status, starts_at, ends_at, created_at, updated_at', { count: 'exact' }),
+          .select('id, title, body, category, priority, status, starts_at, ends_at, created_at, updated_at'),
         nowIso
       )
         .order('updated_at', { ascending: false })
-        .range(from, to),
+        .limit(MAX_VISIBLE_NOTIFICATIONS),
       supabaseAdmin
         .from('announcement_reads')
         .select('announcement_id')
         .eq('user_id', req.user.id),
+      supabaseAdmin
+        .from('announcement_dismissals')
+        .select('announcement_id')
+        .eq('user_id', req.user.id),
     ]);
 
-    if (announcementError?.code === '42P01' || readError?.code === '42P01') {
+    if (isMissingTableError(announcementError) || isMissingTableError(readError)) {
       return res.json({
         notifications: [],
         unread_count: 0,
@@ -100,25 +110,20 @@ router.get('/', async (req, res) => {
     }
     if (announcementError) throw announcementError;
     if (readError) throw readError;
+    if (dismissalError && !isMissingTableError(dismissalError)) throw dismissalError;
 
     const readIds = new Set((reads || []).map((item) => item.announcement_id));
-    let visibleReadIds = new Set();
-    if (readIds.size > 0) {
-      const { data: readAnnouncements, error: readAnnouncementsError } = await supabaseAdmin
-        .from('announcements')
-        .select('id, status, starts_at, ends_at')
-        .in('id', Array.from(readIds));
-
-      if (readAnnouncementsError) throw readAnnouncementsError;
-      visibleReadIds = new Set((readAnnouncements || [])
-        .filter(isVisibleAnnouncement)
-        .map((item) => item.id));
-    }
-
-    const notifications = (announcements || [])
+    const dismissedIds = new Set((dismissals || []).map((item) => item.announcement_id));
+    const visibleAnnouncements = (announcements || [])
+      .filter((item) => !dismissedIds.has(item.id));
+    const notifications = visibleAnnouncements
+      .slice(from, to + 1)
       .map((item) => normalizeAnnouncement(item, readIds));
-    const totalCount = count ?? notifications.length;
-    const unreadCount = Math.max(0, totalCount - visibleReadIds.size);
+    const totalCount = visibleAnnouncements.length;
+    const visibleReadCount = visibleAnnouncements
+      .filter((item) => readIds.has(item.id))
+      .length;
+    const unreadCount = Math.max(0, totalCount - visibleReadCount);
 
     res.json({
       notifications,
@@ -139,7 +144,7 @@ router.get('/', async (req, res) => {
 router.post('/:id/read', async (req, res) => {
   try {
     const announcementId = String(req.params.id || '').trim();
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(announcementId)) {
+    if (!UUID_PATTERN.test(announcementId)) {
       return res.status(400).json({ error: 'Invalid notification id.' });
     }
 
@@ -177,6 +182,38 @@ router.post('/:id/read', async (req, res) => {
       metadata: { user_id: req.user.id, notification_id: req.params.id, error: error.message },
     });
     res.status(500).json({ error: 'Failed to mark notification read.' });
+  }
+});
+
+router.post('/:id/dismiss', async (req, res) => {
+  try {
+    const announcementId = String(req.params.id || '').trim();
+    if (!UUID_PATTERN.test(announcementId)) {
+      return res.status(400).json({ error: 'Invalid notification id.' });
+    }
+
+    const { error } = await supabaseAdmin
+      .from('announcement_dismissals')
+      .upsert({
+        user_id: req.user.id,
+        announcement_id: announcementId,
+        dismissed_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,announcement_id' });
+
+    if (isMissingTableError(error)) {
+      return res.status(409).json({ error: 'Notification clearing is not configured yet.' });
+    }
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error) {
+    await writeSystemLog({
+      level: 'error',
+      source: 'notifications',
+      message: 'Failed to dismiss notification.',
+      metadata: { user_id: req.user.id, notification_id: req.params.id, error: error.message },
+    });
+    res.status(500).json({ error: 'Failed to clear notification.' });
   }
 });
 
@@ -241,6 +278,71 @@ router.post('/read-all', async (req, res) => {
       metadata: { user_id: req.user.id, error: error.message },
     });
     res.status(500).json({ error: 'Failed to mark notifications read.' });
+  }
+});
+
+router.post('/dismiss-all', async (req, res) => {
+  try {
+    const nowIso = new Date().toISOString();
+    const [
+      { data: announcements, error: announcementError },
+      { data: dismissals, error: dismissalLookupError },
+    ] = await Promise.all([
+      applyVisibleAnnouncementFilters(
+        supabaseAdmin
+          .from('announcements')
+          .select('id, status, starts_at, ends_at'),
+        nowIso
+      )
+        .order('updated_at', { ascending: false })
+        .limit(MAX_VISIBLE_NOTIFICATIONS),
+      supabaseAdmin
+        .from('announcement_dismissals')
+        .select('announcement_id')
+        .eq('user_id', req.user.id),
+    ]);
+
+    if (isMissingTableError(announcementError)) {
+      return res.json({ success: true, count: 0 });
+    }
+    if (announcementError) throw announcementError;
+    if (dismissalLookupError && !isMissingTableError(dismissalLookupError)) throw dismissalLookupError;
+    if (isMissingTableError(dismissalLookupError)) {
+      return res.status(409).json({ error: 'Notification clearing is not configured yet.' });
+    }
+
+    const dismissedIds = new Set((dismissals || []).map((item) => item.announcement_id));
+    const visibleIds = (announcements || [])
+      .filter(isVisibleAnnouncement)
+      .map((item) => item.id)
+      .filter((announcementId) => !dismissedIds.has(announcementId));
+
+    if (!visibleIds.length) {
+      return res.json({ success: true, count: 0 });
+    }
+
+    const dismissedAt = new Date().toISOString();
+    const { error } = await supabaseAdmin
+      .from('announcement_dismissals')
+      .upsert(
+        visibleIds.map((announcementId) => ({
+          user_id: req.user.id,
+          announcement_id: announcementId,
+          dismissed_at: dismissedAt,
+        })),
+        { onConflict: 'user_id,announcement_id' }
+      );
+
+    if (error) throw error;
+    res.json({ success: true, count: visibleIds.length });
+  } catch (error) {
+    await writeSystemLog({
+      level: 'error',
+      source: 'notifications',
+      message: 'Failed to dismiss notifications.',
+      metadata: { user_id: req.user.id, error: error.message },
+    });
+    res.status(500).json({ error: 'Failed to clear notifications.' });
   }
 });
 

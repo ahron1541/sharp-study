@@ -254,6 +254,24 @@ export default function LibraryPage() {
     setLibraryParams({ mode: nextMode });
   };
 
+  const handleWizardBack = () => {
+    if (saving) return;
+
+    if (creationMode) {
+      setCreationModeState(null);
+      setTitle('');
+      setManualText(createDefaultManualText(selectedType));
+      setFile(null);
+      setProgress({ value: 0, title: '', detail: '' });
+      setLibraryParams({ mode: null });
+      return;
+    }
+
+    if (selectedType) {
+      handleSelectType(null);
+    }
+  };
+
   const handleSearchChange = (value) => {
     setLibraryParams({ q: value || null, page: null });
   };
@@ -782,6 +800,7 @@ export default function LibraryPage() {
         onClose={closeWizard}
         onSelectType={handleSelectType}
         onSelectMode={handleSelectMode}
+        onBack={handleWizardBack}
         onTitleChange={setTitle}
         onManualTextChange={setManualText}
         onFileChange={handleFileChange}
@@ -862,6 +881,7 @@ function CreateWizard({
   onClose,
   onSelectType,
   onSelectMode,
+  onBack,
   onTitleChange,
   onManualTextChange,
   onFileChange,
@@ -871,6 +891,7 @@ function CreateWizard({
 }) {
   const selectedMeta = selectedType ? MATERIAL_TYPES[selectedType] : null;
   const currentStep = !selectedType ? 1 : !creationMode ? 2 : 3;
+  const canGoBack = currentStep > 1 && !saving;
   const canCancelGeneration = saving && generationElapsedMs >= GENERATION_CANCEL_DELAY_MS;
   const generationSeconds = Math.floor(generationElapsedMs / 1000);
 
@@ -885,6 +906,18 @@ function CreateWizard({
       showCloseButton={!saving}
     >
       <div className="space-y-6">
+        {currentStep > 1 ? (
+          <button
+            type="button"
+            onClick={onBack}
+            disabled={!canGoBack}
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-bold text-text-muted transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <ArrowRight size={16} aria-hidden="true" className="rotate-180" />
+            Back
+          </button>
+        ) : null}
+
         <section className="rounded-[2rem] border border-border bg-surface-2/80 p-5">
           <p className="text-xs font-black uppercase tracking-[0.22em] text-text-muted">Step {currentStep} of 3</p>
           <h3 className="mt-2 text-2xl font-black text-text">
