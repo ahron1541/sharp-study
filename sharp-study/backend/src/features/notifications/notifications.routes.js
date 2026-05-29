@@ -74,12 +74,23 @@ function normalizeAnnouncement(row, readIds = new Set()) {
 }
 
 function reportStatusLabel(status) {
+  if (status === 'open') return 'Open';
   if (status === 'reviewing') return 'Under review';
   if (status === 'resolved') return 'Resolved';
+  if (status === 'dismissed') return 'Dismissed';
   return sanitizePlainText(status || 'Updated');
 }
 
-function reportNotificationTitle(status) {
+function hasAdminResponse(report) {
+  return Boolean(String(report?.admin_notes || '').trim());
+}
+
+function isReportNotificationEligible(report) {
+  return REPORT_NOTIFICATION_STATUSES.includes(report?.status) || hasAdminResponse(report);
+}
+
+function reportNotificationTitle(status, hasResponse = false) {
+  if (hasResponse) return 'Admin responded to your feedback';
   if (status === 'reviewing') return 'Your feedback is under review';
   if (status === 'resolved') return 'Your feedback was resolved';
   return 'Your feedback was updated';
@@ -126,7 +137,7 @@ function normalizeReportNotification(row, prefs) {
     id: `${REPORT_NOTIFICATION_PREFIX}${row.id}`,
     source: 'feedback_report',
     report_id: row.id,
-    title: reportNotificationTitle(row.status),
+    title: reportNotificationTitle(row.status, Boolean(adminMessage)),
     body: adminMessage ? `Admin response: ${adminMessage}` : fallbackBody,
     category: 'feedback',
     priority: row.status === 'reviewing' ? 'high' : 'normal',
@@ -177,13 +188,12 @@ async function fetchReportNotificationRows(userId) {
     .from('ai_content_reports')
     .select('id, user_id, content_title, content_type, reason, status, admin_notes, created_at, updated_at, resolved_at')
     .eq('user_id', userId)
-    .in('status', REPORT_NOTIFICATION_STATUSES)
     .order('updated_at', { ascending: false })
     .limit(MAX_VISIBLE_NOTIFICATIONS);
 
   if (isMissingTableError(error)) return [];
   if (error) throw error;
-  return data || [];
+  return (data || []).filter(isReportNotificationEligible);
 }
 
 function visibleReportRows(rows, prefs) {
@@ -196,17 +206,16 @@ function visibleReportRows(rows, prefs) {
 async function markReportNotification(userId, reportId, bucket) {
   const { data: report, error } = await supabaseAdmin
     .from('ai_content_reports')
-    .select('id, user_id, status, updated_at, resolved_at, created_at')
+    .select('id, user_id, status, admin_notes, updated_at, resolved_at, created_at')
     .eq('id', reportId)
     .eq('user_id', userId)
-    .in('status', REPORT_NOTIFICATION_STATUSES)
     .maybeSingle();
 
   if (isMissingTableError(error)) {
     return { notFound: true };
   }
   if (error) throw error;
-  if (!report) {
+  if (!report || !isReportNotificationEligible(report)) {
     return { notFound: true };
   }
 

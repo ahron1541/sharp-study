@@ -110,7 +110,9 @@ export default function AdminReportDetailPage() {
   async function saveNotes(event) {
     event.preventDefault();
     if (!report) return;
-    await runAction('Response sent', () => updateAdminFeedbackReport(report.id, { admin_notes: notes }), loadReport);
+    const notifiesByStatus = ['reviewing', 'resolved'].includes(report.status);
+    const successLabel = notifiesByStatus ? 'Response sent' : 'Response sent and user will be notified';
+    await runAction(successLabel, () => updateAdminFeedbackReport(report.id, { admin_notes: notes }), loadReport);
   }
 
   async function confirmDelete() {

@@ -19,8 +19,10 @@ function labelCategory(category = '') {
 }
 
 function labelStatus(status = '') {
+  if (status === 'open') return 'Open';
   if (status === 'reviewing') return 'Under review';
   if (status === 'resolved') return 'Resolved';
+  if (status === 'dismissed') return 'Dismissed';
   return status;
 }
 
