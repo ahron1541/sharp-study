@@ -25,6 +25,7 @@ const FlashcardsPage = lazy(() => import('../features/flashcards/pages/Flashcard
 const QuizPage = lazy(() => import('../features/quiz/pages/QuizPage'));
 const QuizBuilderPage = lazy(() => import('../features/quiz/pages/QuizBuilderPage'));
 const AdminPage = lazy(() => import('../features/admin/pages/AdminPage'));
+const AdminReportDetailPage = lazy(() => import('../features/admin/pages/AdminReportDetailPage'));
 const NotFoundPage = lazy(() => import('../features/errors/pages/NotFoundPage'));
 const SettingsPage = lazy(() => import('../features/settings/pages/SettingsPage'));
 
@@ -99,6 +100,7 @@ export default function AppRouter() {
             }
           >
             <Route path="/admin" element={<AdminPage />} />
+            <Route path="/admin/reports/:id" element={<AdminReportDetailPage />} />
           </Route>
 
           {/* 404 */}

@@ -69,6 +69,10 @@ export function fetchAdminFeedback(params) {
   return apiRequest(`/api/admin/feedback${toQuery(params)}`);
 }
 
+export function fetchAdminFeedbackReport(id) {
+  return apiRequest(`/api/admin/feedback/${id}`);
+}
+
 export function updateAdminFeedbackReport(id, payload) {
   return apiRequest(`/api/admin/feedback/${id}`, {
     method: 'PATCH',

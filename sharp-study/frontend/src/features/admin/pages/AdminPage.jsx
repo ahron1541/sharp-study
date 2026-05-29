@@ -1,5 +1,5 @@
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
@@ -9,8 +9,11 @@ import {
   CheckCircle2,
   Database,
   Edit3,
+  Eye,
+  EyeOff,
   FileWarning,
   Gauge,
+  Key,
   Loader2,
   Megaphone,
   Moon,
@@ -33,6 +36,13 @@ import { DEFAULT_PREFERENCES } from '../../theme/constants/themes';
 import { applyPreferences } from '../../theme/hooks/useTheme';
 import { savePreferences } from '../../theme/services/preferences.service';
 import { useAuth } from '../../auth/context/AuthContext';
+import { changePassword } from '../../auth/shared/services/auth.service';
+import {
+  getPasswordScore,
+  MIN_PASSWORD_LENGTH,
+  MIN_PASSWORD_SCORE,
+  PASSWORD_REQUIREMENTS,
+} from '../../auth/shared/utils/passwordPolicy';
 import {
   clearAdminOldSystemLogs,
   createAdminAnnouncement,
@@ -188,8 +198,26 @@ const REPORT_REASONS = {
   other: 'Other',
 };
 
+const PASSWORD_CHECK_LABELS = {
+  length: '12+ characters strength point',
+  upper: 'One uppercase letter',
+  lower: 'One lowercase letter',
+  number: 'One number',
+  special: 'One special character',
+};
+
+const PASSWORD_POLICY_CHECKS = [
+  { key: 'minimum', label: `At least ${MIN_PASSWORD_LENGTH} characters`, test: (value) => value.length >= MIN_PASSWORD_LENGTH },
+  ...PASSWORD_REQUIREMENTS.map((rule) => ({
+    ...rule,
+    label: PASSWORD_CHECK_LABELS[rule.key] || rule.key,
+  })),
+];
+
 export default function AdminPage() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const section = useMemo(() => {
     const value = searchParams.get('section') || 'overview';
@@ -377,6 +405,11 @@ export default function AdminPage() {
         });
       },
     });
+  }
+
+  function openReportDetail(report) {
+    const returnTo = `${location.pathname}${location.search || '?section=feedback'}`;
+    navigate(`/admin/reports/${report.id}?returnTo=${encodeURIComponent(returnTo)}`);
   }
 
   function requestUpdateReport(report, payload) {
@@ -641,6 +674,7 @@ export default function AdminPage() {
             feedback={feedback}
             filters={feedbackFilters}
             onFilters={setFeedbackFilters}
+            onView={openReportDetail}
             onUpdate={requestUpdateReport}
             onDelete={requestDeleteReport}
             busy={action.active}
@@ -836,7 +870,7 @@ function UsersSection({ users, filters, pagination, onFilters, onCreate, onEdit,
   );
 }
 
-function FeedbackSection({ feedback, filters, onFilters, onUpdate, onDelete, busy }) {
+function FeedbackSection({ feedback, filters, onFilters, onView, onUpdate, onDelete, busy }) {
   const reports = feedback?.reports || [];
   const pagination = feedback?.pagination || { page: 1, totalPages: 1, totalCount: 0 };
 
@@ -867,6 +901,7 @@ function FeedbackSection({ feedback, filters, onFilters, onUpdate, onDelete, bus
                 <p className="mt-3 text-xs text-text-muted">Reporter: {report.reporter?.name} · Owner: {report.owner?.name} · {formatDateTime(report.created_at)}</p>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 xl:w-52 xl:grid-cols-1">
+                <SecondaryButton onClick={() => onView(report)} icon={Eye} disabled={busy}>View report</SecondaryButton>
                 <SecondaryButton onClick={() => onUpdate(report, { status: 'reviewing' })} icon={Search} disabled={busy}>Reviewing</SecondaryButton>
                 <SecondaryButton onClick={() => onUpdate(report, { status: 'resolved' })} icon={CheckCircle2} disabled={busy}>Resolve</SecondaryButton>
                 <SecondaryButton onClick={() => onUpdate(report, { status: 'dismissed' })} icon={XCircle} disabled={busy}>Dismiss</SecondaryButton>
@@ -1068,15 +1103,149 @@ function HealthSection({ data, onDeleteLog, onClearOldLogs, onLogPage, busy }) {
 
 function SettingsSection({ draft, onDraft, onSave, busy }) {
   return (
-    <Panel title="Theme Settings" eyebrow="Light/Dark only" icon={Sun}>
-      <div className="grid gap-4 md:grid-cols-2">
-        <ThemeCard active={draft.display_mode === 'light'} icon={Sun} title="Light mode" body="Bright surfaces for classroom or daytime review." onClick={() => onDraft({ ...draft, display_mode: 'light' })} />
-        <ThemeCard active={draft.display_mode === 'dark'} icon={Moon} title="Dark mode" body="Lower-glare surfaces for longer admin review sessions." onClick={() => onDraft({ ...draft, display_mode: 'dark' })} />
+    <div className="space-y-5">
+      <Panel title="Theme Settings" eyebrow="Light/Dark only" icon={Sun}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <ThemeCard active={draft.display_mode === 'light'} icon={Sun} title="Light mode" body="Bright surfaces for classroom or daytime review." onClick={() => onDraft({ ...draft, display_mode: 'light' })} />
+          <ThemeCard active={draft.display_mode === 'dark'} icon={Moon} title="Dark mode" body="Lower-glare surfaces for longer admin review sessions." onClick={() => onDraft({ ...draft, display_mode: 'dark' })} />
+        </div>
+        <div className="mt-5 flex justify-end">
+          <PrimaryButton onClick={onSave} icon={CheckCircle2} disabled={busy}>Save settings</PrimaryButton>
+        </div>
+      </Panel>
+
+      <Panel title="Account Security" eyebrow="Password" icon={Key}>
+        <AdminPasswordChangeForm disabled={busy} />
+      </Panel>
+    </div>
+  );
+}
+
+function AdminPasswordChangeForm({ disabled }) {
+  const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [visible, setVisible] = useState({ current: false, next: false, confirm: false });
+  const [saving, setSaving] = useState(false);
+  const checks = PASSWORD_POLICY_CHECKS.map((rule) => ({ ...rule, passed: rule.test(form.newPassword) }));
+  const passwordScore = getPasswordScore(form.newPassword);
+  const meetsPolicy = form.newPassword.length >= MIN_PASSWORD_LENGTH && passwordScore >= MIN_PASSWORD_SCORE;
+  const passwordsMatch = form.confirmPassword.length > 0 && form.newPassword === form.confirmPassword;
+  const passwordsMismatch = form.confirmPassword.length > 0 && form.newPassword !== form.confirmPassword;
+  const formDisabled = disabled || saving;
+  const canSubmit = Boolean(form.currentPassword) && meetsPolicy && passwordsMatch && !formDisabled;
+
+  async function submitPassword(event) {
+    event.preventDefault();
+    if (!meetsPolicy) {
+      toast.error(`New password must be at least ${MIN_PASSWORD_LENGTH} characters and pass ${MIN_PASSWORD_SCORE} strength checks.`);
+      return;
+    }
+    if (form.newPassword !== form.confirmPassword) {
+      toast.error('New passwords do not match.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const result = await changePassword({
+        currentPassword: form.currentPassword,
+        newPassword: form.newPassword,
+      });
+      toast.success(result.message || 'Password updated successfully.');
+      setForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setVisible({ current: false, next: false, confirm: false });
+    } catch (error) {
+      toast.error(error.message || 'Failed to update password.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(16rem,0.75fr)]" onSubmit={submitPassword}>
+      <div className="space-y-4">
+        <PasswordField
+          id="admin-current-password"
+          label="Current password"
+          value={form.currentPassword}
+          visible={visible.current}
+          disabled={formDisabled}
+          autoComplete="current-password"
+          onToggle={() => setVisible((current) => ({ ...current, current: !current.current }))}
+          onChange={(currentPassword) => setForm((current) => ({ ...current, currentPassword }))}
+        />
+        <PasswordField
+          id="admin-new-password"
+          label="New password"
+          value={form.newPassword}
+          visible={visible.next}
+          disabled={formDisabled}
+          autoComplete="new-password"
+          onToggle={() => setVisible((current) => ({ ...current, next: !current.next }))}
+          onChange={(newPassword) => setForm((current) => ({ ...current, newPassword }))}
+        />
+        <PasswordField
+          id="admin-confirm-password"
+          label="Confirm new password"
+          value={form.confirmPassword}
+          visible={visible.confirm}
+          disabled={formDisabled}
+          autoComplete="new-password"
+          invalid={passwordsMismatch}
+          onToggle={() => setVisible((current) => ({ ...current, confirm: !current.confirm }))}
+          onChange={(confirmPassword) => setForm((current) => ({ ...current, confirmPassword }))}
+        />
+        {passwordsMatch ? <p className="text-sm font-bold text-emerald-500">Passwords match.</p> : null}
+        {passwordsMismatch ? <p className="text-sm font-bold text-red-500">Passwords do not match yet.</p> : null}
       </div>
-      <div className="mt-5 flex justify-end">
-        <PrimaryButton onClick={onSave} icon={CheckCircle2} disabled={busy}>Save settings</PrimaryButton>
+
+      <div className="rounded-[1.5rem] border border-border bg-surface-2 p-4">
+        <p className="text-sm font-black text-text">Password policy</p>
+        <p className="mt-1 text-sm leading-6 text-text-muted">
+          Pass at least {MIN_PASSWORD_SCORE} strength checks and use {MIN_PASSWORD_LENGTH}+ characters.
+        </p>
+        <div className="mt-4 space-y-2">
+          {checks.map((rule) => (
+            <div key={rule.key} className="flex items-center gap-2 text-sm">
+              <CheckCircle2 size={16} className={rule.passed ? 'text-emerald-500' : 'text-text-muted'} aria-hidden="true" />
+              <span className={rule.passed ? 'font-bold text-text' : 'font-semibold text-text-muted'}>{rule.label}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 flex justify-end">
+          <PrimaryButton type="submit" icon={saving ? Loader2 : Key} disabled={!canSubmit}>
+            {saving ? 'Updating' : 'Change password'}
+          </PrimaryButton>
+        </div>
       </div>
-    </Panel>
+    </form>
+  );
+}
+
+function PasswordField({ id, label, value, visible, disabled, invalid = false, autoComplete, onToggle, onChange }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 flex min-h-8 items-end text-xs font-black uppercase leading-4 tracking-[0.14em] text-text-muted">{label}</span>
+      <span className="relative block">
+        <input
+          id={id}
+          type={visible ? 'text' : 'password'}
+          value={value}
+          disabled={disabled}
+          autoComplete={autoComplete}
+          onChange={(event) => onChange(event.target.value)}
+          className={`admin-form-control pr-12 disabled:cursor-not-allowed disabled:opacity-60 ${invalid ? 'border-red-500 focus:border-red-500' : ''}`}
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          disabled={disabled}
+          className="absolute inset-y-0 right-2 my-auto inline-flex h-9 w-9 items-center justify-center rounded-xl text-text-muted transition hover:bg-surface hover:text-text disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label={visible ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+        >
+          {visible ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
+        </button>
+      </span>
+    </label>
   );
 }
 

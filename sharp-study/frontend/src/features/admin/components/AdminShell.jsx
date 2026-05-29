@@ -33,9 +33,10 @@ export default function AdminShell() {
   });
 
   const activeSection = useMemo(() => {
+    if (location.pathname.startsWith('/admin/reports')) return 'feedback';
     const section = searchParams.get('section') || 'overview';
     return NAV_ITEMS.some((item) => item.id === section) ? section : 'overview';
-  }, [searchParams]);
+  }, [location.pathname, searchParams]);
 
   const firstName = profile?.first_name ?? profile?.full_name?.split(' ')[0] ?? 'Admin';
 
@@ -53,8 +54,12 @@ export default function AdminShell() {
   const goToSection = (section) => {
     const next = new URLSearchParams(searchParams);
     next.set('section', section);
-    ['owner', 'owner_id', 'type', 'q', 'page', 'archived', 'preview_id', 'preview_type', 'status', 'user_q', 'role', 'user_page'].forEach((key) => next.delete(key));
-    setSearchParams(next, { replace: location.pathname === '/admin' });
+    ['owner', 'owner_id', 'type', 'q', 'page', 'archived', 'preview_id', 'preview_type', 'status', 'user_q', 'role', 'user_page', 'returnTo'].forEach((key) => next.delete(key));
+    if (location.pathname === '/admin') {
+      setSearchParams(next, { replace: true });
+    } else {
+      navigate(`/admin?${next.toString()}`);
+    }
     setMobileOpen(false);
   };
 

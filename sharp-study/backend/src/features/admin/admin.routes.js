@@ -217,6 +217,50 @@ async function fetchProfilesMap(userIds) {
   return new Map((data || []).map((profile) => [profile.id, profile]));
 }
 
+function summarizeProfile(profile, id, fallbackName = 'Unknown user') {
+  return {
+    id: id || null,
+    name: sanitizeAuditText(profile?.full_name || profile?.username || profile?.email || fallbackName, 140),
+    email: sanitizeAuditText(profile?.email || '', 180),
+    role: profile?.role || null,
+    is_blocked: Boolean(profile?.is_blocked),
+  };
+}
+
+async function fetchFeedbackContentStats(contentType, contentId) {
+  const [reactionsResult, reportCountResult] = await Promise.all([
+    supabaseAdmin
+      .from('ai_content_reactions')
+      .select('reaction')
+      .eq('content_type', contentType)
+      .eq('content_id', contentId),
+    supabaseAdmin
+      .from('ai_content_reports')
+      .select('id', { count: 'exact', head: true })
+      .eq('content_type', contentType)
+      .eq('content_id', contentId),
+  ]);
+
+  if (relationMissing(reactionsResult.error) || relationMissing(reportCountResult.error)) {
+    return {
+      reaction_counts: { up: 0, down: 0 },
+      report_count_for_content: 0,
+    };
+  }
+
+  if (reactionsResult.error) throw reactionsResult.error;
+  if (reportCountResult.error) throw reportCountResult.error;
+
+  const reactions = reactionsResult.data || [];
+  return {
+    reaction_counts: {
+      up: reactions.filter((item) => item.reaction === 'up').length,
+      down: reactions.filter((item) => item.reaction === 'down').length,
+    },
+    report_count_for_content: reportCountResult.count || 0,
+  };
+}
+
 async function fetchOverview(options = {}) {
   const aiPage = parsePositiveInt(options.aiPage, 1, 200);
   const aiPageSize = parsePositiveInt(options.aiPageSize, 5, 25);
@@ -925,6 +969,89 @@ async function fetchContentItem(type, id) {
   };
 }
 
+async function fetchReportedContent(report) {
+  if (!report?.content_type || !report?.content_id) return null;
+
+  if (report.content_type === 'study_guide') {
+    const { data, error } = await supabaseAdmin
+      .from('study_guides')
+      .select('id, user_id, title, created_at, is_archived, document_id, content')
+      .eq('id', report.content_id)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data ? { ...data, type: 'study_guide' } : null;
+  }
+
+  if (report.content_type === 'flashcards') {
+    const { data, error } = await supabaseAdmin
+      .from('flashcard_sets')
+      .select('id, user_id, title, created_at, is_archived, document_id, source_study_guide_id, difficulty')
+      .eq('id', report.content_id)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+
+    const { data: cards, error: cardsError } = await supabaseAdmin
+      .from('flashcards')
+      .select('id, front, back, hint, difficulty, created_at')
+      .eq('set_id', data.id)
+      .order('created_at', { ascending: true });
+
+    if (cardsError) throw cardsError;
+    return { ...data, type: 'flashcards', cards: cards || [] };
+  }
+
+  if (report.content_type === 'quiz') {
+    const { data, error } = await supabaseAdmin
+      .from('quizzes')
+      .select('id, user_id, title, created_at, is_archived, document_id, difficulty')
+      .eq('id', report.content_id)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+
+    const { data: questions, error: questionsError } = await supabaseAdmin
+      .from('quiz_questions')
+      .select('id, question, options, correct_index, difficulty, created_at')
+      .eq('quiz_id', data.id)
+      .order('created_at', { ascending: true });
+
+    if (questionsError) throw questionsError;
+    return { ...data, type: 'quiz', questions: questions || [] };
+  }
+
+  return null;
+}
+
+async function hydrateFeedbackReport(report, options = {}) {
+  const includeContent = Boolean(options.includeContent);
+  const userIds = [
+    report.user_id,
+    report.content_owner_id,
+    report.resolved_by,
+  ].filter(Boolean);
+  const profilesMap = options.profilesMap || await fetchProfilesMap([...new Set(userIds)]);
+  const [stats, content] = await Promise.all([
+    fetchFeedbackContentStats(report.content_type, report.content_id),
+    includeContent ? fetchReportedContent(report) : Promise.resolve(undefined),
+  ]);
+
+  return {
+    ...report,
+    reporter: summarizeProfile(profilesMap.get(report.user_id), report.user_id, 'Unknown user'),
+    owner: summarizeProfile(profilesMap.get(report.content_owner_id), report.content_owner_id, 'Unknown owner'),
+    resolved_by_admin: report.resolved_by
+      ? summarizeProfile(profilesMap.get(report.resolved_by), report.resolved_by, 'Unknown admin')
+      : null,
+    reaction_counts: stats.reaction_counts,
+    report_count_for_content: stats.report_count_for_content,
+    ...(includeContent ? { content } : {}),
+  };
+}
+
 router.get('/content', async (req, res) => {
   try {
     const type = String(req.query.type || 'all').trim();
@@ -1082,43 +1209,14 @@ router.get('/feedback', async (req, res) => {
     if (error) throw error;
 
     const reports = data || [];
-    const userIds = [...new Set(reports.flatMap((report) => [report.user_id, report.content_owner_id]).filter(Boolean))];
+    const userIds = [...new Set(reports.flatMap((report) => [
+      report.user_id,
+      report.content_owner_id,
+      report.resolved_by,
+    ]).filter(Boolean))];
     const profilesMap = await fetchProfilesMap(userIds);
 
-    const hydrated = await Promise.all(reports.map(async (report) => {
-      const [{ data: reactions }, { count: reportCount }] = await Promise.all([
-        supabaseAdmin
-          .from('ai_content_reactions')
-          .select('reaction')
-          .eq('content_type', report.content_type)
-          .eq('content_id', report.content_id),
-        supabaseAdmin
-          .from('ai_content_reports')
-          .select('id', { count: 'exact', head: true })
-          .eq('content_type', report.content_type)
-          .eq('content_id', report.content_id),
-      ]);
-      const reporter = profilesMap.get(report.user_id) || {};
-      const owner = profilesMap.get(report.content_owner_id) || {};
-      return {
-        ...report,
-        reporter: {
-          id: report.user_id,
-          name: sanitizeAuditText(reporter.full_name || reporter.username || reporter.email || 'Unknown user', 140),
-          email: sanitizeAuditText(reporter.email || '', 180),
-        },
-        owner: {
-          id: report.content_owner_id,
-          name: sanitizeAuditText(owner.full_name || owner.username || owner.email || 'Unknown owner', 140),
-          email: sanitizeAuditText(owner.email || '', 180),
-        },
-        reaction_counts: {
-          up: (reactions || []).filter((item) => item.reaction === 'up').length,
-          down: (reactions || []).filter((item) => item.reaction === 'down').length,
-        },
-        report_count_for_content: reportCount || 0,
-      };
-    }));
+    const hydrated = await Promise.all(reports.map((report) => hydrateFeedbackReport(report, { profilesMap })));
 
     res.json({
       reports: hydrated,
@@ -1135,6 +1233,35 @@ router.get('/feedback', async (req, res) => {
     }
     console.error('[ADMIN] Failed to fetch feedback:', error.message);
     res.status(500).json({ error: 'Failed to load feedback reports.' });
+  }
+});
+
+router.get('/feedback/:id', async (req, res) => {
+  try {
+    const reportId = String(req.params.id || '').trim();
+    if (!z.string().uuid().safeParse(reportId).success) {
+      return res.status(400).json({ error: 'Invalid report id.' });
+    }
+
+    const { data: report, error } = await supabaseAdmin
+      .from('ai_content_reports')
+      .select('*')
+      .eq('id', reportId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found.' });
+    }
+
+    const hydrated = await hydrateFeedbackReport(report, { includeContent: true });
+    return res.json({ report: hydrated });
+  } catch (error) {
+    if (relationMissing(error)) {
+      return res.status(404).json({ error: 'Report data is not available.' });
+    }
+    console.error('[ADMIN] Failed to load feedback report:', error.message);
+    return res.status(500).json({ error: 'Failed to load feedback report.' });
   }
 });
 
