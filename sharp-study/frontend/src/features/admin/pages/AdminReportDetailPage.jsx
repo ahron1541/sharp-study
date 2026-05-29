@@ -110,7 +110,7 @@ export default function AdminReportDetailPage() {
   async function saveNotes(event) {
     event.preventDefault();
     if (!report) return;
-    await runAction('Admin notes saved', () => updateAdminFeedbackReport(report.id, { admin_notes: notes }), loadReport);
+    await runAction('Response sent', () => updateAdminFeedbackReport(report.id, { admin_notes: notes }), loadReport);
   }
 
   async function confirmDelete() {
@@ -155,7 +155,7 @@ export default function AdminReportDetailPage() {
                     {report.content_title || 'Reported AI content'}
                   </h1>
                   <p className="mt-3 max-w-3xl text-sm leading-7 text-text-muted sm:text-base">
-                    Review the complaint, inspect the generated material, and update the report status.
+                    Review the complaint, inspect the generated material, respond to the student, and update the report status.
                   </p>
                 </div>
                 <div className="rounded-[1.5rem] border border-border bg-surface-2 p-4">
@@ -257,7 +257,7 @@ function ComplaintPanel({ report }) {
 
 function ModerationPanel({ report, notes, busy, onNotes, onSaveNotes, onStatus, onDelete }) {
   return (
-    <Panel title="Actions" eyebrow="Moderation" icon={Shield}>
+    <Panel title="Response" eyebrow="Moderation" icon={Shield}>
       <div className="space-y-4">
         <div className="grid gap-2 sm:grid-cols-2">
           {STATUS_OPTIONS.map(([status, label, statusIcon]) => (
@@ -280,7 +280,7 @@ function ModerationPanel({ report, notes, busy, onNotes, onSaveNotes, onStatus, 
 
         <form className="space-y-3" onSubmit={onSaveNotes}>
           <label className="block">
-            <span className="mb-1.5 flex min-h-8 items-end text-xs font-black uppercase leading-4 tracking-[0.14em] text-text-muted">Admin notes</span>
+            <span className="mb-1.5 flex min-h-8 items-end text-xs font-black uppercase leading-4 tracking-[0.14em] text-text-muted">Response to user</span>
             <textarea
               rows={6}
               value={notes}
@@ -288,7 +288,7 @@ function ModerationPanel({ report, notes, busy, onNotes, onSaveNotes, onStatus, 
               disabled={busy}
               maxLength={800}
               className="admin-form-control min-h-40 resize-y leading-7 disabled:cursor-not-allowed disabled:opacity-60"
-              placeholder="Add what you reviewed or why this was resolved."
+              placeholder="Write the message the student will see in notifications."
             />
           </label>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
@@ -307,7 +307,7 @@ function ModerationPanel({ report, notes, busy, onNotes, onSaveNotes, onStatus, 
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-2.5 text-sm font-black text-accent-text transition disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busy ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
-              Save notes
+              Send response
             </button>
           </div>
         </form>

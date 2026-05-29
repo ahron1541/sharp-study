@@ -9,6 +9,21 @@ import { notifyUnreadCountChanged } from '../notificationEvents';
 
 const NOTIFICATIONS_PAGE_SIZE = 8;
 
+function labelCategory(category = '') {
+  if (category === 'feedback') return 'Feedback';
+  if (category === 'maintenance') return 'Maintenance';
+  if (category === 'security') return 'Security';
+  if (category === 'feature') return 'Feature';
+  if (category === 'update') return 'Update';
+  return 'General';
+}
+
+function labelStatus(status = '') {
+  if (status === 'reviewing') return 'Under review';
+  if (status === 'resolved') return 'Resolved';
+  return status;
+}
+
 export default function NotificationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [notifications, setNotifications] = useState([]);
@@ -150,9 +165,9 @@ export default function NotificationsPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.22em] text-[color:var(--color-text-muted)]">Notifications</p>
-            <h1 className="mt-3 text-[clamp(2rem,4vw,3.5rem)] font-black leading-none text-[color:var(--color-text)]">Announcements & updates</h1>
+            <h1 className="mt-3 text-[clamp(2rem,4vw,3.5rem)] font-black leading-none text-[color:var(--color-text)]">Notifications</h1>
             <p className="mt-4 max-w-2xl text-sm leading-7 text-[color:var(--color-text-muted)]">
-              Updates from the admin team about website changes, maintenance, and important study workspace notices.
+              Updates from the admin team, including website notices and responses to your feedback reports.
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -199,8 +214,9 @@ export default function NotificationsPage() {
                   <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-[color:var(--color-surface)] px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-[color:var(--color-text-muted)]">{notice.category}</span>
+                        <span className="rounded-full bg-[color:var(--color-surface)] px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-[color:var(--color-text-muted)]">{labelCategory(notice.category)}</span>
                         <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.12em] ${notice.priority === 'high' ? 'bg-rose-500/10 text-rose-500' : 'bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)]'}`}>{notice.priority}</span>
+                        {notice.status ? <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-emerald-500">{labelStatus(notice.status)}</span> : null}
                         {!notice.read ? <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-emerald-500">New</span> : null}
                       </div>
                       <h3 className="mt-3 text-lg font-black text-[color:var(--color-text)]">{notice.title}</h3>
@@ -243,7 +259,7 @@ export default function NotificationsPage() {
             <div className="rounded-[1.5rem] border border-dashed border-[color:var(--color-border)] bg-[color:var(--color-surface-2)] p-10 text-center">
               <Megaphone className="mx-auto text-[color:var(--color-text-muted)]" size={36} aria-hidden="true" />
               <h2 className="mt-3 text-xl font-black text-[color:var(--color-text)]">No notifications yet</h2>
-              <p className="mt-2 text-sm text-[color:var(--color-text-muted)]">Published admin announcements will appear here.</p>
+              <p className="mt-2 text-sm text-[color:var(--color-text-muted)]">Published announcements and feedback report updates will appear here.</p>
             </div>
           )}
         </div>

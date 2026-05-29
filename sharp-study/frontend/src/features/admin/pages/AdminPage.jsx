@@ -85,8 +85,9 @@ const ANNOUNCEMENT_EMPTY = {
   title: '',
   body: '',
   category: 'general',
-  priority: 'normal',
-  status: 'draft',
+  priority: '',
+  status: '',
+  schedule_enabled: false,
   starts_at: '',
   ends_at: '',
 };
@@ -102,7 +103,7 @@ const PROMPT_EMPTY = {
 const SECTION_COPY = {
   overview: ['Overview', 'A simple control room for users, reports, AI activity, and platform health.'],
   users: ['User Management', 'Create accounts, update roles, block access, and delete accounts for privacy requests.'],
-  feedback: ['Feedback', 'Review AI content reports and thumbs up/down signals from students.'],
+  feedback: ['Feedback', 'Review AI content reports, respond to student complaints, and track thumbs up/down signals.'],
   announcements: ['Announcements & Updates', 'Write updates that appear in the user Notifications page.'],
   ai: ['AI Controls', 'Adjust AI request limits and prompt templates without exposing API keys.'],
   health: ['Health & Logs', 'Check provider configuration, recent AI failures, and operational logs.'],
@@ -189,6 +190,11 @@ const HEALTH_PAGING_DEFAULTS = {
   logPageSize: 8,
 };
 
+const AI_PAGING_DEFAULTS = {
+  eventPage: 1,
+  eventPageSize: 10,
+};
+
 const REPORT_REASONS = {
   incorrect: 'Incorrect content',
   confusing: 'Confusing wording',
@@ -235,11 +241,12 @@ export default function AdminPage() {
   const [action, setAction] = useState({ active: false, label: '' });
   const [overviewPaging, setOverviewPaging] = useState(OVERVIEW_PAGING_DEFAULTS);
   const [healthPaging, setHealthPaging] = useState(HEALTH_PAGING_DEFAULTS);
+  const [aiPaging, setAiPaging] = useState(AI_PAGING_DEFAULTS);
   const [userFilters, setUserFilters] = useState({ search: '', role: 'all', status: 'all', page: 1 });
   const [feedbackFilters, setFeedbackFilters] = useState({ search: '', status: 'all', type: 'all', page: 1 });
   const [announcementFilter, setAnnouncementFilter] = useState('all');
   const [userModal, setUserModal] = useState({ open: false, mode: 'create', form: USER_EMPTY, target: null });
-  const [announcementModal, setAnnouncementModal] = useState({ open: false, mode: 'create', form: ANNOUNCEMENT_EMPTY, target: null });
+  const [announcementModal, setAnnouncementModal] = useState({ open: false, mode: 'create', form: { ...ANNOUNCEMENT_EMPTY }, target: null });
   const [promptModal, setPromptModal] = useState({ open: false, mode: 'create', form: PROMPT_EMPTY, target: null });
   const [confirm, setConfirm] = useState({ open: false, title: '', body: '', action: null, danger: true });
   const [rateDraft, setRateDraft] = useState({ daily_limit: 10, window_hours: 24 });
@@ -274,13 +281,13 @@ export default function AdminPage() {
   }, [announcementFilter]);
 
   const loadAiControls = useCallback(async () => {
-    const data = await fetchAdminAiControls();
+    const data = await fetchAdminAiControls(aiPaging);
     setAiControls(data);
     setRateDraft({
       daily_limit: Number(data.rate_limit?.daily_limit || 10),
       window_hours: Number(data.rate_limit?.window_hours || 24),
     });
-  }, []);
+  }, [aiPaging]);
 
   const loadHealth = useCallback(async () => {
     const data = await fetchAdminHealth(healthPaging);
@@ -458,25 +465,31 @@ export default function AdminPage() {
           category: announcement.category || 'general',
           priority: announcement.priority || 'normal',
           status: announcement.status || 'draft',
+          schedule_enabled: Boolean(announcement.starts_at || announcement.ends_at),
           starts_at: toDatetimeLocal(announcement.starts_at),
           ends_at: toDatetimeLocal(announcement.ends_at),
         }
-        : ANNOUNCEMENT_EMPTY,
+        : { ...ANNOUNCEMENT_EMPTY },
     });
   }
 
   async function submitAnnouncement(event) {
     event.preventDefault();
+    const form = announcementModal.form;
     const payload = {
-      ...announcementModal.form,
-      starts_at: fromDatetimeLocal(announcementModal.form.starts_at),
-      ends_at: fromDatetimeLocal(announcementModal.form.ends_at),
+      title: form.title,
+      body: form.body,
+      category: form.category || 'general',
+      starts_at: form.schedule_enabled ? fromDatetimeLocal(form.starts_at) : null,
+      ends_at: form.schedule_enabled ? fromDatetimeLocal(form.ends_at) : null,
     };
+    if (form.priority) payload.priority = form.priority;
+    if (form.status) payload.status = form.status;
     const task = announcementModal.mode === 'create'
       ? () => createAdminAnnouncement(payload)
       : () => updateAdminAnnouncement(announcementModal.target.id, payload);
     await runAction(announcementModal.mode === 'create' ? 'Announcement created' : 'Announcement updated', task, async () => {
-      setAnnouncementModal({ open: false, mode: 'create', form: ANNOUNCEMENT_EMPTY, target: null });
+      setAnnouncementModal({ open: false, mode: 'create', form: { ...ANNOUNCEMENT_EMPTY }, target: null });
       await Promise.all([loadAnnouncements(), loadOverview()]);
     });
   }
@@ -704,6 +717,13 @@ export default function AdminPage() {
             onCreatePrompt={() => openPrompt()}
             onEditPrompt={openPrompt}
             onDeletePrompt={requestDeletePrompt}
+            eventsPagination={aiControls?.recent_events_pagination || {
+              page: aiPaging.eventPage,
+              pageSize: aiPaging.eventPageSize,
+              totalCount: aiControls?.recent_events?.length || 0,
+              totalPages: 1,
+            }}
+            onEventPage={(eventPage) => setAiPaging((current) => ({ ...current, eventPage }))}
             busy={action.active}
           />
         ) : null}
@@ -909,7 +929,7 @@ function FeedbackSection({ feedback, filters, onFilters, onView, onUpdate, onDel
               </div>
             </div>
           </article>
-        )) : <EmptyState icon={FileWarning} title="No reports matched" body="AI reports from study guides, flashcards, and quizzes will appear here." />}
+        )) : <EmptyState icon={FileWarning} title="No reports matched" body="Student AI reports from study guides, flashcards, and quizzes will appear here for review and response." />}
       </div>
 
       <Pagination page={pagination.page} totalPages={pagination.totalPages} totalCount={pagination.totalCount} onPrev={() => onFilters({ ...filters, page: Math.max(1, pagination.page - 1) })} onNext={() => onFilters({ ...filters, page: Math.min(pagination.totalPages, pagination.page + 1) })} disabled={busy} />
@@ -920,20 +940,28 @@ function FeedbackSection({ feedback, filters, onFilters, onView, onUpdate, onDel
 function AnnouncementsSection({ announcements, filter, onFilter, onCreate, onEdit, onDelete, busy }) {
   return (
     <Panel title="Announcements & Updates" eyebrow="Notifications" icon={Bell} action={<PrimaryButton onClick={onCreate} icon={Plus} disabled={busy}>New announcement</PrimaryButton>}>
-      <div className="max-w-xs">
+      <div className="grid gap-3 sm:grid-cols-[minmax(14rem,20rem)_1fr] sm:items-center">
         <Select value={filter} onChange={onFilter} options={[['all', 'All statuses'], ['draft', 'Draft'], ['published', 'Published'], ['archived', 'Archived']]} label="Announcement status" />
+        <p className="text-sm leading-6 text-text-muted">Published announcements appear in the student Notifications inbox. Drafts and archived posts stay admin-only.</p>
       </div>
-      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+      <div className="mt-5 grid items-stretch gap-3 lg:grid-cols-2">
         {announcements.length ? announcements.map((announcement) => (
-          <article key={announcement.id} className="rounded-[1.4rem] border border-border bg-surface-2 p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Chip tone={announcement.status === 'published' ? 'success' : announcement.status === 'archived' ? 'neutral' : 'warning'}>{announcement.status}</Chip>
-              <Chip tone={announcement.priority === 'high' ? 'danger' : 'accent'}>{announcement.priority}</Chip>
-              <Chip tone="neutral">{announcement.category}</Chip>
+          <article key={announcement.id} className="flex h-full min-w-0 flex-col rounded-[1.4rem] border border-border bg-surface-2 p-4">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Chip tone={announcement.status === 'published' ? 'success' : announcement.status === 'archived' ? 'neutral' : 'warning'}>{announcement.status}</Chip>
+                <Chip tone={announcement.priority === 'high' ? 'danger' : 'accent'}>{announcement.priority}</Chip>
+                <Chip tone="neutral">{announcement.category}</Chip>
+              </div>
+              <h3 className="mt-3 break-words text-lg font-black text-text">{announcement.title}</h3>
+              <p className="mt-2 line-clamp-3 break-words text-sm leading-7 text-text-muted">{announcement.body}</p>
+              <div className="mt-3 space-y-1 text-xs font-semibold text-text-muted">
+                <p>Updated {formatDateTime(announcement.updated_at)}</p>
+                {announcement.starts_at || announcement.ends_at ? (
+                  <p className="break-words">Visible {announcement.starts_at ? formatDateTime(announcement.starts_at) : 'now'} - {announcement.ends_at ? formatDateTime(announcement.ends_at) : 'until cleared'}</p>
+                ) : null}
+              </div>
             </div>
-            <h3 className="mt-3 text-lg font-black text-text">{announcement.title}</h3>
-            <p className="mt-2 line-clamp-3 text-sm leading-7 text-text-muted">{announcement.body}</p>
-            <p className="mt-3 text-xs font-semibold text-text-muted">Updated {formatDateTime(announcement.updated_at)}</p>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <SecondaryButton onClick={() => onEdit(announcement)} icon={Edit3} disabled={busy}>Edit</SecondaryButton>
               <DangerButton onClick={() => onDelete(announcement)} icon={Trash2} disabled={busy}>Delete</DangerButton>
@@ -945,11 +973,17 @@ function AnnouncementsSection({ announcements, filter, onFilter, onCreate, onEdi
   );
 }
 
-function AiControlsSection({ data, rateDraft, overrideDraft, onRateDraft, onOverrideDraft, onSaveRate, onSaveOverride, onDeleteOverride, onCreatePrompt, onEditPrompt, onDeletePrompt, busy }) {
+function AiControlsSection({ data, rateDraft, overrideDraft, onRateDraft, onOverrideDraft, onSaveRate, onSaveOverride, onDeleteOverride, onCreatePrompt, onEditPrompt, onDeletePrompt, eventsPagination, onEventPage, busy }) {
   const providers = data?.provider_health || [];
   const templates = data?.prompt_templates || [];
   const overrides = data?.overrides || [];
   const events = data?.recent_events || [];
+  const eventPage = {
+    page: Number(eventsPagination?.page || AI_PAGING_DEFAULTS.eventPage),
+    pageSize: Number(eventsPagination?.pageSize || AI_PAGING_DEFAULTS.eventPageSize),
+    totalCount: Number(eventsPagination?.totalCount || events.length),
+    totalPages: Number(eventsPagination?.totalPages || 1),
+  };
 
   return (
     <div className="space-y-5">
@@ -1043,6 +1077,14 @@ function AiControlsSection({ data, rateDraft, overrideDraft, onRateDraft, onOver
             formatDateTime(event.created_at),
           ])}
           empty="No AI request events yet."
+        />
+        <Pagination
+          page={eventPage.page}
+          totalPages={eventPage.totalPages}
+          totalCount={eventPage.totalCount}
+          onPrev={() => onEventPage(Math.max(1, eventPage.page - 1))}
+          onNext={() => onEventPage(Math.min(eventPage.totalPages, eventPage.page + 1))}
+          disabled={busy}
         />
       </Panel>
     </div>
@@ -1284,20 +1326,44 @@ function UserModal({ state, setState, onSubmit, busy }) {
 
 function AnnouncementModal({ state, setState, onSubmit, busy }) {
   return (
-    <Modal isOpen={state.open} onClose={() => setState({ open: false, mode: 'create', form: ANNOUNCEMENT_EMPTY, target: null })} title={state.mode === 'create' ? 'Create announcement' : 'Edit announcement'} size="lg">
+    <Modal isOpen={state.open} onClose={() => setState({ open: false, mode: 'create', form: { ...ANNOUNCEMENT_EMPTY }, target: null })} title={state.mode === 'create' ? 'Create announcement' : 'Edit announcement'} size="lg">
       <form className="space-y-4" onSubmit={onSubmit}>
         <Field label="Title"><input required value={state.form.title} onChange={(event) => setState((current) => ({ ...current, form: { ...current.form, title: event.target.value } }))} className="admin-form-control" /></Field>
         <Field label="Body"><textarea required rows={6} value={state.form.body} onChange={(event) => setState((current) => ({ ...current, form: { ...current.form, body: event.target.value } }))} className="admin-form-control" /></Field>
         <div className="grid gap-3 sm:grid-cols-3">
           <SelectField label="Category" value={state.form.category} onChange={(category) => setState((current) => ({ ...current, form: { ...current.form, category } }))} options={[['general', 'General'], ['update', 'Update'], ['maintenance', 'Maintenance'], ['feature', 'Feature'], ['security', 'Security']]} />
-          <SelectField label="Priority" value={state.form.priority} onChange={(priority) => setState((current) => ({ ...current, form: { ...current.form, priority } }))} options={[['normal', 'Normal'], ['high', 'High']]} />
-          <SelectField label="Status" value={state.form.status} onChange={(status) => setState((current) => ({ ...current, form: { ...current.form, status } }))} options={[['draft', 'Draft'], ['published', 'Published'], ['archived', 'Archived']]} />
+          <SelectField label="Priority" value={state.form.priority} onChange={(priority) => setState((current) => ({ ...current, form: { ...current.form, priority } }))} options={[['', 'Default priority'], ['normal', 'Normal'], ['high', 'High']]} />
+          <SelectField label="Status" value={state.form.status} onChange={(status) => setState((current) => ({ ...current, form: { ...current.form, status } }))} options={[['', 'Default status'], ['draft', 'Draft'], ['published', 'Published'], ['archived', 'Archived']]} />
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Starts at"><input type="datetime-local" value={state.form.starts_at} onChange={(event) => setState((current) => ({ ...current, form: { ...current.form, starts_at: event.target.value } }))} className="admin-form-control" /></Field>
-          <Field label="Ends at"><input type="datetime-local" value={state.form.ends_at} onChange={(event) => setState((current) => ({ ...current, form: { ...current.form, ends_at: event.target.value } }))} className="admin-form-control" /></Field>
-        </div>
-        <div className="flex justify-end"><PrimaryButton type="submit" disabled={busy} icon={CheckCircle2}>Save announcement</PrimaryButton></div>
+        <label className="flex flex-col gap-3 rounded-[1.2rem] border border-border bg-surface-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <span>
+            <span className="block text-sm font-black text-text">Schedule visibility</span>
+            <span className="mt-1 block text-sm leading-6 text-text-muted">Show this announcement only during a specific time window.</span>
+          </span>
+          <span className="inline-flex items-center gap-3 text-sm font-black text-text">
+            <input
+              type="checkbox"
+              checked={Boolean(state.form.schedule_enabled)}
+              onChange={(event) => setState((current) => ({
+                ...current,
+                form: {
+                  ...current.form,
+                  schedule_enabled: event.target.checked,
+                  starts_at: event.target.checked ? current.form.starts_at : '',
+                  ends_at: event.target.checked ? current.form.ends_at : '',
+                },
+              }))}
+            />
+            {state.form.schedule_enabled ? 'On' : 'Off'}
+          </span>
+        </label>
+        {state.form.schedule_enabled ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Starts at"><input type="datetime-local" value={state.form.starts_at} onChange={(event) => setState((current) => ({ ...current, form: { ...current.form, starts_at: event.target.value } }))} className="admin-form-control" /></Field>
+            <Field label="Ends at"><input type="datetime-local" value={state.form.ends_at} onChange={(event) => setState((current) => ({ ...current, form: { ...current.form, ends_at: event.target.value } }))} className="admin-form-control" /></Field>
+          </div>
+        ) : null}
+        <div className="flex justify-end"><PrimaryButton type="submit" disabled={busy} icon={CheckCircle2}>{state.mode === 'create' ? 'Post' : 'Post changes'}</PrimaryButton></div>
       </form>
     </Modal>
   );

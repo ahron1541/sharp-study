@@ -110,8 +110,8 @@ export function deleteAdminAnnouncement(id) {
   });
 }
 
-export function fetchAdminAiControls() {
-  return apiRequest('/api/admin/ai-controls');
+export function fetchAdminAiControls(params) {
+  return apiRequest(`/api/admin/ai-controls${toQuery(params)}`);
 }
 
 export function updateAdminAiRateLimit(payload) {

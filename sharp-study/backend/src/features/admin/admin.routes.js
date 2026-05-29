@@ -1424,11 +1424,20 @@ async function deactivatePromptTemplates(templateKey, exceptId = null) {
 
 router.get('/ai-controls', async (req, res) => {
   try {
+    const eventPage = parsePositiveInt(req.query.eventPage, 1, 200);
+    const eventPageSize = parsePositiveInt(req.query.eventPageSize, 10, 50);
+    const eventFrom = (eventPage - 1) * eventPageSize;
+    const eventTo = eventFrom + eventPageSize - 1;
+
     const [templatesResult, settingsResult, overridesResult, eventsResult] = await Promise.all([
       supabaseAdmin.from('prompt_templates').select('*').order('updated_at', { ascending: false }),
       supabaseAdmin.from('ai_rate_limit_settings').select('*').eq('id', 'global').maybeSingle(),
       supabaseAdmin.from('ai_rate_limit_overrides').select('user_id, daily_limit, is_enabled, updated_at').order('updated_at', { ascending: false }).limit(50),
-      supabaseAdmin.from('ai_request_events').select('id, user_id, feature, status, provider, metadata, created_at').order('created_at', { ascending: false }).limit(50),
+      supabaseAdmin
+        .from('ai_request_events')
+        .select('id, user_id, feature, status, provider, metadata, created_at', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(eventFrom, eventTo),
     ]);
 
     const optionalError = [templatesResult.error, settingsResult.error, overridesResult.error, eventsResult.error].find(Boolean);
@@ -1455,15 +1464,19 @@ router.get('/ai-controls', async (req, res) => {
       overrides: (overridesResult.data || []).map(hydrateUser),
       prompt_templates: (templatesResult.data || []).map(normalizePromptTemplate),
       recent_events: (eventsResult.data || []).map(hydrateUser),
+      recent_events_pagination: buildPagination(eventPage, eventPageSize, eventsResult.count || (eventsResult.data || []).length),
     });
   } catch (error) {
     if (relationMissing(error)) {
+      const eventPage = parsePositiveInt(req.query.eventPage, 1, 200);
+      const eventPageSize = parsePositiveInt(req.query.eventPageSize, 10, 50);
       return res.json({
         provider_health: providerHealth(),
         rate_limit: { id: 'global', daily_limit: 10, window_hours: 24 },
         overrides: [],
         prompt_templates: [],
         recent_events: [],
+        recent_events_pagination: buildPagination(eventPage, eventPageSize, 0),
       });
     }
     console.error('[ADMIN] Failed to load AI controls:', error.message);
