@@ -1,9 +1,3 @@
-/* ─────────────────────────────────────
-   AuthLayout — two-column card wrapper
-   Matches wireframe: card on neutral bg,
-   left = image panel, right = form panel
-   ───────────────────────────────────── */
-
 .page {
   min-height: 100vh;
   background-color: var(--auth-page-bg);
@@ -13,7 +7,6 @@
   padding: var(--space-lg);
 }
 
-/* The outer card container */
 .card {
   display: flex;
   width: 100%;
@@ -25,33 +18,33 @@
   background-color: var(--auth-right-bg);
 }
 
-/* ── Left panel: image + caption ── */
 .imagePanel {
-  display: none;            /* hidden on mobile and tablet */
+  display: none;
   position: relative;
   flex: 0 0 var(--auth-left-width);
-  background-color: #C0C0C0; /* placeholder color matching wireframe */
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.94), rgba(228, 245, 238, 0.84)),
+    color-mix(in srgb, var(--accent) 10%, var(--auth-page-bg));
   overflow: hidden;
   border-radius: var(--radius-inner);
   margin: 0;
 }
 
-.placeholderImage {
+.authImage {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  padding: clamp(1.5rem, 4vw, 3rem) clamp(1.5rem, 4vw, 3rem) clamp(7rem, 10vw, 9rem);
   display: block;
 }
 
-/* The X cross lines on the placeholder — drawn with an SVG overlay */
-.imageCross {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
+[data-theme="dark"] .imagePanel,
+[data-display="dark"] .imagePanel {
+  background:
+    linear-gradient(145deg, rgba(24, 31, 48, 0.96), rgba(17, 24, 39, 0.92)),
+    color-mix(in srgb, var(--accent) 14%, var(--auth-page-bg));
 }
 
 .imageCaption {
@@ -60,7 +53,7 @@
   left: 0;
   right: 0;
   padding: var(--space-xl);
-  background: linear-gradient(to top, rgba(0,0,0,0.45) 0%, transparent 100%);
+  background: linear-gradient(to top, rgba(5, 10, 20, 0.72) 0%, rgba(5, 10, 20, 0.36) 72%, transparent 100%);
 }
 
 .imageCaptionTitle {
@@ -78,7 +71,6 @@
   line-height: 1.5;
 }
 
-/* ── Right panel: form content ── */
 .formPanel {
   flex: 1;
   display: flex;
@@ -88,7 +80,6 @@
   background-color: var(--auth-right-bg);
 }
 
-/* Back button at the top-left of the form panel */
 .backBtn {
   display: flex;
   align-items: center;
@@ -126,7 +117,6 @@
   display: block;
 }
 
-/* Inner content area (centers the form within the right panel) */
 .formContent {
   flex: 1;
   display: flex;
@@ -134,7 +124,6 @@
   justify-content: center;
 }
 
-/* ── Responsive ── */
 @media (min-width: 1024px) {
   .imagePanel {
     display: block;

@@ -2,31 +2,21 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import styles from './HeroSection.module.css';
 
-const studyGuideSvg = 'https://placehold.co/620x420/eaf7ef/1f4d3a.svg?text=Readable+Study+Guide';
-const narratorSvg = 'https://placehold.co/620x420/fff4d8/3b2f14.svg?text=Voice+Narrator';
+const studyGuideSvg = 'https://cdn.undraw.co/illustrations/studying_n5uj.svg';
+const narratorSvg = 'https://cdn.undraw.co/illustration/voice-messages_anpq.svg';
 
-function PlaceholderBox({ className, ariaLabel, src }) {
+function HeroImage({ className, src }) {
   return (
     <div className={className}>
       <div className={styles.skeleton} aria-hidden="true" />
       <img
         src={src}
-        alt={ariaLabel || ''}
-        aria-hidden={!ariaLabel}
-        className={styles.placeholderImg}
+        alt=""
+        className={styles.heroImg}
         width="600"
         height="400"
         loading="lazy"
       />
-      <svg
-        className={styles.cross}
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        <line x1="0" y1="0" x2="100" y2="100" stroke="rgba(0,0,0,0.12)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
-        <line x1="100" y1="0" x2="0" y2="100" stroke="rgba(0,0,0,0.12)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
-      </svg>
     </div>
   );
 }
@@ -36,7 +26,6 @@ export default function HeroSection() {
     <section aria-labelledby="hero-heading" className={styles.section}>
       <div className={styles.inner}>
 
-        {/* Left: headline + CTA */}
         <motion.div
           className={styles.textCol}
           initial={{ opacity: 0, y: 18 }}
@@ -46,12 +35,12 @@ export default function HeroSection() {
         >
           <p className={styles.eyebrow}>Accessible AI learning for every student</p>
           <h1 id="hero-heading" className={styles.headline}>
-            Study long lessons in a clearer, calmer way.
+            Turn difficult lessons into study steps you can manage.
           </h1>
           <p className={styles.subheadline}>
-            Verso turns school documents into short study guides, flashcards,
-            quizzes, and spoken lessons built for students with low vision,
-            visual impairments, attention challenges, and other learning needs.
+            Verso turns long readings, slides, and class files into clear guides,
+            flashcards, quizzes, and voice-ready review so studying feels less
+            overwhelming.
           </p>
           <div className={styles.ctaRow}>
             <Link to="/register" className={styles.ctaBtn}>
@@ -59,13 +48,12 @@ export default function HeroSection() {
             </Link>
           </div>
           <div className={styles.statRow} aria-label="Verso highlights">
-            <span>High contrast</span>
-            <span>Large text</span>
+            <span>Readable guides</span>
+            <span>Active recall</span>
             <span>Voice-ready</span>
           </div>
         </motion.div>
 
-        {/* Right: stacked image placeholders */}
         <motion.div
           className={styles.imageCol}
           aria-hidden="true"
@@ -74,8 +62,8 @@ export default function HeroSection() {
           viewport={{ once: true, margin: '-80px' }}
           transition={{ duration: 0.38, ease: 'easeOut', delay: 0.08 }}
         >
-          <PlaceholderBox className={styles.imageFront} src={studyGuideSvg} />
-          <PlaceholderBox className={styles.imageBack} src={narratorSvg} />
+          <HeroImage className={styles.imageFront} src={studyGuideSvg} />
+          <HeroImage className={styles.imageBack} src={narratorSvg} />
         </motion.div>
 
       </div>

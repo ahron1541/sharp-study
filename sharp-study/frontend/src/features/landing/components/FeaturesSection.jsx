@@ -4,24 +4,24 @@ import styles from './FeaturesSection.module.css';
 const FEATURES = [
   {
     id: 1,
-    title: 'Readable Study Guides',
-    body: 'Compress long PDFs, DOCX, and PPTX files into organized lessons with clear headings and summaries.',
-    src: 'https://placehold.co/420x540/e8f5ff/12324a.svg?text=Study+Guides',
-    alt: 'Study guide placeholder',
+    title: 'Study Guides',
+    body: 'When a lesson feels too long or crowded, Verso breaks the main ideas into readable sections, summaries, and headings you can follow.',
+    src: 'https://cdn.undraw.co/illustration/reading-notes_dg9z.svg',
+    alt: 'Student reading organized study notes',
   },
   {
     id: 2,
-    title: 'Flashcards and Quizzes',
-    body: 'Practice with generated flashcards and quiz questions so review feels active instead of overwhelming.',
-    src: 'https://placehold.co/420x540/f6edff/2b1845.svg?text=Cards+%2B+Quizzes',
-    alt: 'Flashcards and quizzes placeholder',
+    title: 'Flashcards',
+    body: 'When facts are hard to remember, generated cards help you review one idea at a time and build recall without rereading everything.',
+    src: 'https://cdn.undraw.co/illustrations/choose-card_es1o.svg',
+    alt: 'Person choosing study cards',
   },
   {
     id: 3,
-    title: 'Comfort Controls',
-    body: 'Use dark mode, larger study text, stronger contrast, and narrator support for easier reading.',
-    src: 'https://placehold.co/420x540/fff2df/3d2814.svg?text=Accessible+Tools',
-    alt: 'Accessibility tools placeholder',
+    title: 'Quizzes',
+    body: 'When tests feel uncertain, practice questions help you check what you know and spot topics that still need attention.',
+    src: 'https://cdn.undraw.co/illustrations/quiz_zvhe.svg',
+    alt: 'Student answering quiz questions',
   },
 ];
 
@@ -44,15 +44,6 @@ function FeatureCard({ feature, index }) {
           height="520"
           loading="lazy"
         />
-        <svg
-          className={styles.cross}
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <line x1="0" y1="0" x2="100" y2="100" stroke="rgba(0,0,0,0.12)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
-          <line x1="100" y1="0" x2="0" y2="100" stroke="rgba(0,0,0,0.12)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
-        </svg>
       </div>
       <h3 className={styles.cardTitle}>{feature.title}</h3>
       <p className={styles.cardBody}>{feature.body}</p>
@@ -68,9 +59,9 @@ export default function FeaturesSection() {
           Built around how students actually study
         </h2>
         <p className={styles.sectionSub}>
-          Verso keeps the wireframe simple on purpose: fewer distractions,
-          stronger contrast, bigger readable text, and study tools that reduce
-          the load of long academic files.
+          Long readings, memory-heavy topics, and quiz prep can be hard to
+          manage. Verso turns those moments into smaller study actions with
+          accessible reading and voice support nearby.
         </p>
 
         <div className={styles.grid}>
